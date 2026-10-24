@@ -1,0 +1,10 @@
+[package]
+name = "kvj-recognize"
+description = "Short-window acoustic landmark retrieval and verification for live VJ following"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1.0.100"
+rustfft = "6.4.1"

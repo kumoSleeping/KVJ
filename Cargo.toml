@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = ["core/recognize", "core/engine"]
+exclude = ["vendor/cpal-0.18.1"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+# Dependencies compile once and stay fast at runtime; our own crates stay quick to rebuild.
+[profile.dev]
+debug = "line-tables-only"
+[profile.dev.package."*"]
+opt-level = 3
+# Live recognition must keep up with real audio even in a debug build.
+[profile.dev.package.kvj-recognize]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 16
+panic = "abort"
