@@ -25,6 +25,7 @@ class Engine : public QObject
     Q_PROPERTY(QVariantMap view READ view NOTIFY viewChanged)
     Q_PROPERTY(QVariantMap matched READ matched NOTIFY matchedChanged)
     Q_PROPERTY(QVariantList devices READ devices NOTIFY devicesChanged)
+    Q_PROPERTY(QVariantList bluetoothDevices READ bluetoothDevices NOTIFY bluetoothDevicesChanged)
     Q_PROPERTY(QStringList logs READ logs NOTIFY logsChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
@@ -38,6 +39,7 @@ public:
     QVariantMap view() const { return m_view; }
     QVariantMap matched() const { return m_matched; }
     QVariantList devices() const { return m_devices; }
+    QVariantList bluetoothDevices() const { return m_bluetoothDevices; }
     QStringList logs() const { return m_logs; }
     QString error() const { return m_error; }
     bool busy() const { return m_busy > 0; }
@@ -50,6 +52,14 @@ public:
     Q_INVOKABLE void importUrls(const QString &setId, const QList<QUrl> &urls);
     Q_INVOKABLE void start(const QString &setId, const QString &device, int channelStart);
     Q_INVOKABLE void stop();
+    // Bluetooth: paired devices (or a fresh search), standby connections to
+    // receivers, the current DJ on the receiving side, and sender-only sessions.
+    Q_INVOKABLE void scanBluetooth(bool inquiry);
+    Q_INVOKABLE void connectBluetooth(const QVariantMap &device);
+    Q_INVOKABLE void disconnectBluetooth(const QString &id);
+    Q_INVOKABLE void selectBluetooth(const QString &id);
+    Q_INVOKABLE void pairBluetooth();
+    Q_INVOKABLE void startSending(const QString &peer, const QString &device, int channelStart);
     Q_INVOKABLE void clearError();
     // The engine's monotonic clock; matched.clock_at_ms is on it.
     Q_INVOKABLE static double clockMs();
@@ -59,6 +69,7 @@ signals:
     void viewChanged();
     void matchedChanged();
     void devicesChanged();
+    void bluetoothDevicesChanged();
     void logsChanged();
     void errorChanged();
     void busyChanged();
@@ -78,6 +89,7 @@ private:
     QVariantMap m_view;
     QVariantMap m_matched;
     QVariantList m_devices;
+    QVariantList m_bluetoothDevices;
     QStringList m_logs;
     QString m_error;
     int m_busy = 0;

@@ -2,7 +2,7 @@
 //! reply, `{"ok": …}` or `{"error": "…"}`. The engine also pushes the presented
 //! View as JSON through `on_event` from its worker thread; the host must hand it
 //! to its own UI thread and must not call back into the engine from inside it.
-use super::{audio_input::Selection, clock_ms, Edit, Engine};
+use super::{audio_input::Selection, clock_ms, BluetoothDevice, Edit, Engine};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
@@ -42,6 +42,21 @@ enum Request {
     },
     Stop,
     Status { after_log_id: Option<u64> },
+    BluetoothScan {
+        #[serde(default)]
+        inquiry: bool,
+    },
+    BluetoothConnect { device: BluetoothDevice },
+    BluetoothDisconnect { id: String },
+    BluetoothSelect { id: Option<String> },
+    BluetoothPair,
+    SendStart {
+        peer: String,
+        #[serde(default = "auto")]
+        device: String,
+        #[serde(default)]
+        channel_start: u16,
+    },
 }
 fn auto() -> String {
     "auto".into()
@@ -59,6 +74,14 @@ impl KvjEngine {
             }
             Request::Stop => json!(e.stop()),
             Request::Status { after_log_id } => json!(e.status(after_log_id)),
+            Request::BluetoothScan { inquiry } => json!(e.bluetooth_scan(inquiry)?),
+            Request::BluetoothConnect { device } => json!(e.bluetooth_connect(device)?),
+            Request::BluetoothDisconnect { id } => json!(e.bluetooth_disconnect(&id)),
+            Request::BluetoothSelect { id } => json!(e.bluetooth_select(id)?),
+            Request::BluetoothPair => json!(e.bluetooth_pair()?),
+            Request::SendStart { peer, device, channel_start } => {
+                json!(e.send_start(&peer, Selection { device, channel_start })?)
+            }
         })
     }
 }

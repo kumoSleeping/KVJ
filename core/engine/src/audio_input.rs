@@ -154,6 +154,10 @@ pub struct InputDevice {
     pub error: Option<String>,
 }
 impl InputDevice {
+    /// Features streamed by another computer's KVJ instead of local capture.
+    pub fn bluetooth() -> Self {
+        Self { id: "bluetooth".into(), label: "蓝牙接收 · 另一台电脑发送".into(), channels: 0, kind: "bluetooth", resolved_id: None, error: None }
+    }
     fn native(id: String, label: String, device: Result<cpal::Device>, loopback: bool) -> Self {
         match device.and_then(|device| native_config(&device, loopback)) {
             Ok(config) => Self { id, label, channels: config.channels(), kind: if loopback { "output" } else { "input" }, resolved_id: None, error: None },

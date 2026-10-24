@@ -19,7 +19,11 @@ void kvj_engine_free(KvjEngine *engine);
 /* Requests: {"cmd":"document"} {"cmd":"edit","revision":n,"edit":{"kind":"create","name":"..."}}
  * {"cmd":"import","set_id":"..","revision":n,"paths":[..]} {"cmd":"devices"}
  * {"cmd":"start","set_id":"..","device":"auto","channel_start":0,"prepare_only":false}
- * {"cmd":"stop"} {"cmd":"status","after_log_id":null}. Free the reply with kvj_string_free. */
+ * {"cmd":"stop"} {"cmd":"status","after_log_id":null}
+ * Bluetooth: {"cmd":"bluetooth_scan","inquiry":false} {"cmd":"bluetooth_connect","device":{...}}
+ * {"cmd":"bluetooth_disconnect","id":".."} {"cmd":"bluetooth_select","id":".."|null}
+ * {"cmd":"bluetooth_pair"} {"cmd":"send_start","peer":"<address>","device":"auto","channel_start":0}.
+ * Free the reply with kvj_string_free. */
 char *kvj_call(KvjEngine *engine, const char *request);
 void kvj_string_free(char *text);
 /* Monotonic milliseconds; a match's clock_at_ms is on this clock. */

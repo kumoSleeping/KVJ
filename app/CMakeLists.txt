@@ -40,6 +40,7 @@ qt_add_qml_module(KVJ
         qml/Select.qml
         qml/Toggle.qml
         qml/Seek.qml
+        qml/SendPanel.qml
     RESOURCES
         qml/icons/check.svg
         qml/icons/chevron-down.svg
@@ -66,9 +67,12 @@ target_link_libraries(KVJ PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Svg kvj_en
 # System libraries the Rust static library needs, from
 # `cargo rustc -p kvj-engine --crate-type staticlib -- --print native-static-libs`.
 if(APPLE)
+    # ScreenCaptureKit (12.3+) and the Core Audio process tap (14.2+) are used only
+    # when present at run time; weak links keep KVJ launching on macOS 12.
     target_link_libraries(KVJ PRIVATE
-        "-framework ScreenCaptureKit" "-framework CoreMedia" "-framework AudioToolbox"
-        "-framework CoreAudio" "-framework Foundation" "-framework CoreFoundation" iconv objc)
+        "-weak_framework ScreenCaptureKit" "-weak_framework CoreAudio"
+        "-framework CoreMedia" "-framework AudioToolbox" "-framework IOBluetooth"
+        "-framework Foundation" "-framework CoreFoundation" iconv objc)
 elseif(WIN32)
     target_link_libraries(KVJ PRIVATE kernel32 ntdll userenv ws2_32 dbghelp)
 endif()

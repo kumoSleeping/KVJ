@@ -42,7 +42,10 @@ ApplicationWindow {
     readonly property var entries: currentSet ? currentSet.entries : []
     readonly property var view: Engine.view
     readonly property string phase: view.phase || ""
-    readonly property bool running: ["indexing", "permission", "listening", "matched", "searching"].indexOf(phase) >= 0
+    readonly property bool running: ["indexing", "permission", "listening", "matched", "searching", "connecting", "sending"].indexOf(phase) >= 0
+    // 0: follow and project on this computer; 1: only send to another computer.
+    // `--send` opens straight into sending, for the DJ's own computer.
+    property int page: Qt.application.arguments.indexOf("--send") >= 0 ? 1 : 0
     readonly property var match: Engine.matched && Engine.matched.entry ? Engine.matched : null
     readonly property var devices: Engine.devices
     readonly property var device: devices.length ? devices[Math.min(deviceBox.currentIndex, devices.length - 1)] : null
@@ -300,6 +303,38 @@ ApplicationWindow {
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: Theme.gap
+                spacing: 14
+
+                // Two jobs: follow and project here, or only send to another computer.
+                RowLayout {
+                    spacing: 18
+                    Repeater {
+                        model: ["跟随投放", "只发送"]
+                        Text {
+                            id: tab
+                            required property int index
+                            required property string modelData
+                            readonly property bool current: app.page === index
+                            text: modelData
+                            font.pixelSize: Theme.sizeLg
+                            font.weight: current ? Font.DemiBold : Font.Normal
+                            color: current ? Theme.text : Theme.muted
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: !app.running
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: app.page = tab.index
+                            }
+                        }
+                    }
+                }
+
+                StackLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    currentIndex: app.page
+
+            ColumnLayout {
                 spacing: 18
 
                 // What is on the screen now.
@@ -308,7 +343,8 @@ ApplicationWindow {
                     spacing: 4
                     Text {
                         Layout.fillWidth: true
-                        text: app.match ? app.match.entry.title : (app.phaseText(app.phase) || "KVJ")
+                        visible: text.length > 0
+                        text: app.match ? app.match.entry.title : app.phaseText(app.phase)
                         font.pixelSize: 18
                         font.weight: Font.DemiBold
                         color: app.match ? Theme.text : Theme.muted
@@ -390,6 +426,45 @@ ApplicationWindow {
                             tip: "刷新设备"
                             enabled: !app.running && !Engine.busy
                             onClicked: Engine.refreshDevices()
+                        }
+                    }
+                }
+
+                // Receiving over Bluetooth: the operator picks the current DJ.
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    visible: app.running && !!app.device && app.device.id === "bluetooth"
+                    Caption { text: "DJ" }
+                    Repeater {
+                        model: (app.view.connections && app.view.connections.incoming) || []
+                        ItemDelegate {
+                            id: dj
+                            required property var modelData
+                            Layout.fillWidth: true
+                            implicitHeight: 32
+                            leftPadding: 8
+                            onClicked: Engine.selectBluetooth(modelData.selected ? "" : modelData.link.peer)
+                            contentItem: RowLayout {
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: dj.modelData.device.name
+                                    font.pixelSize: Theme.size
+                                    font.weight: dj.modelData.selected ? Font.DemiBold : Font.Normal
+                                    color: dj.modelData.selected ? Theme.text : Theme.muted
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    text: dj.modelData.link.state === "receiving" ? "发送中"
+                                        : dj.modelData.link.state === "connected" ? "待命" : "已断开"
+                                    font.pixelSize: Theme.sizeXs
+                                    color: Theme.muted
+                                }
+                            }
+                            background: Rectangle {
+                                radius: Theme.radius
+                                color: dj.hovered ? Theme.hover : "transparent"
+                            }
                         }
                     }
                 }
@@ -535,6 +610,13 @@ ApplicationWindow {
                         topPadding: 1
                         bottomPadding: 1
                     }
+                }
+            }
+
+                SendPanel {
+                    running: app.running
+                    inputs: app.devices
+                }
                 }
             }
         }

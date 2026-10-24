@@ -4,6 +4,7 @@
 //! Ported from KDJ's Live VJ (`src-tauri/src/live_vj` at 00f377a) without Tauri.
 pub mod decode;
 mod audio_input;
+mod bluetooth;
 #[cfg(target_os = "macos")]
 mod capture;
 mod diagnostics;
@@ -17,6 +18,7 @@ mod qos;
 mod runtime;
 
 pub use audio_input::{InputDevice, Selection};
+pub use bluetooth::Device as BluetoothDevice;
 pub use diagnostics::{Level, LogEntry, Stage};
 pub use document::{Document, Edit, Entry, Set};
 
@@ -65,6 +67,11 @@ pub struct Match {
 #[derive(Clone, Default, Serialize)]
 pub struct View {
     pub session: String,
+    /// "vj" (recognize and project) or "send" (stream features over Bluetooth).
+    pub mode: String,
+    pub bluetooth: Option<bluetooth::LinkStatus>,
+    pub connections: bluetooth::ConnectionStatus,
+    pub send_target: Option<String>,
     pub presentation_epoch: u64,
     pub input_device: String,
     pub input_channel_start: u16,
@@ -108,6 +115,7 @@ pub struct Engine {
     prepared: Mutex<Option<Arc<index::PreparedSet>>>,
     session: Mutex<Option<Session>>,
     gate: Mutex<()>,
+    connections: bluetooth::Hub,
     notify: Notify,
 }
 const MEDIA: &[&str] = &[
@@ -125,6 +133,7 @@ impl Engine {
             prepared: Mutex::new(None),
             session: Mutex::new(None),
             gate: Mutex::new(()),
+            connections: bluetooth::Hub::default(),
             notify,
         })
     }
@@ -250,15 +259,14 @@ impl Engine {
         Ok(document)
     }
     pub fn devices(&self) -> Result<Vec<InputDevice>> {
-        audio_input::devices()
-    }
-    /// Index the Set (reusing caches) and, unless `prepare_only`, start listening.
-    pub fn start(self: &Arc<Self>, set_id: &str, input: Selection, prepare_only: bool) -> Result<View> {
-        if !prepare_only {
-            input.validate()?;
+        let mut devices = audio_input::devices()?;
+        if cfg!(any(target_os = "macos", windows)) {
+            devices.push(InputDevice::bluetooth());
         }
-        let _gate = self.gate.lock().unwrap();
-        // A stopped worker exits at its next cancellation check; wait for it.
+        Ok(devices)
+    }
+    /// A stopped worker exits at its next cancellation check; wait for it.
+    fn join_stopped(&self) {
         let stopped = {
             let mut session = self.session.lock().unwrap();
             if session.as_ref().is_some_and(|s| s.cancel.load(Ordering::Relaxed)) {
@@ -270,6 +278,15 @@ impl Engine {
         if let Some(s) = stopped {
             let _ = s.worker.join();
         }
+    }
+    /// Index the Set (reusing caches) and, unless `prepare_only`, start listening.
+    pub fn start(self: &Arc<Self>, set_id: &str, input: Selection, prepare_only: bool) -> Result<View> {
+        // Bluetooth is an explicit, mutually exclusive source with nothing to open yet.
+        if !prepare_only && input.device != "bluetooth" {
+            input.validate()?;
+        }
+        let _gate = self.gate.lock().unwrap();
+        self.join_stopped();
         if self.running() {
             bail!("请先停止当前会话");
         }
@@ -285,6 +302,7 @@ impl Engine {
         let session = document::id();
         let view = View {
             session: session.clone(),
+            mode: "vj".into(),
             input_device: input.device.clone(),
             input_channel_start: input.channel_start,
             set_id: set_id.into(),
@@ -322,6 +340,9 @@ impl Engine {
                 self.log(&v.session, Level::Info, Stage::Session, "会话已停止".into());
             }
             v.phase = "stopped".into();
+            if let Some(link) = &mut v.bluetooth {
+                link.state = "stopped".into();
+            }
             v.scanning = None;
             v.matched = None;
             v.candidate = None;
@@ -341,6 +362,7 @@ impl Engine {
             .unwrap()
             .since(&view.session, after_log_id);
         view.clock_ms = clock_ms();
+        view.connections = self.connections.snapshot();
         Status { view, logs }
     }
     /// Stop and wait for the worker, so `notify` is never called afterwards.
@@ -351,6 +373,7 @@ impl Engine {
             s.cancel.store(true, Ordering::Relaxed);
             let _ = s.worker.join();
         }
+        self.connections.shutdown();
     }
 }
 fn extension(path: &Path) -> Option<String> {

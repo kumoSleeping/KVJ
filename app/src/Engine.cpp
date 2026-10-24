@@ -197,6 +197,53 @@ void Engine::stop()
     }, false);
 }
 
+void Engine::scanBluetooth(bool inquiry)
+{
+    call({{"cmd", "bluetooth_scan"}, {"inquiry", inquiry}}, [this](const QJsonValue &ok) {
+        m_bluetoothDevices = ok.toArray().toVariantList();
+        emit bluetoothDevicesChanged();
+    }, true);
+}
+
+void Engine::connectBluetooth(const QVariantMap &device)
+{
+    call({{"cmd", "bluetooth_connect"}, {"device", QJsonObject::fromVariantMap(device)}}, nullptr, true);
+}
+
+void Engine::disconnectBluetooth(const QString &id)
+{
+    call({{"cmd", "bluetooth_disconnect"}, {"id", id}}, nullptr, true);
+}
+
+void Engine::selectBluetooth(const QString &id)
+{
+    call({{"cmd", "bluetooth_select"}, {"id", id.isEmpty() ? QJsonValue() : QJsonValue(id)}}, nullptr, false);
+}
+
+void Engine::pairBluetooth()
+{
+    call({{"cmd", "bluetooth_pair"}}, nullptr, true);
+}
+
+void Engine::startSending(const QString &peer, const QString &device, int channelStart)
+{
+    clearError();
+    const QJsonObject request{
+        {"cmd", "send_start"},
+        {"peer", peer},
+        {"device", device.isEmpty() ? QStringLiteral("auto") : device},
+        {"channel_start", channelStart},
+    };
+    call(request, [this](const QJsonValue &ok) {
+        m_view = ok.toObject().toVariantMap();
+        m_session = m_view.value("session").toString();
+        m_logs.clear();
+        m_logCursor = 0;
+        emit viewChanged();
+        emit logsChanged();
+    }, true);
+}
+
 void Engine::applyPresented(const QJsonObject &view)
 {
     const QVariantMap matched = view.value("matched").toObject().toVariantMap();
@@ -208,8 +255,6 @@ void Engine::applyPresented(const QJsonObject &view)
 
 void Engine::poll()
 {
-    if (m_session.isEmpty())
-        return;
     const QJsonObject request{{"cmd", "status"}, {"after_log_id", m_logCursor}};
     call(request, [this](const QJsonValue &ok) {
         const QJsonObject status = ok.toObject();
@@ -226,8 +271,12 @@ void Engine::poll()
         }
         QVariantMap view = status.toVariantMap();
         view.remove("logs");
-        m_view = view;
-        emit viewChanged();
+        // The clock always moves; nothing else changed means nothing to redraw.
+        view.remove("clock_ms");
+        if (view != m_view) {
+            m_view = view;
+            emit viewChanged();
+        }
         // Stopped or failed: nothing is presented any more.
         const QString phase = view.value("phase").toString();
         if ((phase == "stopped" || phase == "failed") && !m_matched.isEmpty()) {

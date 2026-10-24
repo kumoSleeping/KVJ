@@ -28,6 +28,8 @@
     <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>KVJ 需要读取你选择的麦克风或声卡输入，用来识别正在播放的音乐并同步画面；不会保存录音。</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>KVJ 用蓝牙在两台电脑之间传输音频识别特征，用来同步画面；不传输录音。</string>
     <key>NSAudioCaptureUsageDescription</key>
     <string>KVJ 需要捕获系统或输出设备播放的音频，用来识别正在播放的音乐并同步画面；不会保存录音。</string>
 </dict>

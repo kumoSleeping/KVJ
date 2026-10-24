@@ -235,7 +235,7 @@ fn presentation(
     }
 }
 pub fn run(
-    engine: &Engine,
+    engine: &Arc<Engine>,
     session: String,
     set: Set,
     cache: PathBuf,
@@ -281,14 +281,14 @@ pub fn run(
         });
     }
 }
-fn run_inner(engine: &Engine, session: &str, set: &PreparedSet, cancel: &AtomicBool, input: &super::audio_input::Selection) -> Result<()> {
+fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &AtomicBool, input: &super::audio_input::Selection) -> Result<()> {
     {
         if set.recordings.is_empty() {
             bail!("Set 没有素材")
         }
         super::qos::prefer_live_audio();
         publish(engine, session, |v| v.phase = "permission".into());
-        let mut source = super::feature_input::Input::start(input)?;
+        let mut source = super::feature_input::Input::start(engine, input)?;
         publish(engine, session, |v| v.phase = "listening".into());
         log(
             engine,
@@ -341,8 +341,9 @@ fn run_inner(engine: &Engine, session: &str, set: &PreparedSet, cancel: &AtomicB
             }
             let feature_ms = polled.feature_ms;
             let packet = polled.observation;
+            publish(engine, session, |v| v.bluetooth = polled.bluetooth);
             let input = polled.status.unwrap_or_else(|| super::diagnostics::InputStatus {
-                state: InputState::Waiting, source: String::new(), sample_rate: 8000,
+                state: InputState::Waiting, source: "蓝牙".into(), sample_rate: 8000,
                 channels: vec![], rms_dbfs: None, peak_dbfs: None, buffered_seconds: 0.,
                 packet_age_ms: None, packets: 0, gaps: 0,
             });
