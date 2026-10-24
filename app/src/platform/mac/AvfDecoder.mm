@@ -80,7 +80,7 @@ public:
         }
     }
 
-    bool next(VideoFrame *frame) override
+    bool next(VideoFrame *frame, double discardBefore) override
     {
         @autoreleasepool {
             while (m_output) {
@@ -96,6 +96,10 @@ public:
                     continue;
                 }
                 frame->pts = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sample));
+                if (frame->pts < discardBefore) {
+                    CFRelease(sample);
+                    continue;
+                }
                 CVPixelBufferLockBaseAddress(image, kCVPixelBufferLock_ReadOnly);
                 const size_t width = CVPixelBufferGetWidth(image);
                 const size_t height = CVPixelBufferGetHeight(image);

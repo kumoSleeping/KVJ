@@ -55,7 +55,11 @@ bool VideoPlayer::frameFor(double target, VideoFrame *frame)
             recycle(std::move(m_queue.front()));
             m_queue.pop_front();
         }
-        if (!m_queue.empty() && m_queue.front().pts <= target && m_queue.front().pts != m_shownPts) {
+        // After a jump the queue still holds the old position: keep the current
+        // picture rather than flash a stale frame while the decoder seeks.
+        const bool stale = !m_queue.empty()
+            && (target - m_queue.front().pts > kAheadLimit || m_queue.front().pts - target > kBackTolerance);
+        if (!stale && !m_queue.empty() && m_queue.front().pts <= target && m_queue.front().pts != m_shownPts) {
             *frame = m_queue.front();
             m_shownPts = frame->pts;
             fresh = true;
@@ -90,6 +94,11 @@ void VideoPlayer::run()
     double step = 1.0 / 30;
     bool positioned = false;
     bool ended = false;
+    // How long a seek takes to deliver its first frame, learned per file. Seeks
+    // aim that far ahead so the picture lands on time instead of chasing it.
+    double lead = 0.15;
+    std::chrono::steady_clock::time_point seekedAt;
+    bool measuring = false;
 
     std::unique_lock lock(m_mutex);
     while (!m_stop) {
@@ -100,7 +109,7 @@ void VideoPlayer::run()
         const double target = m_target;
         const double oldest = m_queue.empty() ? cursor : m_queue.front().pts;
         if (!positioned || target < oldest - kBackTolerance || target > cursor + kAheadLimit) {
-            double to = std::max(0.0, target);
+            double to = std::max(0.0, target + (positioned ? lead : 0.0));
             if (duration > 0)
                 to = std::min(to, std::max(0.0, duration - 0.05));
             while (!m_queue.empty()) {
@@ -114,6 +123,8 @@ void VideoPlayer::run()
             last = -1;
             positioned = true;
             ended = false;
+            seekedAt = std::chrono::steady_clock::now();
+            measuring = true;
             continue;
         }
         const auto ahead = std::count_if(m_queue.begin(), m_queue.end(),
@@ -131,8 +142,10 @@ void VideoPlayer::run()
                 break;
             }
         }
+        // Frames already past their display interval are never converted.
+        const double discardBefore = m_target - step;
         lock.unlock();
-        const bool ok = decoder->next(&frame);
+        const bool ok = decoder->next(&frame, discardBefore);
         lock.lock();
         if (!ok) {
             ended = true;
@@ -151,6 +164,11 @@ void VideoPlayer::run()
         if (frame.pts + step <= m_target) {
             recycle(std::move(frame));
             continue;
+        }
+        if (measuring) {
+            measuring = false;
+            const double took = std::chrono::duration<double>(std::chrono::steady_clock::now() - seekedAt).count();
+            lead = std::clamp(0.7 * lead + 0.3 * took, 0.0, 1.0);
         }
         m_queue.push_back(std::move(frame));
     }

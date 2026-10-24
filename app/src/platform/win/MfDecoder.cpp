@@ -81,7 +81,7 @@ public:
         return true;
     }
 
-    bool next(VideoFrame *frame) override
+    bool next(VideoFrame *frame, double discardBefore) override
     {
         for (;;) {
             DWORD flags = 0;
@@ -97,6 +97,9 @@ public:
             if ((flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) && !readFormat())
                 return false;
             if (!sample)
+                continue;
+            // Catching up from a keyframe: skip the conversion and the read-back.
+            if (double(timestamp) / 1e7 < discardBefore)
                 continue;
             ComPtr<IMFMediaBuffer> buffer;
             if (FAILED(sample->GetBufferByIndex(0, &buffer)) && FAILED(sample->ConvertToContiguousBuffer(&buffer)))

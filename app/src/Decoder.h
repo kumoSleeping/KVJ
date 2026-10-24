@@ -29,9 +29,11 @@ public:
     // before) `seconds`; frames before it may still be returned and are dropped
     // by the caller.
     virtual bool seek(double seconds) = 0;
-    // The next frame in presentation order; false at the end or on an error.
-    // `frame->image` may hold an unshared image of the right size to reuse.
-    virtual bool next(VideoFrame *frame) = 0;
+    // The next frame in presentation order at or after `discardBefore` seconds;
+    // earlier frames are decoded (they are references) but never converted or
+    // copied. False at the end or on an error. `frame->image` may hold an
+    // unshared image of the right size to reuse.
+    virtual bool next(VideoFrame *frame, double discardBefore) = 0;
     virtual double duration() const = 0;
     virtual QString error() const = 0;
 };

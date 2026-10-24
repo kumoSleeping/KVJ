@@ -34,7 +34,7 @@ int main(int argc, char *argv[])
         double first = -1, worstLate = 0;
         int shown = 0, ticks = 0;
         QSize size;
-        while (clock.elapsed() < 1500) {
+        while (clock.elapsed() < 3000) {
             ++ticks;
             const double target = start + clock.elapsed() / 1000.0;
             VideoFrame frame;
@@ -51,12 +51,14 @@ int main(int argc, char *argv[])
         }
         if (!player.error().isEmpty())
             out << "error: " << player.error() << "\n";
-        const bool ok = first >= 0 && shown > 10;
+        const double rate = first >= 0 ? shown / ((3000 - first) / 1000.0) : 0;
+        // A frame within 1.5 s of any jump, then a steady picture.
+        const bool ok = first >= 0 && first < 1500 && rate > 15;
         failures += ok ? 0 : 1;
         out << QStringLiteral("start %1 s · first frame %2 ms · %3×%4 · %5 frames/s after · worst lag %6 ms · %7 polls/s · %8\n")
                    .arg(start, 0, 'f', 1).arg(first).arg(size.width()).arg(size.height())
-                   .arg(shown / ((1500 - std::max(0.0, first)) / 1000.0), 0, 'f', 1)
-                   .arg(worstLate * 1000, 0, 'f', 1).arg(ticks / 1.5, 0, 'f', 0).arg(ok ? "ok" : "FAIL");
+                   .arg(rate, 0, 'f', 1)
+                   .arg(worstLate * 1000, 0, 'f', 1).arg(ticks / 3.0, 0, 'f', 0).arg(ok ? "ok" : "FAIL");
         out.flush();
     }
     return failures ? 1 : 0;
