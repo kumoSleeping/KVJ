@@ -1,0 +1,19 @@
+# Third-party notices
+
+KVJ is licensed under GPL-3.0-or-later (see `LICENSE`). Its live-following code is
+ported from KDJ (https://github.com/kumoSleeping/KDJ, GPL-3.0-or-later), commit
+00f377a, the last commit before KDJ removed Live VJ.
+
+| Component | Use | License |
+|---|---|---|
+| Qt 6 (Qt Base, Qt Declarative, Qt Svg, Qt Image Formats) | application shell, dynamically linked | LGPL-3.0 |
+| cpal 0.18.1 (`vendor/cpal-0.18.1`, patched as described in `KDJ-PATCH.md`) | audio capture | Apache-2.0 |
+| symphonia | audio decoding for indexing | MPL-2.0 |
+| rustfft | spectra | MIT OR Apache-2.0 |
+| objc2 family, windows-sys / windows | system bindings | MIT OR Apache-2.0 / MIT OR Apache-2.0 |
+| serde, serde_json, anyhow, tracing | runtime | MIT OR Apache-2.0 |
+| Corrosion | links the Rust engine into the CMake build (build time only) | MIT |
+| Lucide icons (`app/qml/icons`, redrawn paths) | interface icons | ISC |
+
+Video is decoded by the operating system (AVFoundation/VideoToolbox on macOS,
+Media Foundation on Windows); no decoder is bundled.

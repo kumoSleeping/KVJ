@@ -6,7 +6,7 @@ exclude = ["vendor/cpal-0.18.1"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-license = "MIT OR Apache-2.0"
+license = "GPL-3.0-or-later"
 
 # Dependencies compile once and stay fast at runtime; our own crates stay quick to rebuild.
 [profile.dev]
