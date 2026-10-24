@@ -1,0 +1,91 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  QT_VERSION: 6.8.3
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: macos-arm64
+            qt_arch: clang_64
+          - os: windows-latest
+            name: windows-x64
+            qt_arch: win64_msvc2022_64
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Rust tests
+        run: cargo test -p kvj-recognize -p kvj-engine --release
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: ${{ matrix.qt_arch }}
+          modules: qtimageformats
+          cache: true
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+
+      - name: Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Configure
+        run: cmake -S app -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DKVJ_BUILD_CHECKS=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Decoder check (Media Foundation)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress | Out-Null
+          ffmpeg -v error -f lavfi -i testsrc2=size=1920x1080:rate=30 -t 20 -c:v libx264 -pix_fmt yuv420p sample.mp4
+          $env:KVJ_MAX_HEIGHT = "720"
+          ./build/kvj-player-check.exe sample.mp4 0 12 3 15.5
+
+      - name: Smoke test (offscreen, screenshot)
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+          KVJ_DATA_DIR: ${{ runner.temp }}/kvj-data
+          KVJ_SNAPSHOT: ${{ github.workspace }}/screenshot-${{ matrix.name }}.png
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then ./build/KVJ.exe; else ./build/KVJ.app/Contents/MacOS/KVJ; fi
+          test -s "$KVJ_SNAPSHOT"
+
+      - name: Package
+        shell: bash
+        run: |
+          cmake --install build --prefix dist
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            codesign --force --deep --sign - dist/KVJ.app
+            hdiutil create -volname KVJ -srcfolder dist/KVJ.app -ov -format UDZO KVJ-${{ matrix.name }}.dmg
+          else
+            7z a KVJ-${{ matrix.name }}.zip ./dist/*
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KVJ-${{ matrix.name }}
+          path: |
+            KVJ-${{ matrix.name }}.dmg
+            KVJ-${{ matrix.name }}.zip
+            screenshot-${{ matrix.name }}.png
+          if-no-files-found: warn

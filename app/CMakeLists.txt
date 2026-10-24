@@ -109,9 +109,10 @@ if(KVJ_BUILD_CHECKS)
     endif()
 endif()
 
+include(GNUInstallDirs)
 install(TARGETS KVJ
     BUNDLE DESTINATION .
-    RUNTIME DESTINATION .)
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 qt_generate_deploy_qml_app_script(
     TARGET KVJ
     OUTPUT_SCRIPT deploy_script
