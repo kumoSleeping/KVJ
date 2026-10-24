@@ -1,0 +1,119 @@
+cmake_minimum_required(VERSION 3.22)
+project(KVJ VERSION 0.1.0 LANGUAGES CXX)
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2 Svg)
+qt_standard_project_setup(REQUIRES 6.8)
+
+# The Rust engine (../core/engine) is built by Cargo and linked as a static library.
+include(FetchContent)
+FetchContent_Declare(Corrosion
+    GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+    GIT_TAG v0.5.2)
+FetchContent_MakeAvailable(Corrosion)
+corrosion_import_crate(
+    MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../Cargo.toml
+    CRATES kvj-engine
+    CRATE_TYPES staticlib)
+
+qt_add_executable(KVJ MACOSX_BUNDLE WIN32
+    src/main.cpp
+)
+set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+qt_add_qml_module(KVJ
+    URI KVJ
+    VERSION 1.0
+    QML_FILES
+        qml/Main.qml
+        qml/Projection.qml
+        qml/Overlay.qml
+        qml/Theme.qml
+        qml/Caption.qml
+        qml/IconButton.qml
+        qml/TextButton.qml
+        qml/Field.qml
+        qml/Select.qml
+        qml/Toggle.qml
+        qml/Seek.qml
+    RESOURCES
+        qml/icons/check.svg
+        qml/icons/chevron-down.svg
+        qml/icons/file-plus.svg
+        qml/icons/folder-plus.svg
+        qml/icons/monitor.svg
+        qml/icons/play.svg
+        qml/icons/plus.svg
+        qml/icons/refresh.svg
+        qml/icons/send.svg
+        qml/icons/square.svg
+        qml/icons/trash.svg
+        qml/icons/x.svg
+    SOURCES
+        src/Engine.h src/Engine.cpp
+        src/VideoSurface.h src/VideoSurface.cpp
+        src/VideoPlayer.h src/VideoPlayer.cpp
+        src/Decoder.h
+)
+target_include_directories(KVJ PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core/engine/include)
+target_link_libraries(KVJ PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Svg kvj_engine)
+# System libraries the Rust static library needs, from
+# `cargo rustc -p kvj-engine --crate-type staticlib -- --print native-static-libs`.
+if(APPLE)
+    target_link_libraries(KVJ PRIVATE
+        "-framework ScreenCaptureKit" "-framework CoreMedia" "-framework AudioToolbox"
+        "-framework CoreAudio" "-framework Foundation" "-framework CoreFoundation" iconv objc)
+elseif(WIN32)
+    target_link_libraries(KVJ PRIVATE kernel32 ntdll userenv ws2_32 dbghelp)
+endif()
+
+if(APPLE)
+    target_sources(KVJ PRIVATE src/platform/mac/AvfDecoder.mm)
+    set_source_files_properties(src/platform/mac/AvfDecoder.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_link_libraries(KVJ PRIVATE
+        "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework Foundation")
+    set_target_properties(KVJ PROPERTIES
+        OUTPUT_NAME KVJ
+        MACOSX_BUNDLE_GUI_IDENTIFIER com.kumo.kvj
+        MACOSX_BUNDLE_BUNDLE_NAME KVJ
+        MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+        MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in)
+elseif(WIN32)
+    target_sources(KVJ PRIVATE src/platform/win/MfDecoder.cpp)
+    target_compile_definitions(KVJ PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(KVJ PRIVATE mfplat mfreadwrite mfuuid d3d11 ole32 propsys)
+endif()
+
+# Headless decoder/player check (not shipped).
+option(KVJ_BUILD_CHECKS "Build headless checks" OFF)
+if(KVJ_BUILD_CHECKS)
+    qt_add_executable(kvj-player-check checks/player_check.cpp src/VideoPlayer.cpp)
+    target_include_directories(kvj-player-check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(kvj-player-check PRIVATE Qt6::Core Qt6::Gui)
+    set_target_properties(kvj-player-check PROPERTIES MACOSX_BUNDLE OFF WIN32_EXECUTABLE OFF)
+    if(APPLE)
+        target_sources(kvj-player-check PRIVATE src/platform/mac/AvfDecoder.mm)
+        target_link_libraries(kvj-player-check PRIVATE
+            "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework Foundation")
+    elseif(WIN32)
+        target_sources(kvj-player-check PRIVATE src/platform/win/MfDecoder.cpp)
+        target_compile_definitions(kvj-player-check PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+        target_link_libraries(kvj-player-check PRIVATE mfplat mfreadwrite mfuuid d3d11 ole32 propsys)
+    endif()
+endif()
+
+install(TARGETS KVJ
+    BUNDLE DESTINATION .
+    RUNTIME DESTINATION .)
+qt_generate_deploy_qml_app_script(
+    TARGET KVJ
+    OUTPUT_SCRIPT deploy_script
+    NO_UNSUPPORTED_PLATFORM_ERROR)
+install(SCRIPT ${deploy_script})
