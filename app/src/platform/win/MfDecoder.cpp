@@ -6,8 +6,7 @@
 #include "../../Decoder.h"
 
 #include <windows.h>
-#include <d3d10.h>
-#include <d3d11.h>
+#include <d3d11_4.h>
 #include <mfapi.h>
 #include <mferror.h>
 #include <mfidl.h>
@@ -125,7 +124,7 @@ private:
         if (FAILED(hr))
             return false;
         // Media Foundation uses the device from its own threads.
-        ComPtr<ID3D10Multithread> multithread;
+        ComPtr<ID3D11Multithread> multithread;
         if (SUCCEEDED(m_device.As(&multithread)))
             multithread->SetMultithreadProtected(TRUE);
         UINT token = 0;
