@@ -13,6 +13,9 @@ QtObject {
     property real clockAtMs: 0
     // 1 is the material's own speed.
     property real tempo: 1
+    // The speed last set by hand (setTempo); following sets `tempo` itself and
+    // gives this back when it lets go.
+    property real ownTempo: 1
     property bool playing: false
     // A nudge, as a DJ holds a pitch bend: while a key is held the picture
     // plays half as fast again as `tempo` (ahead) or at 0.7 of it (back); let
@@ -61,6 +64,7 @@ QtObject {
     function setTempo(next) {
         const at = now()
         tempo = Math.round(Math.max(minTempo, Math.min(maxTempo, next)) * 1000) / 1000
+        ownTempo = tempo
         anchor(at)
     }
     // Bends ahead (direction > 0) or back until `letGo`, or for `ms` only;

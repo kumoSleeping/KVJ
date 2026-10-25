@@ -136,6 +136,9 @@ ApplicationWindow {
     // Following let go of the picture: the player carries on from the same
     // frame at the same speed.
     onAiPictureChanged: if (!aiPicture) takeOver()
+    // Following stopped (or only listens): the speed is the operator's own
+    // again, once the player has taken the picture over.
+    onAiLeadsChanged: if (!aiLeads) Qt.callLater(giveTempoBack)
     onEntriesChanged: cue()
 
     function takeOver() {
@@ -146,6 +149,10 @@ ApplicationWindow {
         transport.tempo = Math.max(transport.minTempo, Math.min(transport.maxTempo, m.rate))
         transport.load(m.entry, at, true)
         app.tick()
+    }
+    function giveTempoBack() {
+        if (!app.aiLeads && transport.tempo !== transport.ownTempo)
+            transport.setTempo(transport.ownTempo)
     }
     // One helper paused: the player has the picture and the helper at work moves
     // it, measured against the picture itself.
