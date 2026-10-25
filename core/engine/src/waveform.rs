@@ -30,7 +30,8 @@ use symphonia::core::{
 
 /// Columns a second.
 pub const RATE: f64 = 100.;
-const REVISION: u32 = 2;
+// 3: heights no longer all full over files with digital silence.
+const REVISION: u32 = 3;
 const MAGIC: &[u8; 8] = b"KVJWAVE\0";
 const LOW_HZ: f64 = 200.;
 const HIGH_HZ: f64 = 1500.;
@@ -259,7 +260,11 @@ fn shape(bands: &[Vec<f64>; 3]) -> Waveform {
     let mut sorted: Vec<f64> = if count > bucket { moving_average(&energy, bucket) } else { energy }
         .into_iter()
         .map(f64::sqrt)
+        .filter(|v| v.is_finite())
         .collect();
+    if sorted.is_empty() {
+        sorted.push(0.);
+    }
     sorted.sort_by(f64::total_cmp);
     let hi = percentile(&sorted, 99.).max(1e-9);
     let lo = percentile(&sorted, 5.);
@@ -302,18 +307,16 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
     sorted[a] + (sorted[b] - sorted[a]) * (at - a as f64)
 }
 
-/// Centred box average over `span` (odd) values, the edges repeated.
+/// Centred box average over `span` (odd) values, the edges repeated. Each
+/// window is summed afresh: a running sum drifts below zero over digital
+/// silence after loud parts, its square root is NaN, and the NaN heights
+/// took the 99th percentile with them (every column at full height).
 fn moving_average(values: &[f64], span: usize) -> Vec<f64> {
-    let half = span / 2;
-    let last = values.len() - 1;
-    let at = |i: isize| values[i.clamp(0, last as isize) as usize];
-    let mut sum: f64 = (-(half as isize)..=half as isize).map(at).sum();
-    let mut out = Vec::with_capacity(values.len());
-    for i in 0..values.len() as isize {
-        out.push(sum / span as f64);
-        sum += at(i + half as isize + 1) - at(i - half as isize);
-    }
-    out
+    let half = (span / 2) as isize;
+    let last = values.len() as isize - 1;
+    (0..=last)
+        .map(|i| (i - half..=i + half).map(|j| values[j.clamp(0, last) as usize]).sum::<f64>() / span as f64)
+        .collect()
 }
 
 #[cfg(test)]
@@ -363,6 +366,36 @@ mod tests {
         let wave = shape(&bands_of(&samples, sr));
         assert_eq!(wave.bytes[50], 0);
         assert!(wave.bytes[300] > 200);
+    }
+
+    #[test]
+    fn silence_after_loud_parts_stays_zero() {
+        // Loud, uneven energies fading out, then digital silence (as the
+        // tracks whose waveform came out all full height have): the windows
+        // over the silence must average exactly zero, not a hair below it.
+        let mut seed = 1u64;
+        let mut values: Vec<f64> = (0..2000)
+            .map(|_| {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                3e5 + (seed >> 33) as f64 / (1u64 << 31) as f64 * 1e6
+            })
+            .collect();
+        values.extend((0..200).map(|k| 1e6 * 10f64.powf(-k as f64 / 20.)));
+        values.extend(std::iter::repeat_n(0., 500));
+        let out = moving_average(&values, 25);
+        assert!(out.iter().all(|v| *v >= 0.));
+        assert!(out[2213..].iter().all(|v| *v == 0.), "{:e}", out[2213]);
+    }
+
+    #[test]
+    fn a_bad_column_does_not_flatten_the_rest() {
+        let n = 1000;
+        let ramp: Vec<f64> = (0..n).map(|i| (i % 100) as f64 * 1e4).collect();
+        let mut bands = [ramp.clone(), ramp.clone(), ramp];
+        bands[0][500] = f64::NAN;
+        let wave = shape(&bands);
+        let full = wave.bytes[..n].iter().filter(|v| **v == 255).count();
+        assert!(full * 4 < n, "{full} of {n} columns full");
     }
 
     #[test]
