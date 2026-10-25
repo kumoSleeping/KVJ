@@ -220,22 +220,21 @@ fn analyse(path: &Path, cancelled: &dyn Fn() -> bool) -> Result<Option<Waveform>
             Err(e) => return Err(e.into()),
         };
         let spec = *audio.spec();
+        // A rate of 0 would make endless columns.
+        anyhow::ensure!(spec.rate > 0, "音轨采样率无效");
         let b = bands.get_or_insert_with(|| Bands::new(spec.rate));
         if b.sr != spec.rate as f64 {
             bail!("音轨中途改变采样率");
         }
         let channels = spec.channels.count().max(1);
-        let required = audio.capacity() * channels;
-        if buffer.as_ref().is_none_or(|s| s.capacity() < required) {
-            buffer = Some(SampleBuffer::new(audio.capacity() as u64, spec));
-        }
-        let slot = buffer.as_mut().unwrap();
-        slot.copy_interleaved_ref(audio);
-        let frames = slot.samples().chunks(channels).map(|f| {
+        // Bounded like the analysis decoder: a malformed packet's size must
+        // not reach an allocation that aborts the app.
+        let interleaved = super::decode::copy_audio_packet(&mut buffer, audio)?;
+        let frames = interleaved.chunks(channels).map(|f| {
             let v = f.iter().sum::<f32>();
             if v.is_finite() { v } else { 0. }
         });
-        samples += slot.samples().len() / channels;
+        samples += interleaved.len() / channels;
         if !b.push(frames, cancelled) {
             return Ok(None);
         }

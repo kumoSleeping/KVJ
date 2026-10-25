@@ -208,20 +208,39 @@ fn decode_audio_inner_cancellable(
         .make(&params, &DecoderOptions::default())
         .context("没有可用的解码器")?;
 
+    // Seconds decoded before `offset` that are not part of the result: what a
+    // seek lands short of the asked time (it stops at a sync point), or all of
+    // it when the seek fails. Kept, they would shift every position of the
+    // block by that much.
+    let mut skip_seconds = 0.0;
     if offset > 0.0 {
-        // seek 失败不是致命的（有些容器没有索引）——退回从头解码，
-        // 分析结果会略有不同但仍然可用，比整首歌分析失败强。
-        if let Err(err) = format.seek(
+        // seek 失败不是致命的（有些容器没有索引）——退回从头解码并丢掉 offset 之前的部分。
+        match format.seek(
             symphonia::core::formats::SeekMode::Accurate,
             symphonia::core::formats::SeekTo::Time {
                 time: symphonia::core::units::Time::from(offset),
                 track_id: Some(track_id),
             },
         ) {
-            tracing::debug!("跳转到 {offset}s 失败，改从头解码：{err}");
+            Ok(seeked) => {
+                let early = seeked.required_ts.saturating_sub(seeked.actual_ts);
+                skip_seconds = match (params.time_base, known_sample_rate(params.sample_rate)) {
+                    (Some(base), _) => {
+                        let t = base.calc_time(early);
+                        t.seconds as f64 + t.frac
+                    }
+                    (None, Some(rate)) => early as f64 / rate as f64,
+                    (None, None) => 0.0,
+                };
+            }
+            Err(err) => {
+                tracing::debug!("跳转到 {offset}s 失败，改从头解码：{err}");
+                skip_seconds = offset;
+            }
         }
         decoder.reset();
     }
+    let mut skip_frames: Option<usize> = None;
 
     let mut mono: Vec<f32> = Vec::new();
     let mut buffer: Option<SampleBuffer<f32>> = None;
@@ -268,7 +287,18 @@ fn decode_audio_inner_cancellable(
         if spec.rate > 0 {
             source_sr = spec.rate;
         }
-        let interleaved = copy_audio_packet(&mut buffer, audio)?;
+        let ch = spec.channels.count().max(1);
+        let mut interleaved = copy_audio_packet(&mut buffer, audio)?;
+        // Counted in frames at the first packet's real rate.
+        let skip = skip_frames.get_or_insert_with(|| (skip_seconds * source_sr as f64).round() as usize);
+        if *skip > 0 {
+            let dropped = (*skip).min(interleaved.len() / ch);
+            *skip -= dropped;
+            interleaved = &interleaved[dropped * ch..];
+            if interleaved.is_empty() {
+                continue;
+            }
+        }
         decoded_samples = decoded_samples.saturating_add(interleaved.len());
 
         // 交错样本混成单声道。
@@ -278,7 +308,6 @@ fn decode_audio_inner_cancellable(
         // 稳定低 2.97 dB，能量分级整片掉一档——12 首里 11 首差 1。
         // 这条差异是常数增益，对 BPM/调号无影响（那两条都先按峰值归一），
         // 但 energy / rms_db / peak_db 是直接进曲库的字段，必须对齐。
-        let ch = spec.channels.count().max(1);
         let gain = 1.0 / (ch as f32).sqrt();
         mono.try_reserve(interleaved.len() / ch).context("无法分配分析 PCM 缓冲区")?;
         for frame in interleaved.chunks(ch) {
