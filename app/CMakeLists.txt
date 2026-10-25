@@ -122,3 +122,7 @@ qt_generate_deploy_qml_app_script(
     OUTPUT_SCRIPT deploy_script
     NO_UNSUPPORTED_PLATFORM_ERROR)
 install(SCRIPT ${deploy_script})
+if(APPLE)
+    # Drop what Qt's deployment adds but KVJ never loads, keep one architecture.
+    install(CODE "execute_process(COMMAND \"${CMAKE_CURRENT_SOURCE_DIR}/packaging/trim-macos.sh\" \"\${CMAKE_INSTALL_PREFIX}/KVJ.app\" COMMAND_ERROR_IS_FATAL ANY)")
+endif()
