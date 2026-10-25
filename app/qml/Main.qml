@@ -311,7 +311,8 @@ ApplicationWindow {
     // "send", "back"; on the timeline "zoom <factor> <x>", "mark <x>" (x in px
     // along the strip), "jump"; "post <px> <py> <words>" posts a sticker of
     // words and chooses it; "nudge <seconds>"; "drop" turns the entry on the
-    // screen off as the sidebar's confirmed second press does.
+    // screen off as the sidebar's confirmed second press does; "effect <key>
+    // <0–1>" sets an effect, "move <from> <to>" reorders them.
     function devCommand(line) {
         const w = String(line).trim().split(/\s+/)
         switch (w[0]) {
@@ -339,6 +340,8 @@ ApplicationWindow {
         case "jump": timeline.jump(); break
         case "nudge": app.nudge(Number(w[1] || 1)); break
         case "drop": if (transport.entry) app.dropPlaying(transport.entry.id); break
+        case "effect": Live.setLevel(w[1], Number(w[2] || 0)); break
+        case "move": Live.moveEffect(Number(w[1]), Number(w[2])); break
         case "post": Live.post({ kind: "text", text: w.slice(3).join(" "), name: "", px: Number(w[1]), py: Number(w[2]), size: 0.15 }); desk.chosenSid = Live.lastSid; break
         default: return "unknown"
         }
