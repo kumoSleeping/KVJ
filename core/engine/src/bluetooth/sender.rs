@@ -1,5 +1,7 @@
 //! Connection lifetime is independent of capture. Heartbeats continue through
-//! microphone consent, standby, stop and bounded reconnect attempts.
+//! microphone consent, standby, stop and bounded reconnect attempts. A lost
+//! link keeps the capture: sending goes on by itself once the receiver grants
+//! this DJ again.
 use super::{
     protocol::*,
     transport::{canceled, Connection, Native},
@@ -67,6 +69,7 @@ impl Sender {
                         delay = 2;
                     }
                     let message = result.err().map(|e| format!("{e:#}")).unwrap_or_default();
+                    // A sending session keeps capturing through the outage.
                     let session = {
                         let mut s = state.lock().unwrap();
                         s.status.selected = false;
@@ -77,22 +80,17 @@ impl Sender {
                         }
                         .into();
                         s.status.link.error = message.clone();
-                        s.stream.take().map(|stream| {
-                            stream.cancel.store(true, Ordering::Relaxed);
-                            stream.session
-                        })
+                        s.stream.as_ref().map(|stream| stream.session.clone())
                     };
                     if let Some(session) = session {
-                        update(&engine, &session, |v| {
-                            v.phase = "failed".into();
-                            v.error = message.clone();
-                        });
+                        let link = state.lock().unwrap().status.link.clone();
+                        update(&engine, &session, |v| v.bluetooth = Some(link));
                     }
                     let deadline = Instant::now() + Duration::from_secs(delay);
                     while !cancel.load(Ordering::Relaxed) && Instant::now() < deadline {
                         std::thread::sleep(Duration::from_millis(50));
                     }
-                    delay = (delay * 2).min(30);
+                    delay = (delay * 2).min(10);
                 }
             })?;
         Ok(Self {
@@ -150,6 +148,9 @@ fn connection_loop(device: &Device, shared: &Mutex<Shared>, cancel: &AtomicBool)
     let mut pending: VecDeque<(u64, Instant)> = VecDeque::new();
     const WINDOW: usize = 4;
     let mut streaming: Option<u64> = None;
+    // The receiver chose this DJ on this connection: only a choice taken back
+    // after that ends the sending session, never the SELECT 0 of a handshake.
+    let mut granted = false;
     loop {
         canceled(cancel)?;
         anyhow::ensure!(
@@ -157,8 +158,8 @@ fn connection_loop(device: &Device, shared: &Mutex<Shared>, cancel: &AtomicBool)
             "蓝牙接收端心跳超时"
         );
         anyhow::ensure!(
-            pending.front().is_none_or(|(_, sent)| sent.elapsed() < Duration::from_millis(1500)),
-            "蓝牙发送积压，已停止发送并重新连接"
+            pending.front().is_none_or(|(_, sent)| sent.elapsed() < Duration::from_millis(3000)),
+            "蓝牙发送积压，正在重新连接"
         );
         if let Some((kind, body)) = connection.receive()? {
             seen = Instant::now();
@@ -177,11 +178,17 @@ fn connection_loop(device: &Device, shared: &Mutex<Shared>, cancel: &AtomicBool)
                     let mut s = shared.lock().unwrap();
                     s.status.selected = body[0] == 1;
                     s.lease = u64::from_le_bytes(body[1..].try_into()?);
-                    if let Some(stream) = &s.stream {
-                        if !s.status.selected || stream.lease != s.lease {
+                    let (selected, lease) = (s.status.selected, s.lease);
+                    if let Some(stream) = &mut s.stream {
+                        if selected {
+                            // Chosen again (a receiver that restarted gives a new
+                            // lease): the capture carries on under it.
+                            stream.lease = lease;
+                        } else if granted {
                             stream.cancel.store(true, Ordering::Relaxed);
                         }
                     }
+                    granted |= selected;
                 }
                 _ => bail!("蓝牙接收端消息无效"),
             }
@@ -298,13 +305,12 @@ fn capture_inner(
     update(engine, session, |v| v.phase = "permission".into());
     let (_capture, ring) = audio_input::Capture::start(input)?;
     canceled(cancel)?;
-    let lease = {
+    {
         let mut s = shared.lock().unwrap();
         anyhow::ensure!(s.status.selected, "当前 DJ 已切换");
         let stream = s.stream.as_mut().context("发送已取消")?;
         stream.ready = true;
-        stream.lease
-    };
+    }
     update(engine, session, |v| v.phase = "sending".into());
     let mut features = LiveFeatureStream::new(100);
     let mut generation = 0;
@@ -335,7 +341,8 @@ fn capture_inner(
             if let Some((chunk, first, tail)) = features.take_committed() {
                 let at = captured - Duration::from_secs_f64(tail);
                 let mut body = Vec::with_capacity(8192);
-                body.extend(lease.to_le_bytes());
+                // The lease is the stream's when queued (it changes when chosen again).
+                body.extend(0u64.to_le_bytes());
                 body.extend(generation.to_le_bytes());
                 body.extend(first.to_le_bytes());
                 body.extend((clock_ms() - at.elapsed().as_secs_f64() * 1000.).to_le_bytes());
@@ -344,7 +351,8 @@ fn capture_inner(
                 let end = first + chunk.frame_count() as u64;
                 chunk.write_to(&mut body)?;
                 let mut s = shared.lock().unwrap();
-                let stream = s.stream.as_mut().context("连接已中断")?;
+                let stream = s.stream.as_mut().context("发送已取消")?;
+                body[..8].copy_from_slice(&stream.lease.to_le_bytes());
                 if stream.queue.len() >= 16 {
                     stream.queue.pop_front();
                 }

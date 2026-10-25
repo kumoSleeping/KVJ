@@ -1,5 +1,7 @@
 //! One native run-loop owns every inbound channel. Connections are standby
 //! until the operator selects a DJ; neither reconnect nor STREAM can select it.
+//! The operator's choice outlives the link: a DJ whose link drops (or who
+//! stops sending) stays chosen, and is granted again once back.
 use super::{
     protocol::*,
     transport::{canceled, Connection, Native},
@@ -40,7 +42,6 @@ impl Receiver {
                     let mut state = shared.lock().unwrap();
                     state.listening = false;
                     state.reset_source();
-                    state.selected = None;
                     for peer in state.peers.values_mut() {
                         peer.link.state = "disconnected".into();
                         peer.selected = false;
@@ -59,7 +60,7 @@ impl Receiver {
                     while !cancel.load(Ordering::Relaxed) && Instant::now() < deadline {
                         std::thread::sleep(Duration::from_millis(50));
                     }
-                    delay = (delay * 2).min(30);
+                    delay = (delay * 2).min(10);
                 }
             })?;
         Ok(Self {
@@ -102,7 +103,7 @@ impl Peer {
             streaming: false,
             lease: 0,
             seen: Instant::now(),
-            ping_at: Instant::now() - Duration::from_secs(2),
+            ping_at: Instant::now().checked_sub(Duration::from_secs(2)).unwrap_or_else(Instant::now),
             ping: None,
             clock: Clock::default(),
             window: LiveFeatures::default(),
@@ -145,7 +146,7 @@ impl Peer {
             self.ping_at = Instant::now();
         }
         anyhow::ensure!(
-            self.ping.is_none() || self.ping_at.elapsed() < Duration::from_secs(3),
+            self.ping.is_none() || self.ping_at.elapsed() < Duration::from_secs(4),
             "蓝牙时钟应答超时"
         );
         let Some((kind, body)) = self.connection.receive()? else {
@@ -203,12 +204,10 @@ impl Peer {
                     }
                     .into();
                 }
+                // Stopping keeps the DJ chosen: sending again needs nobody here.
                 if inbox.selected.as_deref() == Some(&self.id) && inbox.lease == lease {
                     inbox.reset_source();
                     inbox.streaming = self.streaming;
-                    if !self.streaming {
-                        inbox.selected = None;
-                    }
                     return Ok(true);
                 }
             }
@@ -386,9 +385,9 @@ fn run(engine: &Weak<Engine>, shared: &Mutex<Inbox>, cancel: &AtomicBool) -> Res
                         status.link.state = "disconnected".into();
                         status.link.error = format!("{error:#}");
                     }
+                    // Still chosen: the same DJ back is granted again (tick).
                     let changed = inbox.selected.as_deref() == Some(&peer.id);
                     if changed {
-                        inbox.selected = None;
                         inbox.reset_source();
                     }
                     drop(inbox);

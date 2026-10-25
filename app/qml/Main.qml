@@ -767,10 +767,19 @@ ApplicationWindow {
                             // Receiving over Bluetooth: the operator picks the current DJ.
                             // Below everything that is always there, so nothing moves.
                             ColumnLayout {
+                                id: djList
                                 Layout.fillWidth: true
                                 spacing: 4
                                 visible: app.receiving
                                 Caption { text: "DJ" }
+                                // The chosen DJ is let go only on a second press
+                                // (within 4 s): one stray click must not cut the music off.
+                                property string letGoId: ""
+                                Timer {
+                                    id: letGoTimer
+                                    interval: 4000
+                                    onTriggered: djList.letGoId = ""
+                                }
                                 Repeater {
                                     model: (app.view.connections && app.view.connections.incoming) || []
                                     ItemDelegate {
@@ -781,7 +790,23 @@ ApplicationWindow {
                                         topPadding: 0
                                         bottomPadding: 0
                                         leftPadding: 8
-                                        onClicked: Engine.selectBluetooth(modelData.selected ? "" : modelData.link.peer)
+                                        readonly property bool lettingGo: modelData.selected && djList.letGoId === modelData.link.peer
+                                        onClicked: {
+                                            if (!modelData.selected) {
+                                                djList.letGoId = ""
+                                                Engine.selectBluetooth(modelData.link.peer)
+                                            } else if (lettingGo) {
+                                                djList.letGoId = ""
+                                                Engine.selectBluetooth("")
+                                            } else {
+                                                djList.letGoId = modelData.link.peer
+                                                letGoTimer.restart()
+                                            }
+                                        }
+                                        // Why a DJ dropped (a version, permission or timeout).
+                                        ToolTip.visible: hovered && !!modelData.link.error
+                                        ToolTip.delay: 400
+                                        ToolTip.text: modelData.link.error || ""
                                         contentItem: RowLayout {
                                             Text {
                                                 Layout.fillWidth: true
@@ -792,8 +817,10 @@ ApplicationWindow {
                                                 elide: Text.ElideRight
                                             }
                                             Text {
-                                                text: dj.modelData.link.state === "receiving" ? "发送中"
-                                                    : dj.modelData.link.state === "connected" ? "待命" : "已断开"
+                                                text: dj.lettingGo ? "再点一下取消"
+                                                    : dj.modelData.link.state === "receiving" ? "发送中"
+                                                    : dj.modelData.link.state === "connected" ? "待命"
+                                                    : dj.modelData.selected ? "已断开 · 回来后自动恢复" : "已断开"
                                                 font.pixelSize: Theme.sizeXs
                                                 color: Theme.muted
                                             }
