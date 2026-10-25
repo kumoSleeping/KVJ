@@ -102,9 +102,11 @@ pub fn sources() -> Result<Vec<Source>> {
         let transport = property::<u32>(device, kAudioDevicePropertyTransportType, kAudioObjectPropertyScopeGlobal).unwrap_or(0);
         let running = property::<u32>(device, kAudioDevicePropertyDeviceIsRunningSomewhere, kAudioObjectPropertyScopeGlobal).unwrap_or(0) != 0;
         let external = [kAudioDeviceTransportTypeUSB, kAudioDeviceTransportTypeThunderbolt, kAudioDeviceTransportTypeFireWire, kAudioDeviceTransportTypePCI].contains(&transport);
-        // Prefer an active wired audio interface, then the system output. This
-        // is only a recommendation; CH 1/2 is never advertised as verified Master.
-        let rank = if external && running { 0 } else if device == default { 1 } else if external { 2 } else { 3 };
+        // Prefer the system output, then an active wired audio interface. A DJ
+        // controller is "running" whenever DJ software opens it (often only for its
+        // headphone cue), so running says nothing about where the Master plays.
+        // This is only a recommendation; CH 1/2 is never advertised as verified Master.
+        let rank = if device == default { 0 } else if external && running { 1 } else if external { 2 } else { 3 };
         for (stream_index, &stream) in streams.iter().enumerate() {
             let Ok(format) = property::<AudioStreamBasicDescription>(stream, kAudioStreamPropertyVirtualFormat, kAudioObjectPropertyScopeGlobal) else { continue };
             let label = if streams.len() > 1 { format!("{name} · 音频流 {}", stream_index + 1) } else { name.clone() };
