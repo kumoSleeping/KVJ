@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Window
 import KVJ
 
-// Live messages over the picture: words fly across, reactions rise up the sides
+// Live messages over the picture: words fly across, reactions rise from the foot
 // the way Google Meet's do, and a caption takes the middle. Everything moves on
 // `now` (Date.now() ms) given by the Stage, so the projection and the preview,
 // which advance it at different rates, show the same moment.
