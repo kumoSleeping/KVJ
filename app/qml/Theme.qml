@@ -2,7 +2,8 @@ pragma Singleton
 import QtQuick
 
 // KDJ's design tokens (src/design.css): neutral ink on the panel colour, dark by
-// default for the DJ booth, light when the system asks for it. No red anywhere.
+// default for the DJ booth, light when the system asks for it. Red only for
+// what is about to cut the projected picture.
 QtObject {
     readonly property bool dark: Qt.styleHints.colorScheme !== Qt.ColorScheme.Light
 
@@ -16,6 +17,7 @@ QtObject {
     readonly property color line: dark ? "#30363d" : "#e5e7eb"
     readonly property color hover: dark ? "#1a212b" : "#efeff1"
     readonly property color warn: "#f59e0b"
+    readonly property color danger: "#e5484d"
 
     readonly property int size: 14
     readonly property int sizeSm: 13

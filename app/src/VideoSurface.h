@@ -40,6 +40,10 @@ class VideoSurface : public QQuickItem
     Q_PROPERTY(int fadeMs MEMBER m_fadeMs NOTIFY fadeChanged)
     Q_PROPERTY(bool hasFrame READ hasFrame NOTIFY hasFrameChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
+    // The video as stored (its own frame size and frames a second), kept from
+    // the last one opened; for recommending the output's quality.
+    Q_PROPERTY(QSize sourceSize READ sourceSize NOTIFY sourceInfoChanged)
+    Q_PROPERTY(double sourceFps READ sourceFps NOTIFY sourceInfoChanged)
 
 public:
     explicit VideoSurface(QQuickItem *parent = nullptr);
@@ -51,6 +55,8 @@ public:
     void setMaxHeight(int height);
     bool hasFrame() const { return m_hasFrame; }
     QString error() const { return m_error; }
+    QSize sourceSize() const { return m_sourceSize; }
+    double sourceFps() const { return m_sourceFps; }
     int fadeMs() const { return m_fadeMs; }
     void attachPreview(PreviewSurface *preview);
     void detachPreview(PreviewSurface *preview);
@@ -62,6 +68,7 @@ signals:
     void fadeChanged();
     void hasFrameChanged();
     void errorChanged();
+    void sourceInfoChanged();
 
 protected:
     QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override;
@@ -99,6 +106,8 @@ private:
     bool m_clear = false;
     bool m_hasFrame = false;
     QString m_error;
+    QSize m_sourceSize;
+    double m_sourceFps = 0;
     QList<PreviewSurface *> m_previews;
     // The picture before the last jump, playing on from `m_outBase` seconds at
     // `m_outAt` (engine clock) at `m_outRate`. Holding: the new player has no

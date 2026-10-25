@@ -179,7 +179,9 @@ Rectangle {
                 }
             }
             IconButton {
-                visible: root.active
+                // Kept in its place while off, so nothing moves when it starts.
+                opacity: root.active ? 1 : 0
+                enabled: root.active
                 iconName: root.tempoPaused ? "play" : "pause"
                 tip: root.tempoPaused ? "继续对速" : "暂停对速（速度交给播放器）"
                 onClicked: root.tempoToggled()
@@ -328,7 +330,9 @@ Rectangle {
                 }
             }
             IconButton {
-                visible: root.active
+                // Kept in its place while off, so nothing moves when it starts.
+                opacity: root.active ? 1 : 0
+                enabled: root.active
                 iconName: root.jumpPaused ? "play" : "pause"
                 tip: root.jumpPaused ? "继续跳转" : "暂停跳转（只跟速度）"
                 onClicked: root.jumpToggled()

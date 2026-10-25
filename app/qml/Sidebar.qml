@@ -5,9 +5,13 @@ import QtQuick.Layouts
 import KVJ
 
 // Everything about Sets, and only here: the Sets, and the selected Set's
-// entries. Each entry has a key that turns it on or off for following, also
-// during the show: at a handover between DJs the next one is turned on while the
-// last stays on, and the last is turned off once the next is under way.
+// entries; above them the keys for the DJ's side of things (this computer only
+// sends, or receives over Bluetooth). Each entry has a key that turns it on or
+// off, at once and also during the show: an entry that is off leaves the
+// timeline and is not followed. At a handover between DJs the next one is
+// turned on while the last stays on, and the last is turned off once the next
+// is under way. Turning off the entry on the screen asks again, in red under
+// it; the second press goes on to the next entry that is on.
 ColumnLayout {
     id: bar
     spacing: 0
@@ -18,9 +22,19 @@ ColumnLayout {
     property bool editable: true
     // The entry on the screen now, if any.
     property string playingId: ""
+    property bool canSend: true
+    property bool receiving: false
+    property bool canReceive: false
+    // The entry on the screen whose key was pressed once to turn it off.
+    property string confirmId: ""
 
     signal selectSet(string id)
     signal addUrls(var urls)
+    // This computer is the DJ's: only send.
+    signal send()
+    signal receive(bool on)
+    // The entry on the screen is turned off, confirmed.
+    signal dropPlaying(string id)
 
     readonly property var entries: currentSet ? currentSet.entries : []
     readonly property int enabledCount: entries.filter(e => e.enabled !== false).length
@@ -38,7 +52,33 @@ ColumnLayout {
         Qt.callLater(() => entryList.contentY = y)
     }
     function enableAll(on) {
-        enable(bar.entries.filter(e => (e.enabled !== false) !== on).map(e => e.id), on)
+        const ids = bar.entries.filter(e => (e.enabled !== false) !== on).map(e => e.id)
+        // All off keeps the one on the screen: it is turned off on its own key.
+        enable(on ? ids : ids.filter(id => id !== bar.playingId), on)
+    }
+    // A key pressed on an entry. Off for the one on the screen asks first.
+    function press(entry, on) {
+        if (!on && entry.id === bar.playingId && entry.enabled !== false) {
+            if (bar.confirmId !== entry.id) {
+                bar.confirmId = entry.id
+                confirmTimer.restart()
+                return
+            }
+            bar.confirmId = ""
+            const y = entryList.contentY
+            bar.dropPlaying(entry.id)
+            entryList.contentY = y
+            Qt.callLater(() => entryList.contentY = y)
+            return
+        }
+        bar.confirmId = ""
+        enable([entry.id], on)
+    }
+    onPlayingIdChanged: confirmId = ""
+    Timer {
+        id: confirmTimer
+        interval: 6000
+        onTriggered: bar.confirmId = ""
     }
 
     FileDialog {
@@ -52,10 +92,41 @@ ColumnLayout {
         onAccepted: bar.addUrls([selectedFolder])
     }
 
+    // —— This computer's part: only sending, or receiving over Bluetooth ——
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.topMargin: 12
+        Layout.leftMargin: 10
+        Layout.rightMargin: 8
+        spacing: 6
+        TextButton {
+            iconName: "send"
+            text: "发送"
+            enabled: bar.canSend
+            ToolTip.visible: hovered
+            ToolTip.delay: 600
+            ToolTip.text: "这台是 DJ 电脑：收起播放器，打开只采集 Master、经蓝牙发给投影电脑的小窗"
+            onClicked: bar.send()
+        }
+        TextButton {
+            iconName: "bluetooth"
+            text: "蓝牙"
+            primary: bar.receiving
+            implicitHeight: Theme.control
+            enabled: bar.canReceive || bar.receiving
+            ToolTip.visible: hovered
+            ToolTip.delay: 600
+            ToolTip.text: bar.receiving ? "正在等 DJ 电脑经蓝牙发来声音特征；再点回到本机声音输入"
+                                        : "接收 DJ 电脑经蓝牙发来的声音特征（声音输入改为蓝牙接收）"
+            onClicked: bar.receive(!bar.receiving)
+        }
+        Item { Layout.fillWidth: true }
+    }
+
     // —— Sets ——
     RowLayout {
         Layout.fillWidth: true
-        Layout.topMargin: 14
+        Layout.topMargin: 8
         Layout.leftMargin: 18
         Layout.rightMargin: 8
         Caption { text: "Set"; Layout.fillWidth: true }
@@ -186,67 +257,104 @@ ColumnLayout {
         clip: true
         model: bar.entries
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-        delegate: ItemDelegate {
-            id: row
+        delegate: Column {
+            id: slot
             required property var modelData
             required property int index
-            readonly property bool on: modelData.enabled !== false
-            readonly property bool playing: bar.playingId === modelData.id
             width: ListView.view.width
-            height: Theme.row
-            topPadding: 0
-            bottomPadding: 0
-            leftPadding: 6
-            rightPadding: 4
-            // The whole row is the key: one tap at the booth, no aiming.
-            onClicked: bar.enable([modelData.id], !on)
-            contentItem: RowLayout {
-                spacing: 8
-                Toggle {
-                    padding: 0
-                    checked: row.on
-                    onToggled: bar.enable([row.modelData.id], checked)
-                }
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 0
-                    Text {
+            readonly property bool asking: bar.confirmId === modelData.id
+            ItemDelegate {
+                id: row
+                readonly property var modelData: slot.modelData
+                readonly property int index: slot.index
+                readonly property bool on: modelData.enabled !== false
+                readonly property bool playing: bar.playingId === modelData.id
+                width: slot.width
+                height: Theme.row
+                topPadding: 0
+                bottomPadding: 0
+                leftPadding: 6
+                rightPadding: 4
+                // The whole row is the key: one tap at the booth, no aiming.
+                onClicked: bar.press(modelData, !on)
+                contentItem: RowLayout {
+                    spacing: 8
+                    Toggle {
+                        padding: 0
+                        checked: row.on
+                        onToggled: {
+                            // The document says whether it is on; a press only asks.
+                            checked = Qt.binding(() => row.on)
+                            bar.press(row.modelData, !row.on)
+                        }
+                    }
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        text: row.modelData.title
-                        font.pixelSize: Theme.sizeSm
-                        font.weight: row.playing ? Font.DemiBold : Font.Normal
-                        color: row.playing ? Theme.text : row.on ? Theme.body : Theme.faint
-                        elide: Text.ElideRight
+                        spacing: 0
+                        Text {
+                            Layout.fillWidth: true
+                            text: row.modelData.title
+                            font.pixelSize: Theme.sizeSm
+                            font.weight: row.playing ? Font.DemiBold : Font.Normal
+                            color: row.playing ? Theme.text : row.on ? Theme.body : Theme.faint
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            text: (row.index + 1) + " · " + bar.clock(row.modelData.duration)
+                                  + (row.modelData.video ? "" : " · 音频") + (row.playing ? " · 正在投放" : "")
+                            font.pixelSize: 11
+                            font.features: { "tnum": 1 }
+                            color: row.playing ? Theme.muted : Theme.faint
+                        }
                     }
-                    Text {
-                        text: (row.index + 1) + " · " + bar.clock(row.modelData.duration)
-                              + (row.modelData.video ? "" : " · 音频") + (row.playing ? " · 正在投放" : "")
-                        font.pixelSize: 11
-                        font.features: { "tnum": 1 }
-                        color: row.playing ? Theme.muted : Theme.faint
+                    IconButton {
+                        iconName: "x"
+                        tip: "移出 Set"
+                        implicitWidth: 24
+                        implicitHeight: 24
+                        opacity: row.hovered && bar.editable ? 1 : 0
+                        enabled: opacity > 0
+                        onClicked: Engine.removeEntry(bar.currentSet.id, row.modelData.id)
                     }
                 }
-                IconButton {
-                    iconName: "x"
-                    tip: "移出 Set"
-                    implicitWidth: 24
-                    implicitHeight: 24
-                    opacity: row.hovered && bar.editable ? 1 : 0
-                    enabled: opacity > 0
-                    onClicked: Engine.removeEntry(bar.currentSet.id, row.modelData.id)
+                background: Rectangle {
+                    radius: Theme.radius
+                    color: row.hovered ? Theme.hover : "transparent"
+                    // The entry on the screen: an ink edge.
+                    Rectangle {
+                        visible: row.playing
+                        width: 3
+                        height: parent.height - 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        radius: 1.5
+                        color: Theme.text
+                    }
                 }
             }
-            background: Rectangle {
+            // Turning off the entry on the screen, asked in place.
+            Rectangle {
+                visible: slot.asking
+                x: 6
+                width: slot.width - 12
+                height: visible ? warning.implicitHeight + 12 : 0
                 radius: Theme.radius
-                color: row.hovered ? Theme.hover : "transparent"
-                // The entry on the screen: an ink edge.
-                Rectangle {
-                    visible: row.playing
-                    width: 3
-                    height: parent.height - 12
-                    anchors.verticalCenter: parent.verticalCenter
-                    radius: 1.5
-                    color: Theme.text
+                color: Theme.danger
+                Text {
+                    id: warning
+                    anchors.fill: parent
+                    anchors.margins: 6
+                    anchors.leftMargin: 8
+                    text: "正在播放这个视频。再点一次取消勾选，画面将跳到下一个启用视频的开头。"
+                    font.pixelSize: Theme.sizeXs
+                    font.weight: Font.Medium
+                    color: "white"
+                    wrapMode: Text.Wrap
+                    verticalAlignment: Text.AlignVCenter
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: bar.confirmId = ""
                 }
             }
         }

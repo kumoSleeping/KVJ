@@ -35,7 +35,9 @@ public:
             }
             m_duration = CMTimeGetSeconds(m_asset.duration);
             const CGSize natural = m_track.naturalSize;
+            m_frameRate = m_track.nominalFrameRate;
 #pragma clang diagnostic pop
+            m_natural = QSize(int(std::abs(natural.width) + 0.5), int(std::abs(natural.height) + 0.5));
             m_size = scaledSize(std::abs(natural.width), std::abs(natural.height), options.maxHeight);
             return seek(0);
         }
@@ -119,6 +121,8 @@ public:
 
     double duration() const override { return m_duration; }
     QString error() const override { return m_error; }
+    QSize sourceSize() const override { return m_natural; }
+    double frameRate() const override { return m_frameRate; }
 
 private:
     AVURLAsset *m_asset = nil;
@@ -126,6 +130,8 @@ private:
     AVAssetReader *m_reader = nil;
     AVAssetReaderTrackOutput *m_output = nil;
     double m_duration = 0;
+    double m_frameRate = 0;
+    QSize m_natural;
     QSize m_size;
     QString m_error;
 };

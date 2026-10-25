@@ -2,11 +2,13 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Controls.impl
 
-// Text action with an optional icon. `primary` is the one ink-filled key per view.
+// Text action with an optional icon. `primary` is the one ink-filled key per
+// view; `outlined` draws its edge, for a key that must read as one at a glance.
 Button {
     id: control
     property string iconName
     property bool primary: false
+    property bool outlined: false
     readonly property color contentColor: !enabled ? Theme.faint : primary ? Theme.bg : Theme.text
     implicitHeight: primary ? 34 : Theme.control
     leftPadding: 12
@@ -31,5 +33,7 @@ Button {
         radius: Theme.radius
         color: control.primary ? (control.enabled ? (control.down ? Theme.muted : Theme.text) : Theme.line)
                                : (control.down ? Theme.line : control.hovered ? Theme.hover : Theme.raised)
+        border.width: control.outlined && !control.primary ? 1 : 0
+        border.color: control.enabled ? Theme.muted : Theme.line
     }
 }

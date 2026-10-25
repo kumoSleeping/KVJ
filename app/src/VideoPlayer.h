@@ -30,6 +30,9 @@ public:
     // negative value when none is decoded yet.
     double untilNext(double target) const;
     QString error() const;
+    // The video as stored, once the decoder has opened it (empty and 0 before).
+    QSize sourceSize() const;
+    double sourceFps() const;
 
 private:
     void run();
@@ -47,5 +50,7 @@ private:
     double m_shownPts = -1;
     bool m_stop = false;
     QString m_error;
+    QSize m_sourceSize;
+    double m_sourceFps = 0;
     std::thread m_thread;
 };

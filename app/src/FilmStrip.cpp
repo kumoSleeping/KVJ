@@ -265,6 +265,15 @@ void FilmStrip::setPxPerSec(double px)
     refresh();
 }
 
+void FilmStrip::setCellAspect(double aspect)
+{
+    if (m_cellAspect == aspect)
+        return;
+    m_cellAspect = aspect;
+    emit viewChanged();
+    refresh();
+}
+
 void FilmStrip::geometryChange(const QRectF &next, const QRectF &old)
 {
     QQuickPaintedItem::geometryChange(next, old);
@@ -284,7 +293,7 @@ double FilmStrip::step() const
 {
     static const double ladder[] = {0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5, 7.5, 10, 15, 20,
                                     30, 45, 60, 90, 120, 180, 240, 300, 450, 600, 900, 1200, 1800, 2700, 3600};
-    double aspect = FrameCache::instance()->aspect(m_source);
+    double aspect = m_cellAspect > 0 ? m_cellAspect : FrameCache::instance()->aspect(m_source);
     if (aspect <= 0)
         aspect = 16.0 / 9.0;
     const double raw = height() * aspect / m_pxPerSec;

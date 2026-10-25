@@ -149,8 +149,15 @@ void VideoSurface::setMaxHeight(int height)
 {
     if (m_options.maxHeight == height)
         return;
+    // A cap that decodes the open video at the same size changes nothing yet:
+    // the next file opens with it.
+    const QSize open = m_player ? m_player->sourceSize() : QSize();
+    const bool same = !open.isEmpty()
+                      && scaledSize(open.width(), open.height(), m_options.maxHeight)
+                             == scaledSize(open.width(), open.height(), height);
     m_options.maxHeight = height;
-    restart();
+    if (!same)
+        restart();
     emit qualityChanged();
 }
 
@@ -226,6 +233,12 @@ void VideoSurface::tick()
             }
             update();
         }
+    }
+    const QSize size = m_player->sourceSize();
+    if (!size.isEmpty() && (size != m_sourceSize || m_player->sourceFps() != m_sourceFps)) {
+        m_sourceSize = size;
+        m_sourceFps = m_player->sourceFps();
+        emit sourceInfoChanged();
     }
     const QString error = m_player->error();
     if (error != m_error) {

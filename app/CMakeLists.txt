@@ -53,10 +53,12 @@ qt_add_qml_module(KVJ
         qml/Sidebar.qml
         qml/Timeline.qml
     RESOURCES
+        qml/icons/bluetooth.svg
         qml/icons/check.svg
         qml/icons/chevron-down.svg
         qml/icons/file-plus.svg
         qml/icons/folder-plus.svg
+        qml/icons/grip-vertical.svg
         qml/icons/minus.svg
         qml/icons/monitor.svg
         qml/icons/pause.svg
@@ -97,7 +99,23 @@ qt_add_shaders(KVJ "shaders"
 target_include_directories(KVJ PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/engine/include)
-target_link_libraries(KVJ PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Svg Qt6::Multimedia kvj_engine)
+
+# Rubber Band (../vendor/rubberband, unmodified, as KDJ vendors it): the
+# picture's sound stretched to the picture's speed, pitch kept. Its official
+# single-file unit, with its own resampler and FFT, or Accelerate's on Apple.
+add_library(rubberband STATIC ${CMAKE_CURRENT_SOURCE_DIR}/../vendor/rubberband/single/RubberBandSingle.cpp)
+target_include_directories(rubberband PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../vendor/rubberband)
+target_compile_definitions(rubberband PUBLIC RUBBERBAND_STATIC PRIVATE NOMINMAX)
+if(MSVC)
+    target_compile_options(rubberband PRIVATE /w)
+else()
+    target_compile_options(rubberband PRIVATE -w)
+endif()
+if(APPLE)
+    target_link_libraries(rubberband PUBLIC "-framework Accelerate")
+endif()
+
+target_link_libraries(KVJ PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Svg Qt6::Multimedia kvj_engine rubberband)
 # System libraries the Rust static library needs, from
 # `cargo rustc -p kvj-engine --crate-type staticlib -- --print native-static-libs`.
 if(APPLE)
@@ -144,6 +162,20 @@ if(KVJ_BUILD_CHECKS)
         target_sources(kvj-player-check PRIVATE src/platform/win/MfDecoder.cpp)
         target_compile_definitions(kvj-player-check PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
         target_link_libraries(kvj-player-check PRIVATE mfplat mfreadwrite mfuuid d3d11 dxgi ole32 propsys)
+    endif()
+
+    qt_add_executable(kvj-sound-check checks/sound_check.cpp src/AudioFollower.cpp)
+    target_include_directories(kvj-sound-check PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/../core/engine/include)
+    target_link_libraries(kvj-sound-check PRIVATE Qt6::Gui Qt6::Multimedia Qt6::Qml kvj_engine rubberband)
+    set_target_properties(kvj-sound-check PROPERTIES MACOSX_BUNDLE OFF WIN32_EXECUTABLE OFF)
+    if(APPLE)
+        target_link_libraries(kvj-sound-check PRIVATE
+            "-weak_framework ScreenCaptureKit" "-weak_framework CoreAudio"
+            "-framework CoreMedia" "-framework AudioToolbox" "-framework CoreBluetooth"
+            "-framework Foundation" "-framework CoreFoundation" iconv objc)
+    elseif(WIN32)
+        target_link_libraries(kvj-sound-check PRIVATE kernel32 ntdll userenv ws2_32 dbghelp)
     endif()
 endif()
 

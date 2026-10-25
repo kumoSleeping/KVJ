@@ -4,22 +4,25 @@ import QtQuick.Layouts
 import KVJ
 
 // The player's transport, across the foot of the window, laid out like a video
-// editor's timeline without editing anything. On top: play and pause, what is
-// on the screen, the speed and how jumps look, and the seek bar of the entry on
-// the screen, which jumps the picture. Below it the Set's entries lie end to end
-// as strips of their frames over their sound's waveform (KDJ's whole-track
-// preview, the part played dimmed); pinch on the trackpad (or ⌘/Ctrl + scroll)
-// zooms in about the pointer down to a few frames, a two-finger swipe moves along.
-// Pressing or dragging there only sets a mark and leaves the picture alone;
-// 跳到此处 (or a double press) plays from the mark. While smart following leads
-// only the entries that are on lie there, and the keys its helpers at work own
-// rest: the speed's while 对速 works, play and seeking while 跳转 does.
+// editor's timeline without editing anything. On top: the play key in the
+// middle, the Set and what is on the screen to its left with the cursor's keys,
+// the speed and how jumps look to its right; under them the whole Set's bar,
+// which jumps the picture and frames the part the strip shows. Below it the Set's entries that
+// are on lie end to end (one turned off leaves at once; the picture and sound
+// go on) as strips of the middle of their frames over their sound's waveform
+// (KDJ's whole-track preview, the part played dimmed); pinch on the trackpad
+// (or ⌘/Ctrl + scroll) zooms in about the pointer down to a few frames, a
+// two-finger swipe moves along. Pressing or dragging there only sets the cursor
+// and leaves the picture alone; 跳至光标处 (or Enter) plays from it. While smart
+// following leads the keys its helpers at work own rest: the speed's while 对速
+// works, play and seeking while 跳转 does.
 Rectangle {
     id: line
     color: Theme.raised
     implicitHeight: content.implicitHeight + 20
 
     property var entries: []
+    property string setName: ""
     property bool running: false
     property string phase: ""
     // The window's player: its clock (transport), who leads and what is shown.
@@ -35,7 +38,8 @@ Rectangle {
     readonly property real position: player ? player.playhead : 0
     readonly property real tempo: player ? player.shownTempo : 1
     readonly property var match: player && player.aiPicture ? player.match : null
-    readonly property var lanes: manual ? entries : entries.filter(e => e.enabled !== false || e.id === playingId)
+    // The entry on the screen stays until the picture has left it.
+    readonly property var lanes: entries.filter(e => e.enabled !== false || e.id === playingId)
 
     // The entries end to end: { entry, n (its number), start, length } in seconds along the strip.
     readonly property var clips: {
@@ -154,168 +158,227 @@ Rectangle {
         anchors.bottomMargin: 10
         spacing: 0
 
-        // What is on the screen and where; the mark and the key that goes
-        // there; the speed and how every jump looks.
-        RowLayout {
+        // The play key in the middle. To its left the Set, what is on the
+        // screen and where, the cursor and the key that goes there; to its
+        // right the speed and how every jump looks.
+        Item {
             Layout.fillWidth: true
-            spacing: 8
-            IconButton {
-                iconName: line.match || (line.transport && line.transport.playing) ? "pause" : "play"
-                tip: "播放 / 暂停（空格）"
-                enabled: line.manualSeek && !!line.transport && !!line.transport.entry
-                onClicked: line.player.toggle()
-            }
-            Text {
-                Layout.fillWidth: true
-                Layout.minimumWidth: 80
-                text: line.shown ? line.shown.title
-                    : line.running ? (line.phase === "searching" ? "重新搜索" : "等待识别") : ""
-                font.pixelSize: Theme.sizeSm
-                font.weight: Font.DemiBold
-                color: Theme.text
-                elide: Text.ElideRight
-            }
-            Text {
-                visible: !!line.shown
-                text: line.shown ? line.clock(line.position, true) + " / " + line.clock(line.shown.duration, false)
-                                   + "   剩余 " + line.clock(line.shown.duration - line.position, false) : ""
-                font.pixelSize: Theme.sizeSm
-                font.features: { "tnum": 1 }
-                color: Theme.body
-            }
+            implicitHeight: Math.max(playKey.height, left.implicitHeight, right.implicitHeight)
 
-            Text {
-                Layout.leftMargin: 18
-                visible: !!line.markClip
-                text: line.markClip ? "标记 " + (line.clips.length > 1 ? line.markClip.n + " · " : "")
-                                      + line.clock(line.markAt, true) : ""
-                font.pixelSize: Theme.sizeSm
-                font.features: { "tnum": 1 }
-                color: Theme.muted
-            }
-            TextButton {
-                text: "跳到此处"
-                enabled: line.manualSeek && !!line.markClip
-                onClicked: line.jump()
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "从下面时间轴上的标记处播放（也可在时间轴上双击）"
-            }
-            TextButton {
-                text: "全览"
-                enabled: line.pps > line.fitScale + 1e-6
-                onClicked: line.fit()
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "缩回整个 Set（触控板双指捏合或 ⌘ + 滚动缩放）"
-            }
-
-            Text {
-                Layout.leftMargin: 18
-                text: "速度"
-                font.pixelSize: Theme.sizeSm
-                color: line.manualTempo ? Theme.muted : Theme.faint
-            }
-            IconButton {
-                iconName: "minus"
-                tip: "慢 1%"
-                autoRepeat: true
-                enabled: line.manualTempo && line.transport.tempo > line.transport.minTempo
-                onClicked: line.player.nudgeTempo(-0.01)
-            }
-            Seek {
-                Layout.preferredWidth: 120
-                Layout.minimumWidth: 60
-                from: line.transport ? (line.transport.minTempo - 1) * 100 : -50
-                to: line.transport ? (line.transport.maxTempo - 1) * 100 : 50
-                value: (line.tempo - 1) * 100
-                enabled: line.manualTempo
-                onMoved: line.transport.setTempo(1 + value / 100)
-                // Double-click: back to the material's own speed.
-                TapHandler {
-                    enabled: line.manualTempo
-                    onDoubleTapped: line.player.resetTempo()
+            RowLayout {
+                id: left
+                anchors.left: parent.left
+                anchors.right: playKey.left
+                anchors.rightMargin: 24
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 8
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 80
+                    spacing: 1
+                    Text {
+                        Layout.fillWidth: true
+                        textFormat: Text.StyledText
+                        text: (line.setName ? "<font color='" + Theme.muted + "'>" + line.setName.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                                              + (line.shown ? "  ·  " : "") + "</font>" : "")
+                              + (line.shown ? line.shown.title.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                                 : line.running ? (line.phase === "searching" ? "重新搜索" : "等待识别") : "")
+                        font.pixelSize: Theme.sizeSm
+                        font.weight: Font.DemiBold
+                        color: Theme.text
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: line.shown ? line.clock(line.position, true) + " / " + line.clock(line.shown.duration, false)
+                                           + "   剩余 " + line.clock(line.shown.duration - line.position, false) : " "
+                        font.pixelSize: Theme.sizeXs
+                        font.features: { "tnum": 1 }
+                        color: Theme.body
+                        elide: Text.ElideRight
+                    }
+                }
+                Text {
+                    text: line.markClip ? "光标 " + (line.clips.length > 1 ? line.markClip.n + " · " : "")
+                                          + line.clock(line.markAt, true) : "光标 —"
+                    font.pixelSize: Theme.sizeSm
+                    font.features: { "tnum": 1 }
+                    color: line.markClip ? Theme.muted : Theme.faint
+                }
+                TextButton {
+                    text: "跳至光标处"
+                    outlined: true
+                    enabled: line.manualSeek && !!line.markClip
+                    onClicked: line.jump()
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: "从下面时间轴上的光标处播放（快捷键开着时也可按回车）"
+                }
+                TextButton {
+                    text: "全览"
+                    enabled: line.pps > line.fitScale + 1e-6
+                    onClicked: line.fit()
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: "缩回整个 Set（触控板双指捏合或 ⌘ + 滚动缩放）"
+                }
+                Toggle {
+                    text: "快捷键"
+                    checked: !!line.player && line.player.keysOn
+                    onToggled: line.player.keysOn = checked
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: "A / D 或小键盘 4 / 6：画面暂时减速 / 加速，按一下等于退后 / 前进 1 秒\n"
+                                  + "W / S 或小键盘 8 / 2：速度 +1% / −1%\n回车：跳至光标处　← / →：后退 / 前进 5 秒\n"
+                                  + "空格不再暂停播放"
                 }
             }
-            IconButton {
-                iconName: "plus"
-                tip: "快 1%"
-                autoRepeat: true
-                enabled: line.manualTempo && line.transport.tempo < line.transport.maxTempo
-                onClicked: line.player.nudgeTempo(0.01)
-            }
-            TextButton {
-                text: "复原"
+
+            // Play and pause, as a player's own key.
+            RoundButton {
+                id: playKey
+                anchors.centerIn: parent
+                width: 42
+                height: 42
+                padding: 0
+                enabled: line.manualSeek && !!line.transport && !!line.transport.entry
+                icon.source: line.match || (line.transport && line.transport.playing) ? "icons/pause.svg" : "icons/play.svg"
+                icon.width: 18
+                icon.height: 18
+                icon.color: enabled ? Theme.bg : Theme.faint
+                onClicked: line.player.toggle()
+                background: Rectangle {
+                    radius: width / 2
+                    color: !playKey.enabled ? Theme.line : playKey.down ? Theme.muted : Theme.text
+                    scale: playKey.down ? 0.94 : playKey.hovered ? 1.04 : 1
+                    Behavior on scale { NumberAnimation { duration: 90 } }
+                }
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "回到素材原速（也可双击速度）"
-                enabled: line.manualTempo && !!line.transport && line.transport.tempo !== 1
-                onClicked: line.player.resetTempo()
+                ToolTip.text: "播放 / 暂停"
             }
-            Text {
-                text: "×" + line.tempo.toFixed(3)
-                font.pixelSize: 18
-                font.weight: Font.DemiBold
-                font.features: { "tnum": 1 }
-                color: line.shown ? Theme.text : Theme.faint
-                // Double-click: back to the material's own speed.
-                MouseArea { anchors.fill: parent; enabled: line.manualTempo; onDoubleClicked: line.player.resetTempo() }
-            }
-            ColumnLayout {
-                spacing: 0
+
+            RowLayout {
+                id: right
+                anchors.left: playKey.right
+                anchors.leftMargin: 24
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 6
+                Item { Layout.fillWidth: true }
                 Text {
-                    text: line.signed(line.tempo)
-                    font.pixelSize: Theme.sizeXs
+                    text: "速度"
+                    font.pixelSize: Theme.sizeSm
+                    color: line.manualTempo ? Theme.muted : Theme.faint
+                }
+                IconButton {
+                    iconName: "minus"
+                    tip: "慢 1%"
+                    autoRepeat: true
+                    enabled: line.manualTempo && line.transport.tempo > line.transport.minTempo
+                    onClicked: line.player.nudgeTempo(-0.01)
+                }
+                Seek {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 120
+                    Layout.maximumWidth: 140
+                    Layout.minimumWidth: 50
+                    from: line.transport ? (line.transport.minTempo - 1) * 100 : -50
+                    to: line.transport ? (line.transport.maxTempo - 1) * 100 : 50
+                    value: (line.tempo - 1) * 100
+                    enabled: line.manualTempo
+                    onMoved: line.transport.setTempo(1 + value / 100)
+                    // Double-click: back to the material's own speed.
+                    TapHandler {
+                        enabled: line.manualTempo
+                        onDoubleTapped: line.player.resetTempo()
+                    }
+                }
+                IconButton {
+                    iconName: "plus"
+                    tip: "快 1%"
+                    autoRepeat: true
+                    enabled: line.manualTempo && line.transport.tempo < line.transport.maxTempo
+                    onClicked: line.player.nudgeTempo(0.01)
+                }
+                TextButton {
+                    text: "复原"
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: "回到素材原速（也可双击速度）"
+                    enabled: line.manualTempo && !!line.transport && line.transport.tempo !== 1
+                    onClicked: line.player.resetTempo()
+                }
+                Text {
+                    text: "×" + line.tempo.toFixed(3)
+                    font.pixelSize: 18
+                    font.weight: Font.DemiBold
                     font.features: { "tnum": 1 }
-                    color: Theme.body
+                    color: line.shown ? Theme.text : Theme.faint
+                    // Double-click: back to the material's own speed.
                     MouseArea { anchors.fill: parent; enabled: line.manualTempo; onDoubleClicked: line.player.resetTempo() }
                 }
-                Text {
-                    text: line.match ? (line.match.rate_confidence >= 0.7 ? "智能 · 已稳定" : "智能 · 校准中")
-                                     : line.player && line.player.aiLeads ? (line.player.tempoPaused ? "智能跳转 · 手动速度" : "智能调速 · 不跳转")
-                                     : line.manual ? "手动" : "智能跟随"
-                    font.pixelSize: 11
-                    color: Theme.faint
+                ColumnLayout {
+                    spacing: 0
+                    Text {
+                        text: line.signed(line.tempo)
+                        font.pixelSize: Theme.sizeXs
+                        font.features: { "tnum": 1 }
+                        color: Theme.body
+                        MouseArea { anchors.fill: parent; enabled: line.manualTempo; onDoubleClicked: line.player.resetTempo() }
+                    }
+                    Text {
+                        text: line.match ? (line.match.rate_confidence >= 0.7 ? "智能 · 已稳定" : "智能 · 校准中")
+                                         : line.player && line.player.aiLeads ? (line.player.tempoPaused ? "智能跳转 · 手动速度" : "智能调速 · 不跳转")
+                                         : line.manual ? "手动" : "智能跟随"
+                        font.pixelSize: 11
+                        color: Theme.faint
+                    }
                 }
-            }
 
-            Toggle {
-                Layout.leftMargin: 14
-                text: "跳转渐变"
-                checked: !!line.player && line.player.fadeOn
-                onToggled: line.player.fadeOn = checked
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "手动跳转和智能跟随的跳转都从上一个画面溶过去；关掉是直接切"
-            }
-            Seek {
-                Layout.preferredWidth: 80
-                Layout.minimumWidth: 50
-                from: 100
-                to: 2000
-                stepSize: 50
-                snapMode: Slider.SnapAlways
-                value: line.player ? line.player.fadeMs : 400
-                enabled: !!line.player && line.player.fadeOn
-                onMoved: line.player.fadeMs = value
-            }
-            Text {
-                Layout.preferredWidth: 40
-                horizontalAlignment: Text.AlignRight
-                text: ((line.player ? line.player.fadeMs : 400) / 1000).toFixed(2) + " s"
-                font.pixelSize: Theme.sizeXs
-                font.features: { "tnum": 1 }
-                color: line.player && line.player.fadeOn ? Theme.body : Theme.faint
+                Toggle {
+                    Layout.leftMargin: 10
+                    text: "跳转渐变"
+                    checked: !!line.player && line.player.fadeOn
+                    onToggled: line.player.fadeOn = checked
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: "手动跳转和智能跟随的跳转都从上一个画面溶过去；关掉是直接切"
+                }
+                Seek {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 80
+                    Layout.maximumWidth: 80
+                    Layout.minimumWidth: 40
+                    from: 100
+                    to: 2000
+                    stepSize: 50
+                    snapMode: Slider.SnapAlways
+                    value: line.player ? line.player.fadeMs : 400
+                    enabled: !!line.player && line.player.fadeOn
+                    onMoved: line.player.fadeMs = value
+                }
+                Text {
+                    Layout.preferredWidth: 40
+                    horizontalAlignment: Text.AlignRight
+                    text: ((line.player ? line.player.fadeMs : 400) / 1000).toFixed(2) + " s"
+                    font.pixelSize: Theme.sizeXs
+                    font.features: { "tnum": 1 }
+                    color: line.player && line.player.fadeOn ? Theme.body : Theme.faint
+                }
             }
         }
 
-        // The seek bar of the entry on the screen: this one moves the picture.
+        // The whole Set's bar, as long as the strip below at full view: where
+        // the picture is, a notch where one entry meets the next, and, zoomed
+        // in, a frame round the part the strip shows. Pressing or dragging on
+        // it moves the picture there, into whichever entry that is.
         Item {
             id: seekBar
             Layout.fillWidth: true
             Layout.topMargin: 6
             Layout.preferredHeight: 18
-            readonly property real share: line.shown ? Math.max(0, Math.min(1, line.position / Math.max(1, line.shown.duration))) : 0
+            readonly property real share: line.total > 0 && line.playT >= 0 ? Math.max(0, Math.min(1, line.playT / line.total)) : 0
             Rectangle {
                 id: groove
                 anchors.verticalCenter: parent.verticalCenter
@@ -329,9 +392,39 @@ Rectangle {
                     radius: 2
                     color: line.manualSeek ? Theme.text : Theme.muted
                 }
+                Repeater {
+                    model: line.clips.filter(c => c.start > 0)
+                    Rectangle {
+                        required property var modelData
+                        x: groove.width * modelData.start / Math.max(1, line.total) - 1
+                        width: 2
+                        height: groove.height
+                        color: Theme.raised
+                    }
+                }
+            }
+            // The part of the Set the strip shows.
+            Item {
+                visible: line.total > 0 && line.pps > line.fitScale + 1e-6
+                x: seekBar.width * line.viewLeft / Math.max(1, line.total)
+                width: Math.max(8, seekBar.width * line.span / Math.max(1, line.total))
+                height: seekBar.height
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 4
+                    color: Theme.text
+                    opacity: 0.12
+                }
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 4
+                    color: "transparent"
+                    border.width: 1.5
+                    border.color: Theme.muted
+                }
             }
             Rectangle {
-                visible: !!line.shown
+                visible: line.playT >= 0
                 x: seekBar.width * seekBar.share - width / 2
                 anchors.verticalCenter: parent.verticalCenter
                 width: 12
@@ -343,11 +436,13 @@ Rectangle {
             MouseArea {
                 id: seekArea
                 anchors.fill: parent
-                enabled: line.manualSeek && !!line.shown
+                enabled: line.manualSeek && line.clips.length > 0
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 preventStealing: true
                 function seek(mouse) {
-                    line.player.play(line.shown, Math.max(0, Math.min(1, mouse.x / width)) * line.shown.duration)
+                    const t = Math.max(0, Math.min(1, mouse.x / width)) * line.total
+                    const clip = line.clips.find(c => t < c.start + c.length) || line.clips[line.clips.length - 1]
+                    line.player.play(clip.entry, Math.max(0, Math.min(clip.entry.duration, t - clip.start)))
                 }
                 onPressed: mouse => {
                     line.player.scrubbing = true
@@ -423,6 +518,9 @@ Rectangle {
                         FilmStrip {
                             width: parent.width
                             height: strips.filmHeight
+                            // Upright strips of each frame's middle: enough to
+                            // know the picture, and many more of them.
+                            cellAspect: 0.5
                             visible: piece.entry.video
                             source: visible ? piece.entry.path : ""
                             duration: piece.entry.duration
@@ -569,7 +667,7 @@ Rectangle {
                 }
             }
 
-            // Press or drag: the mark, never the picture. Double press: play from there.
+            // Press or drag: the cursor, never the picture; 跳至光标处 or Enter plays from it.
             MouseArea {
                 id: hover
                 anchors.fill: parent
@@ -579,10 +677,6 @@ Rectangle {
                 onPositionChanged: mouse => {
                     if (pressed)
                         line.setMark(Math.max(0, Math.min(width, mouse.x)))
-                }
-                onDoubleClicked: mouse => {
-                    line.setMark(mouse.x)
-                    line.jump()
                 }
                 // ⌘/Ctrl + scroll zooms about the pointer; scrolling either way moves along.
                 onWheel: wheel => {

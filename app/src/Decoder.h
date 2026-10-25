@@ -36,6 +36,10 @@ public:
     virtual bool next(VideoFrame *frame, double discardBefore) = 0;
     virtual double duration() const = 0;
     virtual QString error() const = 0;
+    // The video as stored, once open: its frame size and nominal frames a
+    // second (empty and 0 where the system does not say).
+    virtual QSize sourceSize() const { return {}; }
+    virtual double frameRate() const { return 0; }
 };
 
 std::unique_ptr<Decoder> createDecoder();

@@ -16,6 +16,7 @@ mod index;
 mod output_tap;
 mod qos;
 mod runtime;
+pub mod sound;
 pub mod waveform;
 
 pub use audio_input::{InputDevice, Selection};

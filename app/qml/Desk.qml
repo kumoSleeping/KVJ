@@ -1,6 +1,7 @@
 import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Controls.impl
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import QtQuick.Window
@@ -21,9 +22,28 @@ Item {
     // The projection window the output keys open and put away.
     property var projection: null
     // The output's quality: frames at most this tall (0 = source) and this many
-    // a second (0 = the material's own).
-    readonly property int maxHeight: [480, 720, 1080, 0][heightBox.currentIndex] ?? 720
-    readonly property int maxFps: [24, 30, 60, 0][fpsBox.currentIndex] ?? 30
+    // a second (0 = the material's own). The first choice of each is the one
+    // recommended for the chosen screen and the video now on it.
+    readonly property int maxHeight: heightBox.currentIndex > 0 ? [480, 720, 1080, 0][heightBox.currentIndex - 1] ?? 720 : recommendedHeight
+    readonly property int maxFps: fpsBox.currentIndex > 0 ? [24, 30, 60, 0][fpsBox.currentIndex - 1] ?? 30 : recommendedFps
+    readonly property var targetScreen: Qt.application.screens[Math.min(screenBox.currentIndex, Qt.application.screens.length - 1)] || null
+    // Pixel rows the output shows: the whole screen, or a window 960 wide.
+    readonly property int screenRows: targetScreen ? Math.round(targetScreen.height * targetScreen.devicePixelRatio) : 1080
+    readonly property int outputRows: fullscreen.checked ? screenRows
+                                      : Math.min(screenRows, Math.round(540 * (targetScreen ? targetScreen.devicePixelRatio : 1)))
+    readonly property size videoSize: source ? source.sourceSize : Qt.size(0, 0)
+    readonly property real videoFps: source ? source.sourceFps : 0
+    // As sharp as the screen shows and the video holds, no sharper: the lighter
+    // the better on a computer that also runs the DJ software.
+    readonly property int recommendedHeight: {
+        const need = videoSize.height > 0 ? Math.min(outputRows, videoSize.height) : outputRows
+        return need <= 500 ? 480 : need <= 760 ? 720 : need <= 1600 ? 1080 : 0
+    }
+    // Every frame the video has, up to 60.
+    readonly property int recommendedFps: videoFps <= 0 ? 30 : videoFps <= 24.5 ? 24 : videoFps <= 30.5 ? 30 : 60
+    function heightText(h) {
+        return h > 0 ? h + "p" : "原始"
+    }
     // The picture's own sound (AudioFollower): whether it plays, on which output
     // (an id from its devices, empty for the system's default) and how loud.
     property var sound: null
@@ -114,8 +134,8 @@ Item {
     }
     Settings {
         category: "output"
-        property alias height: heightBox.currentIndex
-        property alias fps: fpsBox.currentIndex
+        property alias quality: heightBox.currentIndex
+        property alias frames: fpsBox.currentIndex
         property alias fullscreen: fullscreen.checked
         property alias sound: desk.soundOn
         property alias soundDevice: desk.soundDevice
@@ -249,15 +269,26 @@ Item {
                 }
                 Select {
                     id: heightBox
-                    Layout.preferredWidth: 84
-                    model: ["480p", "720p", "1080p", "原始"]
-                    currentIndex: 1
+                    Layout.preferredWidth: 118
+                    model: ["推荐", "480p", "720p", "1080p", "原始"]
+                    currentIndex: 0
+                    displayText: currentIndex === 0 ? "推荐 " + desk.heightText(desk.recommendedHeight) : currentText
+                    ToolTip.visible: hovered && !popup.visible
+                    ToolTip.delay: 600
+                    ToolTip.text: "推荐：投放画面 " + desk.outputRows + " 行" + (fullscreen.checked ? "（全屏）" : "（窗口）")
+                                  + (desk.videoSize.height > 0 ? "，视频 " + desk.videoSize.width + "×" + desk.videoSize.height : "")
+                                  + " → " + desk.heightText(desk.recommendedHeight)
                 }
                 Select {
                     id: fpsBox
-                    Layout.preferredWidth: 84
-                    model: ["24 帧", "30 帧", "60 帧", "原帧率"]
-                    currentIndex: 1
+                    Layout.preferredWidth: 118
+                    model: ["推荐", "24 帧", "30 帧", "60 帧", "原帧率"]
+                    currentIndex: 0
+                    displayText: currentIndex === 0 ? "推荐 " + desk.recommendedFps + " 帧" : currentText
+                    ToolTip.visible: hovered && !popup.visible
+                    ToolTip.delay: 600
+                    ToolTip.text: "推荐：" + (desk.videoFps > 0 ? "视频 " + desk.videoFps.toFixed(2).replace(/\.?0+$/, "") + " 帧，" : "")
+                                  + "每帧都放，最多 60 → " + desk.recommendedFps + " 帧"
                 }
                 Toggle {
                     id: fullscreen
@@ -274,7 +305,8 @@ Item {
             }
 
             // The picture's sound, off by default (the room hears the DJ), on an
-            // output of its own: headphones to listen in, or the speakers.
+            // output of its own: headphones to listen in, or the speakers. Where
+            // and how loud can be set before it is turned on.
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
@@ -288,7 +320,6 @@ Item {
                     readonly property var outputs: desk.sound ? desk.sound.devices : []
                     Layout.fillWidth: true
                     Layout.minimumWidth: 90
-                    enabled: desk.soundOn
                     model: ["系统默认输出"].concat(outputs.map(d => d.name))
                     currentIndex: outputs.findIndex(d => d.id === desk.soundDevice) + 1
                     onActivated: index => desk.soundDevice = index > 0 ? outputs[index - 1].id : ""
@@ -298,7 +329,6 @@ Item {
                     from: 0
                     to: 1
                     value: desk.soundVolume
-                    enabled: desk.soundOn
                     onMoved: desk.soundVolume = value
                 }
                 Text {
@@ -307,7 +337,7 @@ Item {
                     text: Math.round(desk.soundVolume * 100) + "%"
                     font.pixelSize: Theme.sizeSm
                     font.features: { "tnum": 1 }
-                    color: desk.soundOn ? Theme.body : Theme.faint
+                    color: Theme.body
                 }
             }
             Text {
@@ -611,25 +641,66 @@ Item {
                         onClicked: Live.resetEffects()
                     }
                 }
-                // An effect at 0 is off; double-click its number for 0.
+                // An effect at 0 is off; double-click its number for 0. They
+                // apply top first: drag one by its grip to change the order.
                 ListView {
+                    id: effectList
+                    readonly property int rowHeight: 32
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
                     spacing: 0
-                    model: Live.effects
+                    model: Live.chain
                     boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    moveDisplaced: Transition { NumberAnimation { properties: "y"; duration: 120; easing.type: Easing.OutQuad } }
                     delegate: RowLayout {
                         id: effect
-                        required property var modelData
-                        readonly property real level: Live.level[modelData.key] || 0
+                        required property string key
+                        required property string name
+                        required property int index
+                        readonly property real level: Live.level[key] || 0
                         width: ListView.view.width
-                        height: 32
-                        spacing: 8
+                        height: effectList.rowHeight
+                        spacing: 6
+                        z: grip.pressed ? 1 : 0
+                        Item {
+                            implicitWidth: 16
+                            implicitHeight: effectList.rowHeight
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.topMargin: 4
+                                anchors.bottomMargin: 4
+                                radius: 4
+                                color: grip.pressed ? Theme.line : grip.containsMouse ? Theme.hover : "transparent"
+                            }
+                            ColorImage {
+                                anchors.centerIn: parent
+                                source: "icons/grip-vertical.svg"
+                                sourceSize: Qt.size(14, 14)
+                                color: grip.pressed || grip.containsMouse ? Theme.text : Theme.faint
+                            }
+                            MouseArea {
+                                id: grip
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                preventStealing: true
+                                cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                                onPositionChanged: mouse => {
+                                    if (!pressed)
+                                        return
+                                    const p = mapToItem(effectList.contentItem, mouse.x, mouse.y)
+                                    const to = Math.max(0, Math.min(effectList.count - 1, Math.floor(p.y / effectList.rowHeight)))
+                                    Live.moveEffect(effect.index, to)
+                                }
+                                ToolTip.visible: containsMouse && !pressed
+                                ToolTip.delay: 600
+                                ToolTip.text: "拖动调整顺序（上面的先作用）"
+                            }
+                        }
                         Text {
-                            Layout.preferredWidth: 72
-                            text: effect.modelData.name
+                            Layout.preferredWidth: 64
+                            text: effect.name
                             font.pixelSize: Theme.sizeSm
                             font.weight: effect.level > 0 ? Font.DemiBold : Font.Normal
                             color: effect.level > 0 ? Theme.text : Theme.muted
@@ -641,7 +712,7 @@ Item {
                             to: 100
                             stepSize: 1
                             value: effect.level * 100
-                            onMoved: Live.setLevel(effect.modelData.key, value / 100)
+                            onMoved: Live.setLevel(effect.key, value / 100)
                         }
                         Text {
                             Layout.preferredWidth: 26
@@ -650,7 +721,7 @@ Item {
                             font.pixelSize: Theme.sizeSm
                             font.features: { "tnum": 1 }
                             color: effect.level > 0 ? Theme.text : Theme.faint
-                            MouseArea { anchors.fill: parent; onDoubleClicked: Live.setLevel(effect.modelData.key, 0) }
+                            MouseArea { anchors.fill: parent; onDoubleClicked: Live.setLevel(effect.key, 0) }
                         }
                     }
                 }

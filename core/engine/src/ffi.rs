@@ -2,7 +2,7 @@
 //! reply, `{"ok": …}` or `{"error": "…"}`. The engine also pushes the presented
 //! View as JSON through `on_event` from its worker thread; the host must hand it
 //! to its own UI thread and must not call back into the engine from inside it.
-use super::{audio_input::Selection, clock_ms, BluetoothDevice, Edit, Engine};
+use super::{audio_input::Selection, clock_ms, sound::SoundStream, BluetoothDevice, Edit, Engine};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
@@ -212,5 +212,64 @@ pub unsafe extern "C" fn kvj_waveform(
 pub unsafe extern "C" fn kvj_bytes_free(bytes: *mut u8, columns: usize) {
     if !bytes.is_null() {
         drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(bytes, columns * 4)));
+    }
+}
+
+/// The picture's sound, read for playing (see `sound`): `*rate` frames a
+/// second of interleaved stereo f32, `*duration` seconds (0 if unknown). Null
+/// when the file has no audio it can decode. Free with `kvj_sound_free`.
+/// # Safety
+/// `path` is NUL-terminated UTF-8; `rate` and `duration` are writable.
+#[no_mangle]
+pub unsafe extern "C" fn kvj_sound_open(path: *const c_char, rate: *mut u32, duration: *mut f64) -> *mut SoundStream {
+    if path.is_null() || rate.is_null() || duration.is_null() {
+        return std::ptr::null_mut();
+    }
+    let path = PathBuf::from(CStr::from_ptr(path).to_string_lossy().into_owned());
+    match catch_unwind(AssertUnwindSafe(|| SoundStream::open(&path))) {
+        Ok(Ok(sound)) => {
+            *rate = sound.rate();
+            *duration = sound.duration();
+            Box::into_raw(Box::new(sound))
+        }
+        Ok(Err(error)) => {
+            tracing::debug!("声音：{}：{error:#}", path.display());
+            std::ptr::null_mut()
+        }
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Reads on from `seconds`; false when the file cannot seek.
+/// # Safety
+/// `sound` came from `kvj_sound_open` and is used by one thread at a time.
+#[no_mangle]
+pub unsafe extern "C" fn kvj_sound_seek(sound: *mut SoundStream, seconds: f64) -> bool {
+    match sound.as_mut() {
+        Some(sound) => catch_unwind(AssertUnwindSafe(|| sound.seek(seconds))).unwrap_or(false),
+        None => false,
+    }
+}
+
+/// Up to `frames` stereo frames into `out` (2 × `frames` floats); fewer only
+/// at the end.
+/// # Safety
+/// As `kvj_sound_seek`; `out` holds 2 × `frames` floats.
+#[no_mangle]
+pub unsafe extern "C" fn kvj_sound_read(sound: *mut SoundStream, out: *mut f32, frames: usize) -> usize {
+    let Some(sound) = sound.as_mut() else { return 0 };
+    if out.is_null() || frames == 0 {
+        return 0;
+    }
+    let out = std::slice::from_raw_parts_mut(out, frames * 2);
+    catch_unwind(AssertUnwindSafe(|| sound.read(out))).unwrap_or(0)
+}
+
+/// # Safety
+/// `sound` came from `kvj_sound_open` (or is null) and is not used again.
+#[no_mangle]
+pub unsafe extern "C" fn kvj_sound_free(sound: *mut SoundStream) {
+    if !sound.is_null() {
+        drop(Box::from_raw(sound));
     }
 }

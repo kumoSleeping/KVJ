@@ -115,6 +115,8 @@ public:
 
     double duration() const override { return m_duration; }
     QString error() const override { return m_error; }
+    QSize sourceSize() const override { return m_natural; }
+    double frameRate() const override { return m_frameRate; }
 
 private:
     bool createGpu()
@@ -167,8 +169,13 @@ private:
         }
         ComPtr<IMFMediaType> native;
         UINT32 width = 0, height = 0;
-        if (SUCCEEDED(m_reader->GetNativeMediaType(kVideo, 0, &native)))
+        if (SUCCEEDED(m_reader->GetNativeMediaType(kVideo, 0, &native))) {
             MFGetAttributeSize(native.Get(), MF_MT_FRAME_SIZE, &width, &height);
+            UINT32 frames = 0, seconds = 0;
+            if (SUCCEEDED(MFGetAttributeRatio(native.Get(), MF_MT_FRAME_RATE, &frames, &seconds)) && seconds > 0)
+                m_frameRate = double(frames) / seconds;
+        }
+        m_natural = QSize(int(width), int(height));
         const QSize target = scaledSize(width, height, options.maxHeight);
 
         ComPtr<IMFMediaType> type;
@@ -278,6 +285,8 @@ private:
     LONG m_stride = 0;
     QRect m_area;
     double m_duration = 0;
+    double m_frameRate = 0;
+    QSize m_natural;
     QString m_error;
 };
 

@@ -83,6 +83,18 @@ ApplicationWindow {
     // so the DJ's computer can find this one before following starts.
     readonly property bool receiving: !sender.visible && !!device && device.id === "bluetooth"
     onReceivingChanged: Engine.listenBluetooth(receiving)
+    readonly property int bluetoothIndex: devices.findIndex(d => d.id === "bluetooth")
+    // The input chosen before Bluetooth was, to go back to.
+    property int localInput: 0
+
+    // The player's keys (keysOn, switched on the timeline): A/D or 4/6 on the
+    // number pad nudge the picture a second back or ahead (slower or faster
+    // for a moment), W/S or 8/2 change the speed by 1%, Enter plays from the
+    // timeline's cursor, ←/→ seek 5 seconds. None while words are typed. Space
+    // does nothing: one touch of it during a show is too easy.
+    property bool keysOn: true
+    readonly property bool typing: !!activeFocusItem && typeof activeFocusItem.selectedText === "string"
+    readonly property bool keysLive: keysOn && !typing
 
     // The player, for the desk and its timeline: what the picture shows, from
     // whichever leads, and the keys that move it.
@@ -174,10 +186,11 @@ ApplicationWindow {
         if (app.manualTempo)
             transport.setTempo(1)
     }
-    // Something on the screen from the start: the first entry, paused.
+    // Something on the screen from the start: the first entry that is on, paused.
     function cue() {
-        if (!transport.entry && app.entries.length)
-            transport.load(app.entries[0], 0, false)
+        const first = app.entries.find(e => e.enabled !== false)
+        if (!transport.entry && first)
+            transport.load(first, 0, false)
     }
     // That entry from `at` seconds: a seek within the one shown keeps playing or
     // paused as it was; another entry starts playing.
@@ -206,8 +219,55 @@ ApplicationWindow {
         if (app.manualTempo)
             transport.setTempo(transport.tempo + step)
     }
+    // The picture `seconds` ahead (or back), reached by playing faster (or
+    // slower) for a moment instead of a jump.
+    function nudge(seconds) {
+        if (!app.manualSeek || !app.manualTempo || !transport.entry)
+            return
+        transport.nudge(seconds)
+        app.tick()
+    }
+    // Receiving over Bluetooth is an input like the others; off goes back to
+    // the one chosen before.
+    function setReceiving(on) {
+        if (app.running || app.bluetoothIndex < 0)
+            return
+        if (on) {
+            if (deviceBox.currentIndex !== app.bluetoothIndex)
+                app.localInput = deviceBox.currentIndex
+            deviceBox.currentIndex = app.bluetoothIndex
+        } else if (deviceBox.currentIndex === app.bluetoothIndex) {
+            deviceBox.currentIndex = app.localInput !== app.bluetoothIndex ? app.localInput : 0
+        }
+    }
+    // The entry after `id` that is on, from its start; past the last one, the
+    // first that is on.
+    function nextOn(id) {
+        const list = app.entries
+        const i = list.findIndex(e => e.id === id)
+        for (let k = 1; k <= list.length; ++k) {
+            const e = list[(i + k) % list.length]
+            if (e.id !== id && e.enabled !== false)
+                return e
+        }
+        return null
+    }
+    // The entry on the screen is turned off (confirmed in the sidebar): the
+    // picture goes on to the next one that is on, with the dissolve if it is
+    // on; with none left it stops there. Following finds its own way.
+    function dropPlaying(id) {
+        const next = app.nextOn(id)
+        Engine.enableEntries(app.currentSet.id, [id], false)
+        if (!app.manualSeek || !transport.entry || transport.entry.id !== id)
+            return
+        if (next)
+            transport.load(next, 0, true)
+        else
+            transport.setPlaying(false)
+        app.tick()
+    }
     // The playhead for the timeline; at the end of an entry the player goes on
-    // to the next one in the Set.
+    // to the next one in the Set that is on.
     function tick() {
         if (app.aiPicture) {
             app.playhead = Math.max(0, Math.min(app.shownDuration, app.match.position
@@ -217,8 +277,9 @@ ApplicationWindow {
         app.playhead = transport.now()
         if (transport.playing && transport.duration > 0 && app.playhead >= transport.duration - 0.03) {
             const i = app.entries.findIndex(e => e.id === transport.entry.id)
-            if (i >= 0 && i + 1 < app.entries.length)
-                transport.load(app.entries[i + 1], 0, true)
+            const next = i >= 0 ? app.entries.slice(i + 1).find(e => e.enabled !== false) : null
+            if (next)
+                transport.load(next, 0, true)
             else
                 transport.setPlaying(false)
             app.playhead = transport.now()
@@ -249,7 +310,8 @@ ApplicationWindow {
     // <rate>", "fade <ms>" (0 = off), "listen", "follow", "here", "stop", "hold [tempo|jump]",
     // "send", "back"; on the timeline "zoom <factor> <x>", "mark <x>" (x in px
     // along the strip), "jump"; "post <px> <py> <words>" posts a sticker of
-    // words and chooses it.
+    // words and chooses it; "nudge <seconds>"; "drop" turns the entry on the
+    // screen off as the sidebar's confirmed second press does.
     function devCommand(line) {
         const w = String(line).trim().split(/\s+/)
         switch (w[0]) {
@@ -275,6 +337,8 @@ ApplicationWindow {
         case "zoom": timeline.zoomAt(Number(w[2] || 0), Number(w[1])); break
         case "mark": timeline.setMark(Number(w[1])); break
         case "jump": timeline.jump(); break
+        case "nudge": app.nudge(Number(w[1] || 1)); break
+        case "drop": if (transport.entry) app.dropPlaying(transport.entry.id); break
         case "post": Live.post({ kind: "text", text: w.slice(3).join(" "), name: "", px: Number(w[1]), py: Number(w[2]), size: 0.15 }); desk.chosenSid = Live.lastSid; break
         default: return "unknown"
         }
@@ -361,21 +425,44 @@ ApplicationWindow {
         category: "player"
         property alias fade: app.fadeOn
         property alias fadeMs: app.fadeMs
-    }
-    Shortcut {
-        sequence: "Space"
-        enabled: app.manualSeek && !!transport.entry
-        onActivated: app.toggle()
+        property alias keys: app.keysOn
     }
     Shortcut {
         sequence: "Left"
-        enabled: app.manualSeek && !!transport.entry
+        enabled: app.keysLive && app.manualSeek && !!transport.entry
         onActivated: app.seekBy(-5)
     }
     Shortcut {
         sequence: "Right"
-        enabled: app.manualSeek && !!transport.entry
+        enabled: app.keysLive && app.manualSeek && !!transport.entry
         onActivated: app.seekBy(5)
+    }
+    Shortcut {
+        sequences: ["A", "Num+4"]
+        autoRepeat: false
+        enabled: app.keysLive && app.manualSeek && app.manualTempo && !!transport.entry
+        onActivated: app.nudge(-1)
+    }
+    Shortcut {
+        sequences: ["D", "Num+6"]
+        autoRepeat: false
+        enabled: app.keysLive && app.manualSeek && app.manualTempo && !!transport.entry
+        onActivated: app.nudge(1)
+    }
+    Shortcut {
+        sequences: ["W", "Num+8"]
+        enabled: app.keysLive && app.manualTempo
+        onActivated: app.nudgeTempo(0.01)
+    }
+    Shortcut {
+        sequences: ["S", "Num+2"]
+        enabled: app.keysLive && app.manualTempo
+        onActivated: app.nudgeTempo(-0.01)
+    }
+    Shortcut {
+        sequences: ["Return", "Enter"]
+        enabled: app.keysLive && app.manualSeek && !!timeline.markClip
+        onActivated: timeline.jump()
     }
 
     ColumnLayout {
@@ -397,8 +484,14 @@ ApplicationWindow {
                 running: app.running
                 editable: app.editable
                 playingId: app.shownEntry ? app.shownEntry.id : ""
+                canSend: !app.following
+                receiving: app.receiving
+                canReceive: !app.running && app.bluetoothIndex >= 0
                 onSelectSet: id => app.setId = id
                 onAddUrls: urls => app.addUrls(urls)
+                onSend: app.openSender()
+                onReceive: on => app.setReceiving(on)
+                onDropPlaying: id => app.dropPlaying(id)
             }
             Rectangle {
                 Layout.fillHeight: true
@@ -430,47 +523,15 @@ ApplicationWindow {
                     anchors.margins: Theme.gap
                     spacing: 14
 
-                    // The DJ's computer runs only the sender, in a small window.
-                    RowLayout {
+                    // Every place here is fixed from the start: nothing appears
+                    // or goes away when listening starts, so no key moves.
+                    Text {
                         Layout.fillWidth: true
-                        Layout.topMargin: -6
-                        spacing: 8
-                        Text {
-                            Layout.fillWidth: true
-                            text: "这台是 DJ 电脑？"
-                            font.pixelSize: Theme.sizeXs
-                            color: Theme.faint
-                            elide: Text.ElideRight
-                        }
-                        TextButton {
-                            iconName: "send"
-                            text: "只发送"
-                            enabled: !app.following
-                            ToolTip.visible: hovered
-                            ToolTip.delay: 600
-                            ToolTip.text: "收起播放器，打开只采集 Master、经蓝牙发给投影电脑的小窗"
-                            onClicked: app.openSender()
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 4
-                        Text {
-                            Layout.fillWidth: true
-                            text: "智能跟随音频跳转与调速"
-                            font.pixelSize: Theme.sizeLg
-                            font.weight: Font.DemiBold
-                            color: Theme.text
-                            elide: Text.ElideRight
-                        }
-                        Text {
-                            Layout.fillWidth: true
-                            text: "监听：听 Master 音频，小窗显示判断的位置，画面仍归播放器。跟随：按判断跳转和调速；下方两个助手可各自暂停，交回播放器。"
-                            font.pixelSize: Theme.sizeXs
-                            color: Theme.muted
-                            wrapMode: Text.Wrap
-                        }
+                        text: "音频对位"
+                        font.pixelSize: Theme.sizeLg
+                        font.weight: Font.DemiBold
+                        color: Theme.text
+                        elide: Text.ElideRight
                     }
 
                     // Where following itself puts the picture; the desk shows
@@ -484,17 +545,17 @@ ApplicationWindow {
                         source: projection.surface
                     }
 
-                    // What following is doing now. Empty while off, and then it
-                    // must not take a share of the height (layouts fill by default).
+                    // What following is doing now, and the input's level: their
+                    // lines are there while it is off too, so nothing moves when
+                    // it starts. They must not take a share of the height
+                    // (layouts fill by default).
                     ColumnLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: false
                         spacing: 4
-                        visible: app.following
                         Text {
                             Layout.fillWidth: true
-                            visible: text.length > 0
-                            text: app.match ? app.match.entry.title : app.phaseText(app.phase)
+                            text: app.match ? app.match.entry.title : app.following ? app.phaseText(app.phase) : "未监听"
                             font.pixelSize: 18
                             font.weight: Font.DemiBold
                             color: app.match && !app.followPaused ? Theme.text : Theme.muted
@@ -502,9 +563,8 @@ ApplicationWindow {
                         }
                         Text {
                             Layout.fillWidth: true
-                            visible: !!app.match
                             text: app.match ? (app.followPaused ? "只监听" : app.phaseText(app.phase)) + " · " + app.clock(app.match.position, true)
-                                              + " · ×" + app.match.rate.toFixed(3) : ""
+                                              + " · ×" + app.match.rate.toFixed(3) : " "
                             font.pixelSize: Theme.sizeSm
                             font.features: { "tnum": 1 }
                             color: Theme.muted
@@ -517,7 +577,7 @@ ApplicationWindow {
                             radius: 1.5
                             color: Theme.line
                             Rectangle {
-                                readonly property real db: app.view.input && app.view.input.rms_dbfs !== null ? app.view.input.rms_dbfs : -70
+                                readonly property real db: app.following && app.view.input && app.view.input.rms_dbfs !== null ? app.view.input.rms_dbfs : -70
                                 width: parent.width * Math.max(0, Math.min(1, (db + 70) / 70))
                                 height: parent.height
                                 radius: 1.5
@@ -561,6 +621,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 34
                             text: "跳至此处"
+                            outlined: true
                             enabled: !!app.match && app.manualSeek
                             ToolTip.visible: hovered
                             ToolTip.delay: 600
@@ -604,7 +665,32 @@ ApplicationWindow {
                         }
                     }
 
+                    // Calibration of the followed picture against the music.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text { text: "画面偏移"; font.pixelSize: Theme.sizeSm; color: Theme.muted }
+                        Seek {
+                            id: offset
+                            Layout.fillWidth: true
+                            from: -400
+                            to: 400
+                            stepSize: 10
+                            value: 0
+                        }
+                        Text {
+                            Layout.preferredWidth: 58
+                            horizontalAlignment: Text.AlignRight
+                            text: (offset.value > 0 ? "+" : "") + offset.value.toFixed(0) + " ms"
+                            font.pixelSize: Theme.sizeSm
+                            font.features: { "tnum": 1 }
+                            color: offset.value === 0 ? Theme.muted : Theme.text
+                            MouseArea { anchors.fill: parent; onDoubleClicked: offset.value = 0 }
+                        }
+                    }
+
                     // Receiving over Bluetooth: the operator picks the current DJ.
+                    // Below everything that is always there, so nothing moves.
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 4
@@ -645,30 +731,6 @@ ApplicationWindow {
                         }
                     }
 
-                    // Calibration of the followed picture against the music.
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        Text { text: "画面偏移"; font.pixelSize: Theme.sizeSm; color: Theme.muted }
-                        Seek {
-                            id: offset
-                            Layout.fillWidth: true
-                            from: -400
-                            to: 400
-                            stepSize: 10
-                            value: 0
-                        }
-                        Text {
-                            Layout.preferredWidth: 58
-                            horizontalAlignment: Text.AlignRight
-                            text: (offset.value > 0 ? "+" : "") + offset.value.toFixed(0) + " ms"
-                            font.pixelSize: Theme.sizeSm
-                            font.features: { "tnum": 1 }
-                            color: offset.value === 0 ? Theme.muted : Theme.text
-                            MouseArea { anchors.fill: parent; onDoubleClicked: offset.value = 0 }
-                        }
-                    }
-
                     Text {
                         Layout.fillWidth: true
                         visible: Engine.error.length > 0
@@ -705,6 +767,7 @@ ApplicationWindow {
             objectName: "timeline"
             Layout.fillWidth: true
             entries: app.entries
+            setName: app.currentSet ? app.currentSet.name : ""
             running: app.running
             phase: app.phase
             player: app

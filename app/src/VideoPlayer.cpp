@@ -36,6 +36,18 @@ QString VideoPlayer::error() const
     return m_error;
 }
 
+QSize VideoPlayer::sourceSize() const
+{
+    std::lock_guard lock(m_mutex);
+    return m_sourceSize;
+}
+
+double VideoPlayer::sourceFps() const
+{
+    std::lock_guard lock(m_mutex);
+    return m_sourceFps;
+}
+
 // Called with the mutex held.
 void VideoPlayer::recycle(VideoFrame &&frame)
 {
@@ -90,6 +102,11 @@ void VideoPlayer::run()
         return;
     }
     const double duration = decoder->duration();
+    {
+        std::lock_guard lock(m_mutex);
+        m_sourceSize = decoder->sourceSize();
+        m_sourceFps = decoder->frameRate();
+    }
     double cursor = 0; // where the decoder is: the last seek or the last decoded frame
     double last = -1; // the previous decoded frame, for the frame interval
     double step = 1.0 / 30;

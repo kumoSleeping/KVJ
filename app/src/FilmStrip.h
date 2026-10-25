@@ -78,6 +78,9 @@ class FilmStrip : public QQuickPaintedItem
     Q_PROPERTY(double from READ from WRITE setFrom NOTIFY viewChanged)
     Q_PROPERTY(double pxPerSec READ pxPerSec WRITE setPxPerSec NOTIFY viewChanged)
     Q_PROPERTY(QColor gap MEMBER m_gap NOTIFY viewChanged)
+    // Width over height of each frame's cell (0 = the frames' own): narrower
+    // cells show the middle of each frame and fit more of them.
+    Q_PROPERTY(double cellAspect READ cellAspect WRITE setCellAspect NOTIFY viewChanged)
 
 public:
     explicit FilmStrip(QQuickItem *parent = nullptr);
@@ -91,6 +94,8 @@ public:
     void setFrom(double seconds);
     double pxPerSec() const { return m_pxPerSec; }
     void setPxPerSec(double px);
+    double cellAspect() const { return m_cellAspect; }
+    void setCellAspect(double aspect);
 
     void paint(QPainter *painter) override;
 
@@ -112,4 +117,5 @@ private:
     double m_from = 0;
     double m_pxPerSec = 10;
     QColor m_gap = Qt::black;
+    double m_cellAspect = 0;
 };

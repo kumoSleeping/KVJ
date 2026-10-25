@@ -1,4 +1,5 @@
 pragma Singleton
+import QtCore
 import QtQuick
 
 // What goes on the screen over the picture, sent by the operator and, later, by
@@ -108,7 +109,8 @@ QtObject {
     }
 
     // —— Picture effects ——
-    // An effect at 0 is off; its slider brings it in.
+    // An effect at 0 is off; its slider brings it in. Their place here is the
+    // shader's `kind` (shaders/effects.frag).
     readonly property var effects: [
         { key: "mosaic", name: "马赛克" },
         { key: "rgb", name: "RGB 分离", moving: true },
@@ -139,4 +141,41 @@ QtObject {
     }
     readonly property bool effectsOn: effects.some(e => amount(e.key) > 0)
     readonly property bool effectsMoving: effects.some(e => e.moving && amount(e.key) > 0)
+
+    // The order they are applied in, first at the top, as the desk lists them:
+    // { key, name }. A model, so that a row dragged elsewhere is moved, not
+    // made anew. Kept between runs.
+    property ListModel chain: ListModel {}
+    property int chainRevision: 0
+    readonly property var order: {
+        chainRevision
+        const keys = []
+        for (let i = 0; i < chain.count; ++i)
+            keys.push(chain.get(i).key)
+        return keys
+    }
+    // The effects that are on, in that order: one pass each.
+    readonly property var active: order.filter(k => amount(k) > 0)
+    property Settings store: Settings {
+        category: "effects"
+        property string order: ""
+    }
+
+    function kind(key) {
+        return effects.findIndex(e => e.key === key)
+    }
+    function moveEffect(from, to) {
+        if (from === to || from < 0 || to < 0 || from >= chain.count || to >= chain.count)
+            return
+        chain.move(from, to, 1)
+        chainRevision += 1
+        store.order = order.join(",")
+    }
+    Component.onCompleted: {
+        const saved = store.order.split(",").filter((k, i, all) => kind(k) >= 0 && all.indexOf(k) === i)
+        const keys = saved.concat(effects.map(e => e.key).filter(k => saved.indexOf(k) < 0))
+        for (const k of keys)
+            chain.append({ key: k, name: effects[kind(k)].name })
+        chainRevision += 1
+    }
 }

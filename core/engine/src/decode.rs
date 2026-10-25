@@ -31,7 +31,7 @@ fn packet_samples(capacity: usize, channels: usize) -> Result<usize> {
     Ok(samples)
 }
 
-fn copy_audio_packet<'a>(
+pub(crate) fn copy_audio_packet<'a>(
     buffer: &'a mut Option<SampleBuffer<f32>>,
     audio: AudioBufferRef<'_>,
 ) -> Result<&'a [f32]> {

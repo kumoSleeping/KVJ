@@ -5,6 +5,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,6 +42,16 @@ double kvj_clock_ms(void);
 typedef bool (*KvjStopFn)(void *user);
 unsigned char *kvj_waveform(const char *path, const char *cache_dir, KvjStopFn stop, void *user, size_t *columns);
 void kvj_bytes_free(unsigned char *bytes, size_t columns);
+
+/* The picture's sound, read for playing: interleaved stereo float frames at
+ * *rate a second from any point; *duration seconds (0 if unknown). Null when
+ * the file has no audio it can decode. One thread at a time; free with
+ * kvj_sound_free. kvj_sound_read returns fewer than `frames` only at the end. */
+typedef struct KvjSound KvjSound;
+KvjSound *kvj_sound_open(const char *path, uint32_t *rate, double *duration);
+bool kvj_sound_seek(KvjSound *sound, double seconds);
+size_t kvj_sound_read(KvjSound *sound, float *out, size_t frames);
+void kvj_sound_free(KvjSound *sound);
 
 #ifdef __cplusplus
 }

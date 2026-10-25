@@ -3,20 +3,26 @@
 // The sound of the entry on the screen, played in step with its picture on an
 // output the operator picks (headphones, speakers, an interface). It takes the
 // same timing as VideoSurface: media seconds at an engine-clock moment, a rate
-// and a calibration offset. A large gap is closed with a seek, a small one by
-// playing a little faster or slower for a moment. Nothing is opened while it
-// is off, so it costs nothing until the operator wants sound.
+// and a calibration offset. It plays on a thread of its own: the engine
+// decodes the file (kvj_sound_*), Rubber Band stretches it to the picture's
+// speed keeping its pitch, as KDJ does, and a QAudioSink plays it. A change of
+// speed is only a new ratio for the stretcher, so the sound never breaks; a
+// small drift from the picture is steered away the same way, a little faster
+// or slower, and only a jump seeks. Nothing is opened while it is off, so it
+// costs nothing until the operator wants sound; the output and the volume can
+// be chosen before.
 
+#include <QAudioDevice>
+#include <QByteArray>
 #include <QMediaDevices>
 #include <QObject>
 #include <QString>
-#include <QTimer>
+#include <QThread>
 #include <QVariantList>
 #include <QtQml/qqmlregistration.h>
 #include <memory>
 
-class QAudioOutput;
-class QMediaPlayer;
+class SoundPlayer;
 
 class AudioFollower : public QObject
 {
@@ -60,9 +66,11 @@ signals:
     void errorChanged();
 
 private:
-    void restart();
-    void applyDevice();
-    void sync();
+    // The file and the output to the player, anew.
+    void reopen();
+    // The timing to the player.
+    void push();
+    QAudioDevice chosenDevice() const;
     void setError(const QString &error);
 
     bool m_enabled = false;
@@ -74,18 +82,12 @@ private:
     double m_clockAtMs = 0;
     double m_offsetMs = 0;
     QString m_error;
+    // The output the player has open, to reopen only when another is chosen.
+    QByteArray m_openDevice;
 
     QMediaDevices m_outputs;
-    std::unique_ptr<QMediaPlayer> m_player;
-    QAudioOutput *m_output = nullptr;
-    QTimer m_timer;
-    QTimer m_soon;
-    // After a seek the reported position lags until the seek lands; no
-    // correction is judged on it until then.
-    double m_settleUntilMs = 0;
-    bool m_measureLead = false;
-    // Seconds a seek takes to be heard, learned from where seeks land.
-    double m_lead = 0.1;
-    double m_gap = 0;
-    double m_playRate = 1;
+    QThread m_thread;
+    // Lives on m_thread: what the player's work is queued on.
+    QObject *m_context = nullptr;
+    std::shared_ptr<SoundPlayer> m_player;
 };

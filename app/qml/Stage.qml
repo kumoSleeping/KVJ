@@ -34,26 +34,56 @@ Item {
     Item {
         id: picture
         anchors.fill: parent
-        // No effect, no layer: the picture is drawn straight as before. The
-        // software renderer has no shaders and would draw nothing.
-        layer.enabled: Live.effectsOn && GraphicsInfo.api !== GraphicsInfo.Software
-        layer.effect: ShaderEffect {
-            fragmentShader: "qrc:/qt/qml/KVJ/shaders/effects.frag.qsb"
-            property real time: ((stage.now - Live.epoch) / 1000) % 1000
-            property real aspect: stage.width / Math.max(1, stage.height)
-            property real mosaic: Live.amount("mosaic")
-            property real rgb: Live.amount("rgb")
-            property real tiles: Live.amount("tiles")
-            property real lens: Live.amount("lens")
-            property real zoom: Live.amount("zoom")
-            property real wave: Live.amount("wave")
-            property real glitch: Live.amount("glitch")
-            property real scan: Live.amount("scan")
-            property real halftone: Live.amount("halftone")
-            property real posterize: Live.amount("posterize")
-            property real hue: Live.amount("hue")
-            property real mono: Live.amount("mono")
-            property real vignette: Live.amount("vignette")
+    }
+
+    // The effects that are on, a pass each in the desk's order, each reading
+    // the picture the one before made; the last one is what is seen. No
+    // effect, no pass: the picture is drawn straight. The software renderer
+    // has no shaders and would draw nothing.
+    readonly property string wanted: GraphicsInfo.api === GraphicsInfo.Software ? "" : Live.active.join(",")
+    // Rebuilt only when the passes change, not on every move of a slider.
+    property var passList: []
+    onWantedChanged: if (wanted !== passList.join(",")) passList = wanted ? wanted.split(",") : []
+    ShaderEffectSource {
+        id: plain
+        sourceItem: stage.passList.length ? picture : null
+        hideSource: stage.passList.length > 0
+        visible: false
+    }
+    Repeater {
+        id: passes
+        model: stage.passList
+        Item {
+            id: pass
+            required property string modelData
+            required property int index
+            readonly property bool last: index === passes.count - 1
+            readonly property alias output: output
+            readonly property var input: {
+                passes.count
+                if (index === 0)
+                    return plain
+                const before = passes.itemAt(index - 1)
+                return before ? before.output : null
+            }
+            anchors.fill: parent
+            ShaderEffect {
+                id: fx
+                anchors.fill: parent
+                visible: !!pass.input
+                fragmentShader: "qrc:/qt/qml/KVJ/shaders/effects.frag.qsb"
+                property var source: pass.input
+                property real time: ((stage.now - Live.epoch) / 1000) % 1000
+                property real aspect: stage.width / Math.max(1, stage.height)
+                property real kind: Live.kind(pass.modelData)
+                property real amount: Live.amount(pass.modelData)
+            }
+            ShaderEffectSource {
+                id: output
+                sourceItem: pass.last ? null : fx
+                hideSource: !pass.last
+                visible: false
+            }
         }
     }
     Text {
