@@ -399,6 +399,13 @@ ApplicationWindow {
         }
     }
 
+    // No screen goes dark and no computer sleeps while the picture is out or
+    // the music is heard (or sent): nobody touches the computer during a show.
+    Binding {
+        target: Engine
+        property: "keepAwake"
+        value: projection.visible || app.running
+    }
     Transport {
         id: transport
     }

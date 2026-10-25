@@ -1,5 +1,6 @@
 #include "Engine.h"
 
+#include "Awake.h"
 #include "kvj.h"
 
 #include <QDir>
@@ -106,6 +107,15 @@ void Engine::call(const QJsonObject &request, Done done, bool background, std::f
                 finally();
         }, Qt::QueuedConnection);
     });
+}
+
+void Engine::setKeepAwake(bool on)
+{
+    if (m_keepAwake == on)
+        return;
+    m_keepAwake = on;
+    stayAwake(on);
+    emit keepAwakeChanged();
 }
 
 void Engine::setError(const QString &error)

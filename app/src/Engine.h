@@ -32,6 +32,9 @@ class Engine : public QObject
     // Files being probed into a Set; only this holds back further adding.
     Q_PROPERTY(bool importing READ importing NOTIFY importingChanged)
     Q_PROPERTY(QString dataDir READ dataDir CONSTANT)
+    // The computer and its screens kept awake (Awake.h): set while projecting,
+    // following or sending.
+    Q_PROPERTY(bool keepAwake READ keepAwake WRITE setKeepAwake NOTIFY keepAwakeChanged)
 
 public:
     explicit Engine(QObject *parent = nullptr);
@@ -47,6 +50,8 @@ public:
     bool busy() const { return m_busy > 0; }
     bool importing() const { return m_importing; }
     QString dataDir() const { return m_dataDir; }
+    bool keepAwake() const { return m_keepAwake; }
+    void setKeepAwake(bool on);
 
     Q_INVOKABLE void refreshDevices();
     Q_INVOKABLE void createSet(const QString &name);
@@ -83,6 +88,7 @@ signals:
     void errorChanged();
     void busyChanged();
     void importingChanged();
+    void keepAwakeChanged();
 
 private:
     using Done = std::function<void(const QJsonValue &ok)>;
@@ -105,6 +111,7 @@ private:
     QString m_error;
     int m_busy = 0;
     bool m_importing = false;
+    bool m_keepAwake = false;
     qint64 m_logCursor = 0;
     QString m_session;
     QTimer m_poll;

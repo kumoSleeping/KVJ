@@ -103,6 +103,7 @@ qt_add_qml_module(KVJ
         src/FrameNode.h
         src/AudioFollower.h src/AudioFollower.cpp
         src/Decoder.h
+        src/Awake.h
 )
 # Picture effects, compiled to every shading language Qt Quick may run on.
 qt_add_shaders(KVJ "shaders"
@@ -142,8 +143,8 @@ elseif(WIN32)
 endif()
 
 if(APPLE)
-    target_sources(KVJ PRIVATE src/platform/mac/AvfDecoder.mm src/platform/mac/TitleBar.mm)
-    set_source_files_properties(src/platform/mac/AvfDecoder.mm src/platform/mac/TitleBar.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_sources(KVJ PRIVATE src/platform/mac/AvfDecoder.mm src/platform/mac/TitleBar.mm src/platform/mac/Awake.mm)
+    set_source_files_properties(src/platform/mac/AvfDecoder.mm src/platform/mac/TitleBar.mm src/platform/mac/Awake.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_link_libraries(KVJ PRIVATE
         "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework Foundation" "-framework AppKit")
     set_target_properties(KVJ PROPERTIES
@@ -154,7 +155,7 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in)
 elseif(WIN32)
-    target_sources(KVJ PRIVATE src/platform/win/MfDecoder.cpp src/platform/win/TitleBar.cpp)
+    target_sources(KVJ PRIVATE src/platform/win/MfDecoder.cpp src/platform/win/TitleBar.cpp src/platform/win/Awake.cpp)
     target_compile_definitions(KVJ PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_link_libraries(KVJ PRIVATE mfplat mfreadwrite mfuuid d3d11 dxgi ole32 propsys)
 endif()
