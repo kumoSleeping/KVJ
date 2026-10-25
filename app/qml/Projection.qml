@@ -38,9 +38,38 @@ Window {
         }
     }
 
+    // The screen it was opened on, by name. That screen gone (a cable pulled, a
+    // projector off), the system would move the picture onto the operator's
+    // screen over the desk: it is put away instead and waits, and comes back
+    // on that screen the way it was once it is there again.
+    property string screenName: ""
+    property bool wantsFullScreen: false
+    property bool waiting: false
+    Connections {
+        target: Qt.application
+        function onScreensChanged() { Qt.callLater(root.followScreens) }
+    }
+    function followScreens() {
+        const screens = Qt.application.screens
+        const at = screens.findIndex(s => s.name === root.screenName)
+        if (root.visible && at < 0 && root.screenName !== "") {
+            root.waiting = true
+            if (visibility === Window.FullScreen)
+                showNormal()
+            hide()
+        } else if (root.waiting && at >= 0) {
+            openOn(at, root.wantsFullScreen)
+        }
+    }
+
     function openOn(screenIndex, fullscreen) {
         const screens = Qt.application.screens
+        if (!screens.length)
+            return
         const target = screens[Math.max(0, Math.min(screenIndex, screens.length - 1))]
+        screenName = target.name
+        wantsFullScreen = fullscreen
+        waiting = false
         if (visibility === Window.FullScreen)
             showNormal()
         screen = target
@@ -55,6 +84,7 @@ Window {
         raise()
     }
     function closeOutput() {
+        waiting = false
         if (visibility === Window.FullScreen)
             showNormal()
         hide()

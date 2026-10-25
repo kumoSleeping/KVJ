@@ -37,11 +37,14 @@ Item {
         smooth: true
         mipmap: !root.lite
     }
-    // GIFs play in the preview too, so what is posted is seen moving.
+    // GIFs play in the preview too, so what is posted is seen moving. Each
+    // frame is decoded when due, never all kept: a long 1080p GIF cached whole
+    // takes gigabytes, once for the projection and once for the preview.
     AnimatedImage {
         id: motion
         anchors.fill: parent
         visible: root.moving
+        cache: false
         source: visible ? root.source : ""
         fillMode: Image.PreserveAspectFit
         smooth: true

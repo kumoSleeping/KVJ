@@ -405,7 +405,7 @@ ApplicationWindow {
     Binding {
         target: Engine
         property: "keepAwake"
-        value: projection.visible || app.running
+        value: projection.visible || projection.waiting || app.running
     }
     Transport {
         id: transport
@@ -515,7 +515,8 @@ ApplicationWindow {
             Layout.fillWidth: true
             inset: app.visibility === Window.FullScreen ? 0 : app.titleInset
             titleHeight: app.visibility === Window.FullScreen ? 0 : app.titleHeight
-            status: [projection.visible ? "投放中" : "", app.running ? app.phaseText(app.phase) : ""].filter(t => t).join(" · ")
+            status: [projection.visible ? "投放中" : projection.waiting ? "投放屏已断开，接回后自动恢复" : "",
+                     app.running ? app.phaseText(app.phase) : ""].filter(t => t).join(" · ")
             live: projection.visible
             canSend: !app.following
             onSend: app.openSender()
