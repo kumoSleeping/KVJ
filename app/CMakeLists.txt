@@ -44,7 +44,9 @@ qt_add_qml_module(KVJ
         qml/Live.qml
         qml/Stage.qml
         qml/Sticker.qml
-        qml/LiveDesk.qml
+        qml/Desk.qml
+        qml/Sidebar.qml
+        qml/Timeline.qml
     RESOURCES
         qml/icons/check.svg
         qml/icons/chevron-down.svg

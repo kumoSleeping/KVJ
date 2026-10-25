@@ -5,36 +5,22 @@ import QtQuick.Dialogs
 import QtQuick.Layouts
 import KVJ
 
-// The live desk: a light preview of what is projected, and what goes over it.
-// Left, the preview doubles as the stage for the next sticker: the dot is where
-// it will go, the slider beside it how tall, and the selected sticker is drawn
-// there as it will look. Below it, words and reactions. Right, the gallery of
-// stickers and the effects.
-ApplicationWindow {
+// The live desk, in the main window: a light preview of what is projected, and
+// what goes over it. The preview doubles as the stage for the next sticker: the
+// dot is where it will go, the slider beside it how tall, and the selected
+// sticker is drawn there as it will look. Below it, words and reactions and the
+// timeline; beside it all, the gallery of stickers and the effects.
+ColumnLayout {
     id: desk
-    width: 1040
-    height: 660
-    minimumWidth: 900
-    minimumHeight: 580
-    title: "KVJ 现场台"
-    color: Theme.bg
-    font.pixelSize: Theme.size
-    palette.window: Theme.bg
-    palette.windowText: Theme.text
-    palette.base: Theme.inset
-    palette.text: Theme.text
-    palette.button: Theme.raised
-    palette.buttonText: Theme.text
-    palette.highlight: Theme.line
-    palette.highlightedText: Theme.text
-    palette.toolTipBase: Theme.raised
-    palette.toolTipText: Theme.text
-    palette.mid: Theme.line
-    palette.dark: Theme.muted
+    spacing: 0
 
     // The projected surface the preview copies its picture from.
     property VideoSurface source
     property var entry: null
+    // The followed Set's entries and where following is, for the timeline.
+    property var entries: []
+    property bool running: false
+    property string phase: ""
 
     // Stickers in waiting, kept between runs: { id, kind: "image" | "text", source, text, name }.
     property var gallery: []
@@ -110,14 +96,14 @@ ApplicationWindow {
     }
 
     RowLayout {
-        anchors.fill: parent
-        spacing: 0
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        spacing: Theme.gap
 
         // —— Preview and stage, words and reactions ——
         ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.margins: Theme.gap
             spacing: 12
 
             // As tall as a 16:9 picture of this width allows; what is left goes below.
@@ -330,9 +316,12 @@ ApplicationWindow {
 
             // Reactions, as in Google Meet: hover plays one, holding sends a stream.
             Rectangle {
+                id: reactionBar
+                // Keys narrow a little before the bar outgrows the column.
+                readonly property real key: Math.max(30, Math.min(40, (parent.width - 16) / Live.emoji.length - 2))
                 Layout.alignment: Qt.AlignHCenter
                 implicitWidth: reactions.implicitWidth + 16
-                implicitHeight: 48
+                implicitHeight: reactionBar.key + 8
                 radius: height / 2
                 color: Theme.raised
                 Row {
@@ -344,13 +333,13 @@ ApplicationWindow {
                         Item {
                             id: key
                             required property var modelData
-                            width: 40
-                            height: 40
+                            width: reactionBar.key
+                            height: reactionBar.key
                             AnimatedImage {
                                 id: face
                                 anchors.centerIn: parent
-                                width: 30
-                                height: 30
+                                width: reactionBar.key * 0.75
+                                height: reactionBar.key * 0.75
                                 source: "emoji/" + key.modelData.file + ".webp"
                                 cache: false
                                 paused: !tap.containsMouse
@@ -386,22 +375,30 @@ ApplicationWindow {
                     }
                 }
             }
-            Item {
+            // What is left under the preview goes to the timeline.
+            Timeline {
+                Layout.fillWidth: true
                 Layout.fillHeight: true
+                Layout.minimumHeight: 150
                 Layout.verticalStretchFactor: 1
+                Layout.topMargin: 4
+                entries: desk.entries
+                running: desk.running
+                phase: desk.phase
             }
         }
 
         // —— Stickers and effects ——
         Rectangle {
-            Layout.preferredWidth: 340
+            Layout.preferredWidth: 300
             Layout.fillWidth: false
             Layout.fillHeight: true
+            radius: 8
             color: Theme.raised
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: Theme.gap
+                anchors.margins: 14
                 spacing: 12
 
                 RowLayout {

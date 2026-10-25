@@ -20,9 +20,26 @@ index or video — so it stays light next to the DJ software. The projecting
 computer picks **蓝牙接收** as its input and chooses the current DJ among the
 connected ones. Pair the two computers in the system's Bluetooth settings first.
 
+## One window
+
+Everything is in one window. The sidebar holds the Sets and the selected Set's
+entries; each entry has a switch that decides whether it is followed, and it
+works during the show too: at a handover between DJs the next DJ's entries are
+turned on while the last ones stay on, and the last are turned off once the next
+set is under way. Every entry is indexed either way, so switching never waits
+for indexing; turning off the entry on the screen keeps the picture until
+another entry is found. The middle is the live desk, the right side follows and
+projects, or only sends.
+
+The **timeline** under the desk has a lane per entry that is on: the one on the
+screen with a playhead carried on the engine's clock, the others holding where
+they were last seen. Beside it the speed the music runs at against the recording
+(×1.025, +2.5 %), whether that speed has settled, and its trace over the last
+minute.
+
 ## Live desk
 
-**现场台** opens a second window for the show itself: a light preview of the
+The live desk is a light preview of the
 projection, danmaku (Enter sends; scrolling or large in the middle), Google
 Meet–style reactions (Noto's animated emoji rising up the sides; hold to send a
 stream), stickers and picture effects. Stickers are kept in a gallery of images

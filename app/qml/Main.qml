@@ -1,19 +1,20 @@
 import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
-import QtQuick.Dialogs
+import QtQuick.Window
 import QtQuick.Layouts
 import KVJ
 
-// The operator's window, three regions of one sheet: the Sets, the selected
-// Set's entries on a foot bar, and the live controls on the raised tone.
+// The operator's one window, three regions of one sheet: the sidebar with the
+// Sets and their entries, the live desk (preview, words, reactions, stickers,
+// effects and the timeline), and following or sending on the raised tone.
 // The projection window shows only the picture.
 ApplicationWindow {
     id: app
-    width: 1080
-    height: 680
-    minimumWidth: 880
-    minimumHeight: 540
+    width: Math.min(1480, Screen.desktopAvailableWidth)
+    height: Math.min(900, Screen.desktopAvailableHeight)
+    minimumWidth: 1180
+    minimumHeight: 680
     visible: true
     title: "KVJ"
     color: Theme.bg
@@ -91,15 +92,11 @@ ApplicationWindow {
 
     Projection {
         id: projection
-        previewing: desk.visible
+        // The desk's preview is up whenever this window is.
+        previewing: app.visible && app.visibility !== Window.Minimized
         offsetMs: offset.value
         maxHeight: app.heights[heightBox.currentIndex] ?? 720
         maxFps: app.rates[fpsBox.currentIndex] ?? 30
-    }
-    LiveDesk {
-        id: desk
-        source: projection.surface
-        entry: projection.entry
     }
     Settings {
         category: "output"
@@ -108,218 +105,45 @@ ApplicationWindow {
         property alias offset: offset.value
         property alias fullscreen: fullscreen.checked
     }
-    FileDialog {
-        id: fileDialog
-        fileMode: FileDialog.OpenFiles
-        nameFilters: ["音视频 (*.mp4 *.m4v *.mkv *.mov *.webm *.mp3 *.m4a *.flac *.wav *.aac *.ogg *.opus)"]
-        onAccepted: app.addUrls(selectedFiles)
-    }
-    FolderDialog {
-        id: folderDialog
-        onAccepted: app.addUrls([selectedFolder])
-    }
 
     RowLayout {
         anchors.fill: parent
         spacing: 0
 
-        // —— Sets ——
-        ColumnLayout {
-            Layout.preferredWidth: 188
-            Layout.maximumWidth: 188
+        // —— Sets and their entries ——
+        Sidebar {
+            Layout.preferredWidth: 252
             Layout.fillWidth: false
             Layout.fillHeight: true
-            Layout.topMargin: 14
-            Layout.leftMargin: 10
-            Layout.rightMargin: 6
-            spacing: 6
-
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.leftMargin: 8
-                Caption { text: "Set"; Layout.fillWidth: true }
-                IconButton {
-                    iconName: "plus"
-                    tip: "新建 Set"
-                    enabled: !app.running
-                    onClicked: Engine.createSet("Set " + (app.sets.length + 1))
-                }
-            }
-            ListView {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                clip: true
-                spacing: 1
-                model: app.sets
-                delegate: ItemDelegate {
-                    id: setRow
-                    required property var modelData
-                    readonly property bool current: !!app.currentSet && app.currentSet.id === modelData.id
-                    width: ListView.view.width
-                    height: 32
-                    topPadding: 0
-                    bottomPadding: 0
-                    leftPadding: 8
-                    enabled: !app.running || current
-                    onClicked: app.setId = modelData.id
-                    contentItem: Text {
-                        text: setRow.modelData.name
-                        font.pixelSize: Theme.size
-                        font.weight: setRow.current ? Font.DemiBold : Font.Normal
-                        color: setRow.current ? Theme.text : Theme.muted
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                    }
-                    background: Rectangle {
-                        radius: Theme.radius
-                        color: setRow.hovered ? Theme.hover : "transparent"
-                    }
-                }
-            }
+            sets: app.sets
+            currentSet: app.currentSet
+            running: app.running
+            editable: app.editable
+            playingId: app.match ? app.match.entry.id : ""
+            onSelectSet: id => app.setId = id
+            onAddUrls: urls => app.addUrls(urls)
+        }
+        Rectangle {
+            Layout.fillHeight: true
+            Layout.preferredWidth: 1
+            color: Theme.line
         }
 
-        // —— Entries of the selected Set ——
-        ColumnLayout {
+        // —— The live desk ——
+        Desk {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 0
-
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.topMargin: 12
-                Layout.leftMargin: 12
-                Layout.rightMargin: 12
-                Layout.bottomMargin: 6
-                spacing: 2
-                Text {
-                    Layout.fillWidth: true
-                    text: app.currentSet ? app.currentSet.name : ""
-                    font.pixelSize: Theme.sizeLg
-                    font.weight: Font.DemiBold
-                    color: Theme.text
-                    elide: Text.ElideRight
-                }
-                IconButton { iconName: "file-plus"; tip: "添加文件"; enabled: app.editable; onClicked: fileDialog.open() }
-                IconButton { iconName: "folder-plus"; tip: "添加文件夹"; enabled: app.editable; onClicked: folderDialog.open() }
-                IconButton {
-                    iconName: "trash"
-                    tip: "删除这个 Set"
-                    enabled: app.editable && !!app.currentSet
-                    onClicked: Engine.deleteSet(app.currentSet.id)
-                }
-            }
-
-            ListView {
-                id: entryList
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.leftMargin: 6
-                Layout.rightMargin: 6
-                clip: true
-                model: app.entries
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-                delegate: ItemDelegate {
-                    id: row
-                    required property var modelData
-                    required property int index
-                    readonly property bool playing: !!app.match && app.match.entry.id === modelData.id
-                    width: ListView.view.width
-                    height: Theme.row
-                    topPadding: 0
-                    bottomPadding: 0
-                    leftPadding: 10
-                    rightPadding: 6
-                    contentItem: RowLayout {
-                        spacing: 10
-                        Text {
-                            Layout.preferredWidth: 22
-                            text: row.index + 1
-                            font.pixelSize: Theme.sizeXs
-                            font.features: { "tnum": 1 }
-                            color: Theme.faint
-                            horizontalAlignment: Text.AlignRight
-                        }
-                        Text {
-                            Layout.fillWidth: true
-                            text: row.modelData.title
-                            font.pixelSize: Theme.size
-                            font.weight: row.playing ? Font.DemiBold : Font.Normal
-                            color: row.playing ? Theme.text : Theme.body
-                            elide: Text.ElideRight
-                        }
-                        Text {
-                            visible: !row.modelData.video
-                            text: "音频"
-                            font.pixelSize: Theme.sizeXs
-                            color: Theme.faint
-                        }
-                        Text {
-                            text: app.clock(row.modelData.duration, false)
-                            font.pixelSize: Theme.sizeSm
-                            font.features: { "tnum": 1 }
-                            color: Theme.muted
-                        }
-                        IconButton {
-                            iconName: "x"
-                            tip: "移出 Set"
-                            implicitWidth: 24
-                            implicitHeight: 24
-                            opacity: row.hovered && !app.running ? 1 : 0
-                            enabled: opacity > 0
-                            onClicked: Engine.removeEntry(app.currentSet.id, row.modelData.id)
-                        }
-                    }
-                    background: Rectangle {
-                        radius: Theme.radius
-                        color: row.hovered ? Theme.hover : "transparent"
-                    }
-                }
-                DropArea {
-                    anchors.fill: parent
-                    enabled: app.editable
-                    onDropped: drop => {
-                        if (drop.hasUrls)
-                            app.addUrls(drop.urls)
-                    }
-                }
-            }
-
-            // Foot bar: where the list is and what it holds.
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 30
-                color: Theme.raised
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 16
-                    anchors.rightMargin: 12
-                    Text {
-                        Layout.fillWidth: true
-                        visible: !!app.currentSet
-                        text: {
-                            let total = 0
-                            for (const e of app.entries)
-                                total += e.duration
-                            return app.entries.length + " 个素材 · " + app.clock(total, false)
-                        }
-                        font.pixelSize: Theme.sizeXs
-                        font.features: { "tnum": 1 }
-                        color: Theme.muted
-                    }
-                    BusyIndicator {
-                        running: Engine.importing
-                        visible: running
-                        implicitWidth: 18
-                        implicitHeight: 18
-                        palette.dark: Theme.muted
-                    }
-                }
-            }
+            Layout.margins: Theme.gap
+            source: projection.surface
+            entry: projection.entry
+            entries: app.entries
+            running: app.running
+            phase: app.phase
         }
 
         // —— Live controls ——
         Rectangle {
-            Layout.preferredWidth: 340
+            Layout.preferredWidth: 330
             Layout.fillWidth: false
             Layout.fillHeight: true
             color: Theme.raised
@@ -409,7 +233,8 @@ ApplicationWindow {
                     primary: true
                     iconName: app.running ? "square" : "play"
                     text: app.running ? "停止" : "开始跟随"
-                    enabled: app.running || (!!app.currentSet && app.entries.length > 0 && !Engine.importing)
+                    // At least one entry on; more can be turned on while following.
+                    enabled: app.running || (!!app.currentSet && app.entries.some(e => e.enabled !== false) && !Engine.importing)
                     onClicked: {
                         if (app.running) {
                             Engine.stop()
@@ -563,35 +388,6 @@ ApplicationWindow {
                     }
                 }
 
-                // The live desk: preview, words, reactions, stickers and effects.
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-                    Caption { text: "现场" }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            Layout.fillWidth: true
-                            text: "预览 · 弹幕 · 表情 · 贴图 · 效果"
-                            font.pixelSize: Theme.sizeSm
-                            color: Theme.muted
-                            elide: Text.ElideRight
-                        }
-                        TextButton {
-                            iconName: "monitor"
-                            text: desk.visible ? "收起现场台" : "现场台"
-                            onClicked: {
-                                if (desk.visible) {
-                                    desk.close()
-                                } else {
-                                    desk.show()
-                                    desk.raise()
-                                }
-                            }
-                        }
-                    }
-                }
-
                 Text {
                     Layout.fillWidth: true
                     visible: Engine.error.length > 0
@@ -642,6 +438,5 @@ ApplicationWindow {
         if (app.running)
             Engine.stop()
         projection.closeOutput()
-        desk.close()
     }
 }

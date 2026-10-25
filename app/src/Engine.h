@@ -53,6 +53,8 @@ public:
     Q_INVOKABLE void deleteSet(const QString &setId);
     Q_INVOKABLE void removeEntry(const QString &setId, const QString &entryId);
     Q_INVOKABLE void importUrls(const QString &setId, const QList<QUrl> &urls);
+    // On or off for following; also while following, for the next round.
+    Q_INVOKABLE void enableEntries(const QString &setId, const QStringList &entryIds, bool on);
     Q_INVOKABLE void start(const QString &setId, const QString &device, int channelStart);
     Q_INVOKABLE void stop();
     // Bluetooth Low Energy: nearby KVJ receivers, advertising as one, standby

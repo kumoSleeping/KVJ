@@ -153,6 +153,22 @@ void Engine::removeEntry(const QString &setId, const QString &entryId)
     edit({{"kind", "remove"}, {"set_id", setId}, {"entry_id", entryId}});
 }
 
+void Engine::enableEntries(const QString &setId, const QStringList &entryIds, bool on)
+{
+    if (entryIds.isEmpty())
+        return;
+    const QJsonObject request{
+        {"cmd", "enable"},
+        {"set_id", setId},
+        {"entry_ids", QJsonArray::fromStringList(entryIds)},
+        {"on", on},
+    };
+    call(request, [this](const QJsonValue &ok) {
+        m_document = ok.toObject().toVariantMap();
+        emit documentChanged();
+    }, false);
+}
+
 void Engine::importUrls(const QString &setId, const QList<QUrl> &urls)
 {
     QJsonArray paths;
