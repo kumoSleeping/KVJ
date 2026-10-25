@@ -1,5 +1,7 @@
+#include "Engine.h"
 #include "kvj.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QGuiApplication>
@@ -10,6 +12,7 @@
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QSaveFile>
 #include <QTimer>
 
 namespace {
@@ -109,6 +112,48 @@ int main(int argc, char *argv[])
                 window->grabWindow().save(snapshot);
             QCoreApplication::quit();
         });
+    }
+    // Development aid: KVJ_DEV_DIR=<dir> lets a shell on this computer see the
+    // running app without screen access. Every second <dir>/status.json gets the
+    // engine's view, the presented match, the timeline's playhead and the latest
+    // log lines; creating <dir>/snap saves the control window to <dir>/window.png.
+    const QString devDir = qEnvironmentVariable("KVJ_DEV_DIR");
+    if (!devDir.isEmpty() && !engine.rootObjects().isEmpty()) {
+        QDir().mkpath(devDir);
+        auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+        auto *kvj = engine.singletonInstance<Engine *>("KVJ", "Engine");
+        auto *tick = new QTimer(&app);
+        QObject::connect(tick, &QTimer::timeout, &app, [devDir, window, kvj] {
+            const QDir dir(devDir);
+            QJsonObject status{{"at", QDateTime::currentDateTime().toString(Qt::ISODateWithMs)},
+                               {"clock_ms", Engine::clockMs()}};
+            if (kvj) {
+                const QStringList logs = kvj->logs();
+                status.insert("view", QJsonObject::fromVariantMap(kvj->view()));
+                status.insert("matched", QJsonObject::fromVariantMap(kvj->matched()));
+                status.insert("error", kvj->error());
+                status.insert("logs", QJsonArray::fromStringList(logs.mid(qMax(0, logs.size() - 30))));
+            }
+            if (QObject *timeline = window ? window->findChild<QObject *>("timeline") : nullptr) {
+                status.insert("timeline", QJsonObject{
+                    {"position", timeline->property("position").toDouble()},
+                    {"playing", timeline->property("playingId").toString()},
+                    {"lanes", timeline->property("lanes").toList().size()},
+                    {"rates", timeline->property("rates").toList().size()},
+                    {"running", timeline->property("running").toBool()},
+                });
+            }
+            QSaveFile out(dir.filePath("status.json"));
+            if (out.open(QIODevice::WriteOnly)) {
+                out.write(QJsonDocument(status).toJson());
+                out.commit();
+            }
+            if (window && QFile::exists(dir.filePath("snap"))) {
+                QFile::remove(dir.filePath("snap"));
+                window->grabWindow().save(dir.filePath("window.png"));
+            }
+        });
+        tick->start(1000);
     }
     return app.exec();
 }

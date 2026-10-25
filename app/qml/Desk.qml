@@ -377,6 +377,7 @@ ColumnLayout {
             }
             // What is left under the preview goes to the timeline.
             Timeline {
+                objectName: "timeline"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumHeight: 150
