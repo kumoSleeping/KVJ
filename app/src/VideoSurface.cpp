@@ -7,6 +7,7 @@
 
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
+#include <QThreadPool>
 
 #include <algorithm>
 #include <cmath>
@@ -18,6 +19,15 @@ namespace {
 constexpr double kJump = 0.75;
 // The old picture plays on at most this long waiting for the new one's frame.
 constexpr double kHoldMs = 3000;
+
+// A player stops its decoder thread when it goes, which can take a while (a
+// slow drive, a long run of frames to a keyframe); the GUI thread draws the
+// projection and never waits for that.
+void retire(std::unique_ptr<VideoPlayer> player)
+{
+    if (player)
+        QThreadPool::globalInstance()->start([gone = player.release()] { delete gone; });
+}
 } // namespace
 
 VideoSurface::VideoSurface(QQuickItem *parent)
@@ -39,6 +49,8 @@ VideoSurface::~VideoSurface()
     const QList<PreviewSurface *> previews = std::exchange(m_previews, {});
     for (PreviewSurface *preview : previews)
         preview->setSource(nullptr);
+    retire(std::move(m_player));
+    retire(std::move(m_outgoing));
 }
 
 void VideoSurface::attachPreview(PreviewSurface *preview)
@@ -93,7 +105,7 @@ bool VideoSurface::keepPlaying(double nowMs)
 {
     if (m_outgoing && m_outHolding)
         return false;
-    m_outgoing = std::move(m_player);
+    retire(std::exchange(m_outgoing, std::move(m_player)));
     m_outBase = m_lastTarget + (nowMs - m_lastTickAt) / 1000.0 * m_lastRate;
     m_outAt = nowMs;
     m_outRate = m_lastRate;
@@ -104,7 +116,7 @@ bool VideoSurface::keepPlaying(double nowMs)
 
 void VideoSurface::dropOutgoing()
 {
-    m_outgoing.reset();
+    retire(std::move(m_outgoing));
     m_outHolding = false;
     m_outPending = QImage();
     m_outNew = false;
@@ -170,7 +182,7 @@ void VideoSurface::restart()
         keepPlaying(kvj_clock_ms());
     else
         dropOutgoing();
-    m_player = m_source.isEmpty() ? nullptr : std::make_unique<VideoPlayer>(m_source, m_options);
+    retire(std::exchange(m_player, m_source.isEmpty() ? nullptr : std::make_unique<VideoPlayer>(m_source, m_options)));
     m_lastPts = -1;
     m_lastTickAt = -1;
     // Another file is a jump too: its first frame dissolves from the old one.

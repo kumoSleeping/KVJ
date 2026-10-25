@@ -84,6 +84,9 @@ public:
 
     bool next(VideoFrame *frame, double discardBefore) override
     {
+        // Samples that cannot be read back, one after another: the device is
+        // gone (or the data is), an error for the player to recover from.
+        int unreadable = 0;
         for (;;) {
             DWORD flags = 0;
             LONGLONG timestamp = 0;
@@ -103,11 +106,21 @@ public:
             if (double(timestamp) / 1e7 < discardBefore)
                 continue;
             ComPtr<IMFMediaBuffer> buffer;
-            if (FAILED(sample->GetBufferByIndex(0, &buffer)) && FAILED(sample->ConvertToContiguousBuffer(&buffer)))
+            const bool buffered = SUCCEEDED(sample->GetBufferByIndex(0, &buffer)) || SUCCEEDED(sample->ConvertToContiguousBuffer(&buffer));
+            if (buffered)
+                prepareImage(frame->image, m_area.size());
+            if (!buffered || !copy(buffer.Get(), &frame->image)) {
+                const HRESULT removed = m_device ? m_device->GetDeviceRemovedReason() : S_OK;
+                if (FAILED(removed)) {
+                    m_error = hresultText("显卡设备已重置", removed);
+                    return false;
+                }
+                if (++unreadable >= 30) {
+                    m_error = QStringLiteral("读取视频画面失败");
+                    return false;
+                }
                 continue;
-            prepareImage(frame->image, m_area.size());
-            if (!copy(buffer.Get(), &frame->image))
-                continue;
+            }
             frame->pts = double(timestamp) / 1e7;
             return true;
         }

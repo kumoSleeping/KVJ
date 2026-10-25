@@ -102,6 +102,9 @@ void VideoPlayer::run()
         return;
     }
     const double duration = decoder->duration();
+    // Past the end the last frame is the target: a clock running on (music
+    // longer than the video) must not seek to the end over and over.
+    const auto bounded = [duration](double t) { return duration > 0 ? std::min(t, std::max(0.0, duration - 0.05)) : t; };
     {
         std::lock_guard lock(m_mutex);
         m_sourceSize = decoder->sourceSize();
@@ -124,7 +127,7 @@ void VideoPlayer::run()
             m_wake.wait(lock);
             continue;
         }
-        const double target = m_target;
+        const double target = bounded(m_target);
         const double rate = std::clamp(m_rate, 0.0, 2.0);
         // A paused target never catches up with frames ahead of it: any step
         // back is a seek.
@@ -174,15 +177,37 @@ void VideoPlayer::run()
             }
         }
         // Frames already past their display interval are never converted.
-        const double discardBefore = m_target - step;
+        const double discardBefore = bounded(m_target) - step;
         lock.unlock();
         const bool ok = decoder->next(&frame, discardBefore);
         lock.lock();
         if (!ok) {
-            ended = true;
-            if (!decoder->error().isEmpty())
-                m_error = decoder->error();
             recycle(std::move(frame));
+            const QString error = decoder->error();
+            if (error.isEmpty()) {
+                ended = true;
+                continue;
+            }
+            // A failure mid-stream (the GPU device lost to a driver reset or a
+            // display change, a read error): open the file again and seek back
+            // to the target, rather than freeze on the last frame.
+            m_error = error;
+            m_wake.wait_for(lock, std::chrono::milliseconds(500));
+            if (m_stop)
+                break;
+            lock.unlock();
+            std::unique_ptr<Decoder> fresh = createDecoder();
+            QString reopenError;
+            const bool reopened = fresh && fresh->open(m_path, m_options, &reopenError);
+            if (reopened)
+                decoder = std::move(fresh);
+            fresh.reset();
+            lock.lock();
+            if (reopened) {
+                m_error.clear();
+                positioned = false;
+                measuring = false;
+            }
             continue;
         }
         if (frame.pts > last && frame.pts - last < 0.2)
@@ -192,7 +217,7 @@ void VideoPlayer::run()
         // behind the seek point, or the ahead check would seek again forever.
         cursor = std::max(cursor, frame.pts);
         // Already past its display interval (catching up after a seek): drop it.
-        if (frame.pts + step <= m_target) {
+        if (frame.pts + step <= bounded(m_target)) {
             recycle(std::move(frame));
             continue;
         }
