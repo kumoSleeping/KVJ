@@ -36,33 +36,39 @@ another entry is found. The middle is the live desk with the player; the right
 side is smart following.
 
 Under the preview are the output (screen, resolution, frame rate, full screen)
-and **开始投放**. The **timeline** runs across the whole foot of the window and
-is the player's transport, laid out like a video editor's timeline without
-editing anything. Its top row has play and pause (Space; ← and → jump five
-seconds), the speed (a bar from −50 % to +50 % and keys a percent at a time;
-double-click the bar for 100 %) and **跳转渐变**: every jump, by hand or by
-smart following, dissolves from the last picture over the chosen time
+and **开始投放**. The **timeline** runs across the whole foot of the window and is
+the player's transport, laid out like a video editor's timeline without editing
+anything. Its top row has play and pause (Space; ← and → jump five seconds), the
+speed (a bar from −50 % to +50 % and keys a percent at a time; **复原** or a
+double-click on the speed goes back to 100 %) and **跳转渐变**: every jump, by hand
+or by smart following, dissolves from the last picture over the chosen time
 (0.1–2 s), or cuts when it is off. Under it, the seek bar of the entry on the
 screen jumps the picture. Below that the Set's entries lie end to end as strips
 of their frames, with a ruler in each entry's own time: pinch on the trackpad
 (or ⌘/Ctrl + scroll) zooms about the pointer down to a few frames, a two-finger
-swipe moves along, **全览** shows the whole Set again. Pressing or dragging on
-the strip only sets a mark and leaves the picture alone; **跳到此处** (or a
-double press) plays from the mark. While playing, the strip follows the
-playhead unless it was touched in the last few seconds. Frames for the strip
-are decoded small on one low-priority thread and kept up to 48 MB. At the end
-of an entry the next one follows. Seeks aim ahead by what passes while the
-decoder gets there, and a paused seek lands on the exact frame. Beside the
-desk, the sticker gallery sits over the effects. **只发送** is at the top right.
+swipe moves along, **全览** shows the whole Set again. Pressing or dragging on the
+strip only sets a mark and leaves the picture alone; **跳到此处** (or a double
+press) plays from the mark. While playing, the strip follows the playhead unless
+it was touched in the last few seconds. Frames for the strip are decoded small
+on one low-priority thread and kept up to 48 MB. At the end of an entry the next
+one follows. Seeks aim ahead by what passes while the decoder gets there, and a
+paused seek lands on the exact frame. **播放声音** under the output plays the
+entry's own sound in step with the picture (off by default, since the room hears
+the DJ) on an output of its own, through the system's media stack like the
+video. Beside the desk, the sticker gallery sits over the effects. **只发送** is at
+the top right.
 
 **智能跟随音频跳转与调速** on the right takes the picture from the player while it
 is on: the player's keys grey out and the timeline shows where following is.
-**暂停** hands the picture back without stopping to listen; paused or stopped,
-the player carries on from the same frame at the same speed. At its foot two
-helpers show their work: **对速** keeps the speed with the music (its dot swings
-at the followed speed), **跳转监测** watches how far the music is from the
-picture against the jump threshold (2.5 s, or 2 s without a confirmation) and
-ripples in amber once it is passed or the music goes quiet.
+At its foot two helpers show their work: **对速** keeps the speed with the music
+(its dot swings at the followed speed), **跳转监测** watches how far the music is
+from the picture against the jump threshold (2.5 s, or 2 s without a
+confirmation) and ripples in amber once it is passed or the music goes quiet.
+Each pauses on its own and the player takes over what it did: with 跳转 paused
+the player plays and seeks by hand while 对速 still sets its speed; with 对速
+paused the speed is the player's and 跳转 still moves the picture to the music.
+With both paused it only listens. Paused or stopped, the player carries on from
+the same frame at the same speed.
 
 ## Live desk
 
