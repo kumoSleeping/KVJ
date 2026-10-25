@@ -72,10 +72,12 @@ on one low-priority thread and kept up to 48 MB. At the end of an entry the next
 one that is on follows. Seeks aim ahead by what passes while the decoder gets
 there, and a paused seek lands on the exact frame.
 
-With **快捷键** on (it is by default), A / D or 4 / 6 on the number pad nudge the
-picture a second back or ahead, by playing half as fast or half again as fast
-for a moment, as a jog wheel does; W / S or 8 / 2 change the speed by 1 % and
-the speed bar follows; Enter plays from the cursor; ← / → jump five seconds.
+With **快捷键** on (it is by default), ← / →, A / D or 4 / 6 on the number pad
+nudge the picture a second back or ahead without a jump, as a jog wheel does:
+ahead at four times the speed for a third of a second, back at a tenth of the
+speed for a little over a second (presses in a row add up); ↑ / ↓, W / S or
+8 / 2 change the speed by 1 % and the speed bar follows; Enter plays from the
+cursor.
 Space does nothing: one touch of it during a show is too easy. No key acts while
 words are being typed.
 
@@ -84,8 +86,9 @@ picture (off by default, since the room hears the DJ) on an output of its own;
 the output and the volume can be set before it is turned on. The engine decodes
 it and Rubber Band (as in KDJ) stretches it to the picture's speed with its
 pitch kept, so changing the speed or nudging never breaks the sound; it stays on
-the picture by steering its speed a little, and seeks only on a jump. Beside the
-desk, the sticker gallery sits over the effects.
+the picture by steering its speed a little, and seeks only on a jump. The
+sticker gallery runs in a row under the reactions; the effects have the column
+beside the desk.
 
 **音频对位** on the right takes the picture from the player while it
 is on: the player's keys grey out and the timeline shows where following is.
@@ -114,7 +117,8 @@ off for captured or received audio.
 The live desk is a light preview of the
 projection, danmaku (Enter sends; scrolling or large in the middle), Google
 Meet–style reactions (Noto's animated emoji rising up the sides; hold to send a
-stream), stickers and picture effects. Stickers are kept in a gallery of images (GIFs play), and words; one is posted
+stream, and sweep along the bar while holding to change the emoji and spray it
+from that side of the screen), stickers and picture effects. Stickers are kept in a gallery of images (GIFs play), and words; one is posted
 by dragging it onto the preview and letting go where it should be (double-click
 posts it in the middle; images from the Finder dropped on the preview are added
 and posted there). Posted stickers are changed on the preview and the
@@ -124,7 +128,9 @@ steps of 15°, double-click: upright) and a key that takes it down (or Delete).
 The size bar works on the chosen sticker, or else on the one posted last, and
 sets the size of the next. Each effect (mosaic, RGB split, video wall, lens,
 zoom blur, wave, glitch, scanlines, halftone, posterize, hue, black and white,
-vignette) is off at 0 and comes in as its slider moves; they apply from the
+vignette) has a key that turns it on at the strength it looks best at (or off;
+dragged on over the other keys, it switches them the same way) and a bar that
+fine-tunes it; they apply from the
 top down, each to the picture the ones above made, and a grip at the left of
 each drags it to another place in that order (kept between runs). Effects touch
 only the video, never the words or stickers. Danmaku from elsewhere can come in through

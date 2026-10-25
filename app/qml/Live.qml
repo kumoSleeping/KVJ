@@ -49,13 +49,16 @@ QtObject {
         lane = (lane + 1) % 9
         bullet({ text: words, from: from || "", lane: lane, born: Date.now() })
     }
-    // Reactions rise up the sides, clear of whoever stands in the middle. The
-    // fourth of one emoji within a second and a half, and every one after, bursts.
-    function react(glyph) {
+    // Reactions rise up the sides, clear of whoever stands in the middle, or
+    // from `at` (a share of the screen's width) when the operator aims them.
+    // The fourth of one emoji within a second and a half, and every one after,
+    // bursts.
+    function react(glyph, at) {
         const now = Date.now()
         recent = recent.filter(r => now - r.born < 1500).concat([{ emoji: glyph, born: now }])
         const burst = recent.filter(r => r.emoji === glyph).length >= 4
-        const x = Math.random() < 0.5 ? 0.05 + Math.random() * 0.25 : 0.70 + Math.random() * 0.25
+        const x = at !== undefined ? Math.max(0.03, Math.min(0.97, at + (Math.random() - 0.5) * 0.04))
+                : Math.random() < 0.5 ? 0.05 + Math.random() * 0.25 : 0.70 + Math.random() * 0.25
         reaction({ emoji: glyph, x: x, seed: Math.random(), burst: burst, born: now })
     }
     function showCaption(text) {
@@ -109,22 +112,23 @@ QtObject {
     }
 
     // —— Picture effects ——
-    // An effect at 0 is off; its slider brings it in. Their place here is the
+    // An effect at 0 is off; its key turns it on at `preset`, the strength it
+    // looks best at, and its slider fine-tunes it. Their place here is the
     // shader's `kind` (shaders/effects.frag).
     readonly property var effects: [
-        { key: "mosaic", name: "马赛克" },
-        { key: "rgb", name: "RGB 分离", moving: true },
-        { key: "tiles", name: "多画面" },
-        { key: "lens", name: "鱼眼透镜" },
-        { key: "zoom", name: "放射模糊" },
-        { key: "wave", name: "水波", moving: true },
-        { key: "glitch", name: "故障", moving: true },
-        { key: "scan", name: "扫描线", moving: true },
-        { key: "halftone", name: "网点" },
-        { key: "posterize", name: "色调分离" },
-        { key: "hue", name: "色相" },
-        { key: "mono", name: "黑白" },
-        { key: "vignette", name: "暗角" }
+        { key: "mosaic", name: "马赛克", preset: 0.35 },
+        { key: "rgb", name: "RGB 分离", moving: true, preset: 0.4 },
+        { key: "tiles", name: "多画面", preset: 0.2 },
+        { key: "lens", name: "鱼眼透镜", preset: 0.5 },
+        { key: "zoom", name: "放射模糊", preset: 0.35 },
+        { key: "wave", name: "水波", moving: true, preset: 0.5 },
+        { key: "glitch", name: "故障", moving: true, preset: 0.35 },
+        { key: "scan", name: "扫描线", moving: true, preset: 0.45 },
+        { key: "halftone", name: "网点", preset: 0.45 },
+        { key: "posterize", name: "色调分离", preset: 0.5 },
+        { key: "hue", name: "色相", preset: 0.3 },
+        { key: "mono", name: "黑白", preset: 1 },
+        { key: "vignette", name: "暗角", preset: 0.6 }
     ]
     property var level: ({})
 
@@ -132,6 +136,15 @@ QtObject {
         const next = Object.assign({}, level)
         next[key] = Math.max(0, Math.min(1, value))
         level = next
+    }
+    // On at its preset (one that is on already keeps its strength), or off.
+    function switchEffect(key, on) {
+        const i = kind(key)
+        if (i >= 0 && on !== amount(key) > 0)
+            setLevel(key, on ? effects[i].preset : 0)
+    }
+    function toggleEffect(key) {
+        switchEffect(key, !(amount(key) > 0))
     }
     function amount(key) {
         return level[key] || 0

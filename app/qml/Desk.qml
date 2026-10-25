@@ -11,8 +11,8 @@ import KVJ
 // what goes over it. Stickers are dragged from the gallery onto the preview and
 // posted where they are let go; posted ones are moved, sized and turned there
 // and the projection follows. Under the preview, the output (where the picture
-// goes, and the key that projects it), the picture's sound, words and
-// reactions; beside it, the sticker gallery over the effects.
+// goes, and the key that projects it), the picture's sound, words, reactions
+// and the sticker gallery in a row; beside it, the effects.
 Item {
     id: desk
 
@@ -375,7 +375,10 @@ Item {
                 }
             }
 
-            // Reactions, as in Google Meet: hover plays one, holding sends a stream.
+            // Reactions, as in Google Meet: hover plays one, holding sends a
+            // stream. Held and swept across the bar, the stream changes to the
+            // emoji under the pointer and sprays from that side of the screen:
+            // the bar's left end is the screen's left edge.
             Rectangle {
                 id: reactionBar
                 // Keys narrow a little before the bar outgrows the column.
@@ -394,6 +397,8 @@ Item {
                         Item {
                             id: key
                             required property var modelData
+                            required property int index
+                            readonly property bool hot: sweep.hot === index
                             width: reactionBar.key
                             height: reactionBar.key
                             AnimatedImage {
@@ -403,8 +408,8 @@ Item {
                                 height: reactionBar.key * 0.75
                                 source: "emoji/" + key.modelData.file + ".webp"
                                 cache: false
-                                paused: !tap.containsMouse
-                                scale: tap.pressed ? 1.15 : tap.containsMouse ? 1.35 : 1
+                                paused: !key.hot
+                                scale: key.hot && sweep.pressed ? 1.15 : key.hot ? 1.35 : 1
                                 Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutBack } }
                                 // At rest it shows the frame that stands for it. WebP
                                 // frames are reached only one after another from the start.
@@ -416,71 +421,59 @@ Item {
                                 onPausedChanged: if (paused) rest()
                                 onFrameCountChanged: if (paused) rest()
                             }
-                            MouseArea {
-                                id: tap
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onPressed: Live.react(key.modelData.glyph)
-                            }
-                            Timer {
-                                interval: 160
-                                repeat: true
-                                running: tap.pressed
-                                onTriggered: Live.react(key.modelData.glyph)
-                            }
-                            ToolTip.visible: tap.containsMouse
-                            ToolTip.delay: 900
-                            ToolTip.text: "按住连发"
                         }
                     }
                 }
+                MouseArea {
+                    id: sweep
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    preventStealing: true
+                    cursorShape: Qt.PointingHandCursor
+                    // The key under the pointer, -1 between and beyond them.
+                    readonly property int hot: {
+                        if (!containsMouse && !pressed)
+                            return -1
+                        const x = mouseX - reactions.x
+                        const i = Math.floor(x / (reactionBar.key + reactions.spacing))
+                        return x >= 0 && i < Live.emoji.length ? i : pressed ? Math.max(0, Math.min(Live.emoji.length - 1, i)) : -1
+                    }
+                    function send() {
+                        if (hot >= 0)
+                            Live.react(Live.emoji[hot].glyph, Math.max(0, Math.min(1, mouseX / width)))
+                    }
+                    onPressed: send()
+                    onHotChanged: if (pressed) send()
+                    Timer {
+                        interval: 160
+                        repeat: true
+                        running: sweep.pressed
+                        onTriggered: sweep.send()
+                    }
+                    ToolTip.visible: containsMouse && !pressed
+                    ToolTip.delay: 900
+                    ToolTip.text: "按住连发 · 按住左右拖动换表情、换喷射的位置"
+                }
             }
-            Item {
-                Layout.fillHeight: true
-                Layout.verticalStretchFactor: 1
-            }
-        }
-
-        // —— Stickers over the effects ——
-        Rectangle {
-            Layout.preferredWidth: 290
-            Layout.fillWidth: false
-            Layout.fillHeight: true
-            radius: 8
-            color: Theme.raised
-
+            // —— Stickers, in a row under the reactions: drag one onto the picture ——
             ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 14
+                Layout.fillWidth: true
+                Layout.topMargin: 6
                 spacing: 8
-
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 2
+                    spacing: 6
                     Text {
-                        Layout.fillWidth: true
                         text: "贴图"
                         font.pixelSize: Theme.sizeLg
                         font.weight: Font.DemiBold
                         color: Theme.text
                     }
-                    IconButton { iconName: "file-plus"; tip: "添加图片或 GIF（可多选）"; onClicked: imageDialog.open() }
-                    TextButton {
-                        text: "全部撤下"
-                        enabled: Live.stickers.count > 0
-                        onClicked: {
-                            Live.clearStickers()
-                            desk.chosenSid = ""
-                        }
-                    }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
                     Field {
                         id: wordsSticker
                         Layout.fillWidth: true
+                        Layout.maximumWidth: 220
+                        Layout.leftMargin: 6
                         placeholderText: "文字贴图，回车加入"
                         onAccepted: {
                             desk.addWords(text)
@@ -493,20 +486,52 @@ Item {
                         enabled: wordsSticker.text.trim().length > 0
                         onClicked: wordsSticker.accepted()
                     }
+                    IconButton { iconName: "file-plus"; tip: "添加图片或 GIF（可多选）"; onClicked: imageDialog.open() }
+                    Item { Layout.fillWidth: true }
+                    // The size of the chosen sticker, or the one posted last, and of the next.
+                    Text {
+                        text: "大小"
+                        font.pixelSize: Theme.sizeSm
+                        color: Theme.muted
+                    }
+                    Seek {
+                        Layout.preferredWidth: 110
+                        Layout.minimumWidth: 60
+                        from: 0.03
+                        to: 1
+                        value: desk.sizingSize
+                        onMoved: desk.setSize(value)
+                    }
+                    Text {
+                        Layout.preferredWidth: 36
+                        horizontalAlignment: Text.AlignRight
+                        text: Math.round(desk.sizingSize * 100) + "%"
+                        font.pixelSize: Theme.sizeSm
+                        font.features: { "tnum": 1 }
+                        color: Theme.body
+                    }
+                    TextButton {
+                        text: "全部撤下"
+                        enabled: Live.stickers.count > 0
+                        onClicked: {
+                            Live.clearStickers()
+                            desk.chosenSid = ""
+                        }
+                    }
                 }
-
-                // The gallery: drag one onto the picture to post it there.
-                GridView {
+                // The gallery, side by side; it scrolls across.
+                ListView {
                     id: grid
+                    readonly property int cellWidth: 86
+                    readonly property int cellHeight: 70
                     Layout.fillWidth: true
-                    Layout.preferredHeight: cellHeight * 2
+                    Layout.preferredHeight: cellHeight + 10
+                    orientation: ListView.Horizontal
                     clip: true
-                    cellWidth: Math.floor(width / 4)
-                    cellHeight: Math.floor(cellWidth * 0.8)
                     model: desk.gallery
                     interactive: !desk.carrying
                     boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
                     delegate: Item {
                         id: tile
                         required property var modelData
@@ -590,7 +615,19 @@ Item {
                             onClicked: desk.forget(tile.modelData.id)
                         }
                     }
+                    // On the view itself, not its content: they work while it is empty.
+                    Text {
+                        parent: grid
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.verticalCenterOffset: -5
+                        visible: grid.count === 0
+                        text: "把图片拖到这里，或点上面的 + 添加"
+                        font.pixelSize: Theme.sizeSm
+                        color: Theme.faint
+                    }
                     DropArea {
+                        parent: grid
                         anchors.fill: parent
                         onDropped: drop => {
                             if (drop.hasUrls)
@@ -598,36 +635,28 @@ Item {
                         }
                     }
                 }
+            }
+            Item {
+                Layout.fillHeight: true
+                Layout.verticalStretchFactor: 1
+            }
+        }
 
-                // The size of the chosen sticker, or the one posted last, and of the next.
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-                    Text {
-                        text: "大小"
-                        font.pixelSize: Theme.sizeSm
-                        color: Theme.muted
-                    }
-                    Seek {
-                        Layout.fillWidth: true
-                        from: 0.03
-                        to: 1
-                        value: desk.sizingSize
-                        onMoved: desk.setSize(value)
-                    }
-                    Text {
-                        Layout.preferredWidth: 36
-                        horizontalAlignment: Text.AlignRight
-                        text: Math.round(desk.sizingSize * 100) + "%"
-                        font.pixelSize: Theme.sizeSm
-                        font.features: { "tnum": 1 }
-                        color: Theme.body
-                    }
-                }
+        // —— Effects ——
+        Rectangle {
+            Layout.preferredWidth: 290
+            Layout.fillWidth: false
+            Layout.fillHeight: true
+            radius: 8
+            color: Theme.raised
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 14
+                spacing: 8
 
                 RowLayout {
                     Layout.fillWidth: true
-                    Layout.topMargin: 10
                     Text {
                         Layout.fillWidth: true
                         text: "效果"
@@ -636,92 +665,149 @@ Item {
                         color: Theme.text
                     }
                     TextButton {
-                        text: "全部归零"
+                        text: "全部关闭"
                         enabled: Live.effectsOn
                         onClicked: Live.resetEffects()
                     }
                 }
-                // An effect at 0 is off; double-click its number for 0. They
-                // apply top first: drag one by its grip to change the order.
+                Text {
+                    Layout.fillWidth: true
+                    text: "点名字开关（推荐强度），按住上下拖一起开关；拖条微调；拖 ⠿ 换顺序，上面的先作用"
+                    font.pixelSize: Theme.sizeXs
+                    color: Theme.faint
+                    wrapMode: Text.Wrap
+                }
+                // Each effect: its key turns it on at the strength it looks best
+                // at, or off; the bar fine-tunes it (double-click the number for
+                // off). They apply top first: drag one by its grip to change the
+                // order. The list scrolls only when it must, so a bar dragged a
+                // little up or down is never taken for a scroll.
                 ListView {
                     id: effectList
-                    readonly property int rowHeight: 32
+                    readonly property int rowHeight: 40
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
-                    spacing: 0
+                    spacing: 3
                     model: Live.chain
+                    interactive: contentHeight > height
                     boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                     moveDisplaced: Transition { NumberAnimation { properties: "y"; duration: 120; easing.type: Easing.OutQuad } }
-                    delegate: RowLayout {
+                    delegate: Item {
                         id: effect
                         required property string key
                         required property string name
                         required property int index
                         readonly property real level: Live.level[key] || 0
+                        readonly property bool on: level > 0
                         width: ListView.view.width
                         height: effectList.rowHeight
-                        spacing: 6
                         z: grip.pressed ? 1 : 0
-                        Item {
-                            implicitWidth: 16
-                            implicitHeight: effectList.rowHeight
-                            Rectangle {
-                                anchors.fill: parent
-                                anchors.topMargin: 4
-                                anchors.bottomMargin: 4
-                                radius: 4
-                                color: grip.pressed ? Theme.line : grip.containsMouse ? Theme.hover : "transparent"
-                            }
-                            ColorImage {
-                                anchors.centerIn: parent
-                                source: "icons/grip-vertical.svg"
-                                sourceSize: Qt.size(14, 14)
-                                color: grip.pressed || grip.containsMouse ? Theme.text : Theme.faint
-                            }
-                            MouseArea {
-                                id: grip
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                preventStealing: true
-                                cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-                                onPositionChanged: mouse => {
-                                    if (!pressed)
-                                        return
-                                    const p = mapToItem(effectList.contentItem, mouse.x, mouse.y)
-                                    const to = Math.max(0, Math.min(effectList.count - 1, Math.floor(p.y / effectList.rowHeight)))
-                                    Live.moveEffect(effect.index, to)
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 8
+                            color: effect.on || grip.pressed ? Theme.hover : "transparent"
+                            border.width: effect.on ? 1 : 0
+                            border.color: Theme.line
+                        }
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 2
+                            anchors.rightMargin: 8
+                            spacing: 6
+                            Item {
+                                implicitWidth: 18
+                                implicitHeight: effectList.rowHeight
+                                ColorImage {
+                                    anchors.centerIn: parent
+                                    source: "icons/grip-vertical.svg"
+                                    sourceSize: Qt.size(14, 14)
+                                    color: grip.pressed || grip.containsMouse ? Theme.text : Theme.faint
                                 }
-                                ToolTip.visible: containsMouse && !pressed
-                                ToolTip.delay: 600
-                                ToolTip.text: "拖动调整顺序（上面的先作用）"
+                                MouseArea {
+                                    id: grip
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    preventStealing: true
+                                    cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                                    onPositionChanged: mouse => {
+                                        if (!pressed)
+                                            return
+                                        const p = mapToItem(effectList.contentItem, mouse.x, mouse.y)
+                                        const step = effectList.rowHeight + effectList.spacing
+                                        const to = Math.max(0, Math.min(effectList.count - 1, Math.floor(p.y / step)))
+                                        Live.moveEffect(effect.index, to)
+                                    }
+                                    ToolTip.visible: containsMouse && !pressed
+                                    ToolTip.delay: 600
+                                    ToolTip.text: "拖动调整顺序（上面的先作用）"
+                                }
                             }
-                        }
-                        Text {
-                            Layout.preferredWidth: 64
-                            text: effect.name
-                            font.pixelSize: Theme.sizeSm
-                            font.weight: effect.level > 0 ? Font.DemiBold : Font.Normal
-                            color: effect.level > 0 ? Theme.text : Theme.muted
-                            elide: Text.ElideRight
-                        }
-                        Seek {
-                            Layout.fillWidth: true
-                            from: 0
-                            to: 100
-                            stepSize: 1
-                            value: effect.level * 100
-                            onMoved: Live.setLevel(effect.key, value / 100)
-                        }
-                        Text {
-                            Layout.preferredWidth: 26
-                            horizontalAlignment: Text.AlignRight
-                            text: Math.round(effect.level * 100)
-                            font.pixelSize: Theme.sizeSm
-                            font.features: { "tnum": 1 }
-                            color: effect.level > 0 ? Theme.text : Theme.faint
-                            MouseArea { anchors.fill: parent; onDoubleClicked: Live.setLevel(effect.key, 0) }
+                            // On at its best strength, or off.
+                            Rectangle {
+                                implicitWidth: 84
+                                implicitHeight: 30
+                                radius: 15
+                                color: effect.on ? (switchTap.pressed ? Theme.muted : Theme.text)
+                                                 : switchTap.pressed ? Theme.line : switchTap.containsMouse ? Theme.hover : Theme.inset
+                                border.width: effect.on ? 0 : 1
+                                border.color: Theme.line
+                                Text {
+                                    anchors.centerIn: parent
+                                    width: parent.width - 12
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: effect.name
+                                    font.pixelSize: Theme.sizeSm
+                                    font.weight: effect.on ? Font.DemiBold : Font.Medium
+                                    color: effect.on ? Theme.bg : Theme.body
+                                    elide: Text.ElideRight
+                                }
+                                // Pressed, it switches; dragged on over the other
+                                // keys, it switches them the same way.
+                                MouseArea {
+                                    id: switchTap
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    preventStealing: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    property bool turning: false
+                                    onPressed: {
+                                        turning = !effect.on
+                                        Live.switchEffect(effect.key, turning)
+                                    }
+                                    onPositionChanged: mouse => {
+                                        if (!pressed)
+                                            return
+                                        const p = mapToItem(effectList.contentItem, mouse.x, mouse.y)
+                                        const i = effectList.indexAt(effectList.contentX + 1, p.y)
+                                        if (i >= 0)
+                                            Live.switchEffect(Live.chain.get(i).key, turning)
+                                    }
+                                    ToolTip.visible: containsMouse && !pressed
+                                    ToolTip.delay: 900
+                                    ToolTip.text: "点一下开关；按住上下拖，经过的一起开或关"
+                                }
+                            }
+                            Seek {
+                                Layout.fillWidth: true
+                                large: true
+                                from: 0
+                                to: 100
+                                stepSize: 1
+                                value: effect.level * 100
+                                opacity: effect.on ? 1 : 0.55
+                                onMoved: Live.setLevel(effect.key, value / 100)
+                            }
+                            Text {
+                                Layout.preferredWidth: 24
+                                horizontalAlignment: Text.AlignRight
+                                text: effect.on ? Math.round(effect.level * 100) : "关"
+                                font.pixelSize: Theme.sizeSm
+                                font.features: { "tnum": 1 }
+                                color: effect.on ? Theme.text : Theme.faint
+                                MouseArea { anchors.fill: parent; onDoubleClicked: Live.setLevel(effect.key, 0) }
+                            }
                         }
                     }
                 }

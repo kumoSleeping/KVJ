@@ -16,16 +16,30 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <deque>
 #include <mutex>
 #include <vector>
 
 namespace {
-// Further off than this, seek; closer, steer the speed.
-constexpr double kSeekBeyond = 0.3;
-// Steering stays within a few percent of the picture's speed, and leaves a
-// drift smaller than this alone.
-constexpr double kSteerMost = 0.04;
+// The sound seeks only when the picture jumps: its time moves further than
+// its own speed explains. Otherwise it is steered, faster or slower with the
+// pitch kept, however far off it is (after a nudge at four times the speed
+// the stretcher's delay leaves it half a second behind): gently while close,
+// up to half as fast again to catch up; and only when it is lost altogether.
+constexpr double kJumpBeyond = 0.25;
+constexpr double kLostBeyond = 2.0;
+// For a moment after the picture's speed changes the stretcher's delay makes
+// the sound look further off than it is: it is not steered then.
+constexpr double kChangingMs = 500;
 constexpr double kSteerBelow = 0.008;
+double pullFor(double drift)
+{
+    if (std::abs(drift) < kSteerBelow)
+        return 0;
+    // Within a tenth of a second: a few percent, unheard. Beyond: quicker.
+    const double most = std::abs(drift) < 0.1 ? 0.04 : 0.5;
+    return std::clamp(-drift * (std::abs(drift) < 0.1 ? 0.8 : 1.5), -most, most);
+}
 // Frames fed to the stretcher at a time, as KDJ feeds it: a new speed is heard
 // within about 10 ms.
 constexpr int kBlock = 512;
@@ -57,7 +71,8 @@ struct Timing
 // elsewhere. It knows the media time of the next frame it writes to the
 // output (each written frame stands for 1 / outRate seconds at the speed it
 // was stretched to), so the media time heard now is that less what the output
-// still holds. That is kept on the picture's.
+// still holds, each part at the speed it was made at. That is kept on the
+// picture's.
 class SoundPlayer
 {
 public:
@@ -173,11 +188,23 @@ private:
             return;
         }
 
-        const double queued = m_io ? double(m_sink->bufferSize() - m_sink->bytesFree()) / frameBytes() / m_outRate : 0;
-        const double gap = m_mediaOut - queued * m_speed - target;
+        // A jump: the picture's time is not where its speed since the last
+        // look would have taken it.
+        const bool jumped = m_lastLookAt > 0
+                            && std::abs(target - (m_lastTarget + (now - m_lastLookAt) / 1000.0 * m_lastRate)) > kJumpBeyond;
+        m_lastTarget = target;
+        m_lastLookAt = now;
+        if (timing.rate != m_lastRate) {
+            m_lastRate = timing.rate;
+            m_rateAt = now;
+        }
+        const bool changing = now - m_rateAt < kChangingMs;
+        const int queuedFrames = m_io ? (m_sink->bufferSize() - m_sink->bytesFree()) / frameBytes() : 0;
+        const double queued = queuedMedia(queuedFrames);
+        const double gap = m_mediaOut - queued - target;
         if (m_log)
-            report(now, gap, queued);
-        if (m_needSync || !m_io || std::abs(gap) > kSeekBeyond) {
+            report(now, gap, double(queuedFrames) / m_outRate);
+        if (m_needSync || !m_io || jumped || std::abs(gap) > kLostBeyond) {
             m_speed = timing.rate;
             applyRatio();
             seek(target);
@@ -185,9 +212,8 @@ private:
             m_needSync = false;
         } else {
             // The reported queue moves in steps; steer on a smoothed gap.
-            m_drift = 0.8 * m_drift + 0.2 * gap;
-            const double pull = std::abs(m_drift) < kSteerBelow ? 0 : std::clamp(-m_drift * 0.8, -kSteerMost, kSteerMost);
-            m_speed = timing.rate * (1.0 + pull);
+            m_drift = changing ? 0 : 0.8 * m_drift + 0.2 * gap;
+            m_speed = timing.rate * (1.0 + pullFor(m_drift));
             applyRatio();
         }
         fill();
@@ -206,6 +232,21 @@ private:
         qInfo().noquote() << QStringLiteral("sound: gap %1 ms · speed %2 · queued %3 ms · seeks %4 · starved %5")
                                  .arg(gap * 1000, 0, 'f', 1).arg(m_speed, 0, 'f', 4).arg(queued * 1000, 0, 'f', 0)
                                  .arg(m_seeks).arg(m_starved);
+    }
+
+    // Media seconds in the output's last `frames` frames, from what was written.
+    double queuedMedia(int frames)
+    {
+        while (!m_written.empty() && m_writtenFrames - m_written.front().frames >= frames) {
+            m_writtenFrames -= m_written.front().frames;
+            m_written.pop_front();
+        }
+        double media = 0;
+        for (const Written &part : m_written)
+            media += part.frames * part.mediaPerFrame;
+        if (!m_written.empty())
+            media -= (m_writtenFrames - frames) * m_written.front().mediaPerFrame;
+        return std::max(0.0, media);
     }
 
     void applyRatio()
@@ -235,6 +276,8 @@ private:
             pad -= n;
         }
         m_discard = int(m_stretcher->getStartDelay());
+        m_written.clear();
+        m_writtenFrames = 0;
         m_mediaOut = at;
         m_drift = 0;
         m_faded = 0;
@@ -296,6 +339,8 @@ private:
             m_io->write(m_bytes.data(), bytes);
             room -= count;
             m_mediaOut += count / double(m_outRate) * m_speed;
+            m_written.push_back({count, m_speed / m_outRate});
+            m_writtenFrames += count;
         }
     }
 
@@ -317,6 +362,18 @@ private:
     // Media seconds of the next frame written to the output.
     double m_mediaOut = 0;
     double m_drift = 0;
+    // What is in the output, oldest first: frames and the media each stands for.
+    struct Written
+    {
+        int frames;
+        double mediaPerFrame;
+    };
+    std::deque<Written> m_written;
+    qint64 m_writtenFrames = 0;
+    double m_lastRate = 0;
+    double m_rateAt = 0;
+    double m_lastTarget = 0;
+    double m_lastLookAt = 0;
     int m_discard = 0;
     int m_faded = 0;
     bool m_needSync = true;
