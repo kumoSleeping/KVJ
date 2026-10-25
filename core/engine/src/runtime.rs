@@ -254,7 +254,9 @@ pub fn run(
     input: super::audio_input::Selection,
 ) {
     let _background = super::qos::prefer_background();
-    let result = (|| -> Result<()> {
+    // A panic (a decoder library on a damaged file) fails the session, which
+    // says so, instead of leaving it on "indexing" with its thread gone.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         publish(&engine, &session, |v| {
             let preparing = ListenerStatus {
                 state: ListenerState::Preparing,
@@ -272,7 +274,8 @@ pub fn run(
             return Ok(());
         }
         run_inner(&engine, &session, &ready, &cancel, &input)
-    })();
+    }))
+    .unwrap_or_else(|_| Err(anyhow::anyhow!("引擎内部错误，请重新开始")));
     if cancel.load(Ordering::Relaxed) {
         return;
     }

@@ -20,4 +20,5 @@ opt-level = 2
 [profile.release]
 lto = "thin"
 codegen-units = 16
-panic = "abort"
+# Unwind, not abort: a decoder library panicking on a damaged file is caught
+# at the C ABI (ffi.rs) and fails that one call instead of closing KVJ mid-show.
