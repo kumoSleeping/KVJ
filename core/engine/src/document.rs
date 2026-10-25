@@ -201,6 +201,18 @@ impl Store {
                     file.write_all(bytes)?;
                     file.sync_all()?;
                 }
+                // The newest few are kept (names sort by time), not every one
+                // since the first edit.
+                let keep = if kind == "auto" { 50 } else { 60 };
+                let mut kept: Vec<_> = fs::read_dir(&dir)?
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.path())
+                    .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("kvj-sets-")))
+                    .collect();
+                kept.sort();
+                for old in kept.iter().rev().skip(keep) {
+                    let _ = fs::remove_file(old);
+                }
             }
         }
         let bytes = serde_json::to_vec(&next)?;
