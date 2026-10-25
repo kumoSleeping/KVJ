@@ -115,7 +115,7 @@ QtObject {
     readonly property var effects: [
         { key: "mosaic", name: "马赛克", preset: 0.35 },
         { key: "rgb", name: "RGB 分离", moving: true, preset: 0.4 },
-        { key: "tiles", name: "多画面", preset: 0.2 },
+        { key: "tiles", name: "多画面", preset: 0.3 },
         { key: "lens", name: "鱼眼透镜", preset: 0.5 },
         { key: "zoom", name: "放射模糊", preset: 0.35 },
         { key: "wave", name: "水波", moving: true, preset: 0.5 },
