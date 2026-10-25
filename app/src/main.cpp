@@ -39,7 +39,9 @@ QQuickWindow *shownWindow()
 
 // A press anywhere but in the text box being typed in leaves it: the box
 // keeps no focus that would hold the player's keys off (they rest while words
-// are typed). Pressing another box gives it the focus as usual.
+// are typed). Pressing another box gives it the focus as usual; Esc leaves the
+// box too. The box lets go of the focus itself: the window's root item takes
+// none when forced.
 class LeaveTyping : public QObject
 {
 public:
@@ -54,8 +56,16 @@ protected:
             if (isTextBox(typing)) {
                 const QPointF at = typing->mapFromScene(static_cast<QMouseEvent *>(event)->scenePosition());
                 if (!typing->contains(at))
-                    window->contentItem()->forceActiveFocus(Qt::MouseFocusReason);
+                    typing->setFocus(false, Qt::MouseFocusReason);
             }
+        }
+        // Esc reaches the box as a shortcut override first, before any Esc
+        // shortcut takes it; as a press when no shortcut looked.
+        if ((event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress)
+            && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
+            auto *item = qobject_cast<QQuickItem *>(watched);
+            if (isTextBox(item) && item->hasActiveFocus())
+                item->setFocus(false, Qt::OtherFocusReason);
         }
         return false;
     }

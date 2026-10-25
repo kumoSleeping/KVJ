@@ -37,6 +37,9 @@ Rectangle {
     readonly property string playingId: shown ? shown.id : ""
     readonly property real position: player ? player.playhead : 0
     readonly property real tempo: player ? player.shownTempo : 1
+    // The readout shows a held nudge key's bend; the bar stays on the tempo.
+    readonly property real speed: player ? player.shownSpeed : 1
+    readonly property int bending: speed > tempo + 1e-6 ? 1 : speed < tempo - 1e-6 ? -1 : 0
     readonly property var match: player && player.aiPicture ? player.match : null
     // The entry on the screen stays until the picture has left it.
     readonly property var lanes: entries.filter(e => e.enabled !== false || e.id === playingId)
@@ -346,26 +349,27 @@ Rectangle {
                     onClicked: line.player.resetTempo()
                 }
                 Text {
-                    text: "×" + line.tempo.toFixed(3)
+                    text: "×" + line.speed.toFixed(3)
                     font.pixelSize: 18
                     font.weight: Font.DemiBold
                     font.features: { "tnum": 1 }
-                    color: line.shown ? Theme.text : Theme.faint
+                    color: line.bending ? Theme.warn : line.shown ? Theme.text : Theme.faint
                     // Double-click: back to the material's own speed.
                     MouseArea { anchors.fill: parent; enabled: line.manualTempo; onDoubleClicked: line.player.resetTempo() }
                 }
                 ColumnLayout {
                     spacing: 0
                     Text {
-                        text: line.signed(line.tempo)
+                        text: line.signed(line.speed)
                         font.pixelSize: Theme.sizeXs
                         font.features: { "tnum": 1 }
-                        color: Theme.body
+                        color: line.bending ? Theme.warn : Theme.body
                         MouseArea { anchors.fill: parent; enabled: line.manualTempo; onDoubleClicked: line.player.resetTempo() }
                     }
                     Text {
                         text: line.match ? (line.match.rate_confidence >= 0.7 ? "智能 · 已稳定" : "智能 · 校准中")
                                          : line.player && line.player.aiLeads ? (line.player.tempoPaused ? "智能跳转 · 手动速度" : "智能调速 · 不跳转")
+                                         : line.bending ? (line.bending > 0 ? "按住加速" : "按住减速")
                                          : line.manual ? "手动" : "智能跟随"
                         font.pixelSize: 11
                         color: Theme.faint

@@ -109,6 +109,8 @@ ApplicationWindow {
     readonly property var shownEntry: aiPicture ? match.entry : transport.entry
     readonly property real shownDuration: shownEntry ? shownEntry.duration : 0
     readonly property real shownTempo: aiPicture ? match.rate : transport.tempo
+    // What it plays at this moment: the tempo, bent while a nudge key is held.
+    readonly property real shownSpeed: aiPicture ? match.rate : transport.speed
     property real playhead: 0
     // Every jump, by hand or by following, can dissolve; dragging on a lane is
     // many small jumps and cuts until it is let go.
