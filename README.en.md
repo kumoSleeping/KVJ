@@ -29,14 +29,14 @@ This is a preview (pre-release) build; every version is listed under [Releases](
 
 <!-- release-package-size-badges:start -->
 <p>
-  <a href="https://github.com/kumoSleeping/KVJ/releases/download/v0.1.0-rc1/KVJ-macos-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_Silicon-black?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon"></a>
-  <a href="https://github.com/kumoSleeping/KVJ/releases/download/v0.1.0-rc1/KVJ-windows-x64.zip"><img src="https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows x64"></a>
+  <a href="https://github.com/kumoSleeping/KVJ/releases/download/v0.1.0-rc1/KVJ-macos-arm64.dmg"><img src="https://img.shields.io/badge/macOS_Apple_Silicon-24.2_MB-black?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon 24.2 MB"></a>
+  <a href="https://github.com/kumoSleeping/KVJ/releases/download/v0.1.0-rc1/KVJ-windows-x64.zip"><img src="https://img.shields.io/badge/Windows_x64-73.0_MB-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows x64 73.0 MB"></a>
   <a href="https://github.com/kumoSleeping/KVJ/releases"><img src="https://img.shields.io/badge/More-Releases-555555?style=for-the-badge&logo=github&logoColor=white" alt="More releases"></a>
 </p>
 <!-- release-package-size-badges:end -->
 
 - **macOS**: open the DMG and drag KVJ into Applications. The app is not notarized; if macOS blocks the first launch, allow it under System Settings → Privacy & Security. Capturing system sound needs macOS 14.2 or later (screen-recording capture from 12.3); allow the microphone or system audio recording when KVJ first listens.
-- **Windows**: unzip and run `KVJ.exe`.
+- **Windows**: unzip and run `bin\KVJ.exe`. If Windows reports a missing runtime, run `vc_redist.x64.exe` from the same folder first.
 
 > [!NOTE]
 > Video is decoded by the system (VideoToolbox on macOS, Media Foundation on Windows), so no FFmpeg is needed. Entries can be mp4, m4v, mkv, mov and webm.

@@ -29,14 +29,14 @@ KVJ 是一款给 DJ 现场用的 VJ 软件。它首先是一个视频播放器�
 
 <!-- release-package-size-badges:start -->
 <p>
-  <a href="https://github.com/kumoSleeping/KVJ/releases/download/v0.1.0-rc1/KVJ-macos-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_Silicon-black?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon"></a>
-  <a href="https://github.com/kumoSleeping/KVJ/releases/download/v0.1.0-rc1/KVJ-windows-x64.zip"><img src="https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows x64"></a>
+  <a href="https://github.com/kumoSleeping/KVJ/releases/download/v0.1.0-rc1/KVJ-macos-arm64.dmg"><img src="https://img.shields.io/badge/macOS_Apple_Silicon-24.2_MB-black?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon 24.2 MB"></a>
+  <a href="https://github.com/kumoSleeping/KVJ/releases/download/v0.1.0-rc1/KVJ-windows-x64.zip"><img src="https://img.shields.io/badge/Windows_x64-73.0_MB-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows x64 73.0 MB"></a>
   <a href="https://github.com/kumoSleeping/KVJ/releases"><img src="https://img.shields.io/badge/More-Releases-555555?style=for-the-badge&logo=github&logoColor=white" alt="More releases"></a>
 </p>
 <!-- release-package-size-badges:end -->
 
 - **macOS**：打开 DMG，把 KVJ 拖进“应用程序”。安装包未经公证，首次打开若被拦截，请在“系统设置 → 隐私与安全性”中允许打开。捕获系统声音需要 macOS 14.2 或更高版本（12.3 起可用屏幕录制方式捕获），首次监听时请允许麦克风或系统录音权限。
-- **Windows**：解压 ZIP，运行其中的 `KVJ.exe`。
+- **Windows**：解压 ZIP，运行 `bin\KVJ.exe`。若提示缺少运行库，先运行同目录下的 `vc_redist.x64.exe`。
 
 > [!NOTE]
 > 视频由系统解码（macOS 为 VideoToolbox，Windows 为 Media Foundation），无需安装 FFmpeg。素材支持 mp4、m4v、mkv、mov 和 webm。
