@@ -283,6 +283,7 @@ int main(int argc, char *argv[])
                     {"playing", timeline->property("playingId").toString()},
                     {"lanes", timeline->property("lanes").toList().size()},
                     {"running", timeline->property("running").toBool()},
+                    {"parked", timeline->property("parked").toBool()},
                 });
             }
             QSaveFile out(dir.filePath("status.json"));

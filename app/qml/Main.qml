@@ -355,7 +355,7 @@ ApplicationWindow {
     // words and chooses it; "nudge <±1> <ms>" holds a nudge key that long;
     // "drop" turns the entry on the screen off as the sidebar's confirmed
     // second press does; "effect <key> <0–1>" sets an effect, "move <from>
-    // <to>" reorders them.
+    // <to>" reorders them; "set <no.>" chooses that Set as the sidebar does.
     function devCommand(line) {
         const w = String(line).trim().split(/\s+/)
         switch (w[0]) {
@@ -385,6 +385,7 @@ ApplicationWindow {
         case "drop": if (transport.entry) app.dropPlaying(transport.entry.id); break
         case "effect": Live.setLevel(w[1], Number(w[2] || 0)); break
         case "move": Live.moveEffect(Number(w[1]), Number(w[2])); break
+        case "set": if (app.sets[Number(w[1] || 1) - 1]) app.chooseSet(app.sets[Number(w[1] || 1) - 1].id); break
         case "post": Live.post({ kind: "text", text: w.slice(3).join(" "), name: "", px: Number(w[1]), py: Number(w[2]), size: 0.15 }); desk.chosenSid = Live.lastSid; break
         default: return "unknown"
         }
