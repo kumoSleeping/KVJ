@@ -144,20 +144,29 @@ Rectangle {
             player.play(markClip.entry, markAt)
     }
 
-    // Tick marks in each entry's own time, at least 70 px apart.
+    // Tick marks in each entry's own time, at least 70 px apart. A label that
+    // would run into the one before (many short entries, each starting at
+    // 0:00) is left off; its mark stays.
     readonly property var ticks: {
         const out = []
         if (!clips.length || pps <= 0)
             return out
         const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600]
         const step = steps.find(s => s * pps >= 70) || 7200
+        let labelled = -1e9
         for (const c of clips) {
             const a = Math.max(c.start, viewLeft)
             const b = Math.min(c.start + c.length, viewLeft + span)
             // None so near an entry's end that its label runs into the next entry's 0:00.
-            for (let k = Math.ceil((a - c.start) / step - 1e-6); b > a && c.start + k * step <= b && out.length < 300; ++k)
-                if (k === 0 || (c.length - k * step) * pps >= 48)
-                    out.push({ x: (c.start + k * step - viewLeft) * pps, label: clock(k * step, step < 1) })
+            for (let k = Math.ceil((a - c.start) / step - 1e-6); b > a && c.start + k * step <= b && out.length < 300; ++k) {
+                if (k !== 0 && (c.length - k * step) * pps < 48)
+                    continue
+                const x = (c.start + k * step - viewLeft) * pps
+                const fits = x - labelled >= 48
+                if (fits)
+                    labelled = x
+                out.push({ x: x, label: fits ? clock(k * step, step < 1) : "" })
+            }
         }
         return out
     }
