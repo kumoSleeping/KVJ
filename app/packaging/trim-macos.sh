@@ -21,6 +21,9 @@ for kind in fluentwinui3 fusion imagine material universal ios macos; do
 done
 rm -f "$C/PlugIns/libqtquickcontrols2nativestyleplugin.dylib"
 rm -rf "$C/PlugIns/styles" "$C/PlugIns/tls" "$C/PlugIns/networkinformation"
+# Sound plays through AVFoundation (QT_MEDIA_BACKEND=darwin): no FFmpeg.
+rm -f "$C/PlugIns/multimedia/libffmpegmediaplugin.dylib"
+rm -f "$C"/Frameworks/libav*.dylib "$C"/Frameworks/libsw*.dylib
 for format in "$C"/PlugIns/imageformats/*.dylib; do
     case "$(basename "$format")" in
         libqsvg.dylib|libqgif.dylib|libqjpeg.dylib|libqwebp.dylib) ;;

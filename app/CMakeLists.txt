@@ -7,7 +7,7 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2 Svg ShaderTools)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2 Svg ShaderTools Multimedia)
 qt_standard_project_setup(REQUIRES 6.8)
 
 # The Rust engine (../core/engine) is built by Cargo and linked as a static library.
@@ -83,6 +83,7 @@ qt_add_qml_module(KVJ
         src/VideoPlayer.h src/VideoPlayer.cpp
         src/PreviewSurface.h src/PreviewSurface.cpp
         src/FrameNode.h
+        src/AudioFollower.h src/AudioFollower.cpp
         src/Decoder.h
 )
 # Picture effects, compiled to every shading language Qt Quick may run on.
@@ -92,7 +93,7 @@ qt_add_shaders(KVJ "shaders"
 target_include_directories(KVJ PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/engine/include)
-target_link_libraries(KVJ PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Svg kvj_engine)
+target_link_libraries(KVJ PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Svg Qt6::Multimedia kvj_engine)
 # System libraries the Rust static library needs, from
 # `cargo rustc -p kvj-engine --crate-type staticlib -- --print native-static-libs`.
 if(APPLE)

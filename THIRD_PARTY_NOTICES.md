@@ -6,7 +6,7 @@ ported from KDJ (https://github.com/kumoSleeping/KDJ, GPL-3.0-or-later), commit
 
 | Component | Use | License |
 |---|---|---|
-| Qt 6 (Qt Base, Qt Declarative, Qt Svg, Qt Image Formats) | application shell, dynamically linked | LGPL-3.0 |
+| Qt 6 (Qt Base, Qt Declarative, Qt Svg, Qt Image Formats, Qt Multimedia) | application shell, dynamically linked | LGPL-3.0 |
 | Qt Shader Tools | compiles the effect shader (build time only) | GPL-3.0 |
 | cpal 0.18.1 (`vendor/cpal-0.18.1`, patched as described in `KDJ-PATCH.md`) | audio capture | Apache-2.0 |
 | symphonia | audio decoding for indexing | MPL-2.0 |

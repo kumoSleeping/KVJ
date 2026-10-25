@@ -8,17 +8,28 @@ import KVJ
 // whether the picture is still where the music is: its dot circles while all is
 // well, it hops on a jump, and once the threshold is passed (the music went
 // somewhere else, or went quiet) the ring ripples in amber until it is found.
+// Each pauses on its own; the player then has that part of the picture.
 Rectangle {
     id: root
     implicitHeight: column.implicitHeight + 24
     radius: Theme.radius + 2
     color: Theme.bg
 
-    // Smart following is on, and whether it has handed the picture back.
+    // Smart following is on, and which helpers have handed their part back.
     property bool active: false
-    property bool paused: false
+    property bool tempoPaused: false
+    property bool jumpPaused: false
+    // 跳转 paused and the music elsewhere than the picture: 对速 holds the speed.
+    property bool musicAway: false
+    // The speed the picture plays at, whoever sets it.
+    property real tempo: match ? match.rate : 1
     property var view: ({})
     property var match: null
+
+    signal tempoToggled()
+    signal jumpToggled()
+    // Double-click on the speed: back to the material's own.
+    signal tempoReset()
 
     // The engine's rules (core/engine/src/runtime.rs): a new position this far
     // from the followed one is a jump; this long without a confirmation the
@@ -26,7 +37,9 @@ Rectangle {
     readonly property real jumpMs: 2500
     readonly property real lostMs: 2000
 
-    readonly property bool working: active && !paused
+    readonly property bool working: active
+    readonly property bool tempoWorking: active && !tempoPaused
+    readonly property bool jumpWorking: active && !jumpPaused
     readonly property bool shown: Window.window ? Window.window.visible : false
     readonly property var tracking: view.tracking || null
     readonly property string inputState: view.input ? view.input.state : ""
@@ -38,9 +51,9 @@ Rectangle {
                                       ? Math.abs(tracking.error_ms) : 0
     // How near the watcher is to calling a jump: 1 is the threshold.
     readonly property real pressure: match ? Math.max(deviation / jumpMs, age / lostMs) : 0
-    readonly property bool alert: working && (quiet || lost || (!!match && pressure >= 1))
-    readonly property bool keeping: working && !!match && !quiet && !lost
-    readonly property real rate: match ? match.rate : 1
+    readonly property bool alert: jumpWorking && (quiet || lost || (!!match && pressure >= 1))
+    readonly property bool keeping: tempoWorking && !!match && !quiet && !lost && !musicAway
+    readonly property real rate: tempo
     readonly property int lock: match ? match.lock_revision : 0
     property bool jumped: false
 
@@ -56,7 +69,7 @@ Rectangle {
     }
 
     onLockChanged: {
-        if (working && lock > 0) {
+        if (jumpWorking && lock > 0) {
             jumped = true
             jumpNote.restart()
             hop.restart()
@@ -124,14 +137,15 @@ Rectangle {
                         text: "对速"
                         font.pixelSize: Theme.sizeSm
                         font.weight: Font.DemiBold
-                        color: root.working ? Theme.text : Theme.muted
+                        color: root.tempoWorking ? Theme.text : Theme.muted
                     }
                     Text {
-                        visible: root.working && !!root.match
+                        visible: root.active && (!!root.match || root.tempoPaused)
                         text: root.percent(root.rate)
                         font.pixelSize: Theme.sizeSm
                         font.features: { "tnum": 1 }
                         color: Theme.text
+                        MouseArea { anchors.fill: parent; onDoubleClicked: root.tempoReset() }
                     }
                 }
                 Text {
@@ -139,12 +153,14 @@ Rectangle {
                     text: {
                         if (!root.active)
                             return "未开启"
-                        if (root.paused)
-                            return "已暂停，速度交给播放器"
+                        if (root.tempoPaused)
+                            return "已暂停，速度交给播放器 · 双击百分比复原"
                         if (root.quiet)
                             return "等声音"
                         if (!root.match)
                             return "等找到位置"
+                        if (root.musicAway)
+                            return "音乐不在画面这里，速度保持不动"
                         if (root.lost)
                             return "保持当前速度，等重新对上"
                         if (root.match.rate_confidence < 0.3)
@@ -157,6 +173,12 @@ Rectangle {
                     elide: Text.ElideRight
                 }
             }
+            IconButton {
+                visible: root.active
+                iconName: root.tempoPaused ? "play" : "pause"
+                tip: root.tempoPaused ? "继续对速" : "暂停对速（速度交给播放器）"
+                onClicked: root.tempoToggled()
+            }
         }
 
         // —— Jumps ——
@@ -168,7 +190,7 @@ Rectangle {
                 id: watch
                 implicitWidth: 28
                 implicitHeight: 28
-                readonly property color tone: root.alert ? Theme.warn : root.working ? Theme.text : Theme.faint
+                readonly property color tone: root.alert ? Theme.warn : root.jumpWorking ? Theme.text : Theme.faint
 
                 SequentialAnimation {
                     id: hop
@@ -182,12 +204,12 @@ Rectangle {
                     radius: 9
                     color: "transparent"
                     border.width: 1.5
-                    border.color: root.alert ? Theme.warn : root.working ? Theme.muted : Theme.line
+                    border.color: root.alert ? Theme.warn : root.jumpWorking ? Theme.muted : Theme.line
                 }
                 // Watching: a dot going round the ring.
                 Item {
                     anchors.fill: parent
-                    visible: root.working && !root.alert
+                    visible: root.jumpWorking && !root.alert
                     Rectangle {
                         x: parent.width / 2 - 2.5
                         y: parent.height / 2 - 9 - 2.5
@@ -197,7 +219,7 @@ Rectangle {
                         color: Theme.text
                     }
                     NumberAnimation on rotation {
-                        running: root.working && !root.alert && root.shown
+                        running: root.jumpWorking && !root.alert && root.shown
                         from: 0
                         to: 360
                         duration: 2400
@@ -240,7 +262,7 @@ Rectangle {
                         text: "跳转监测"
                         font.pixelSize: Theme.sizeSm
                         font.weight: Font.DemiBold
-                        color: root.working ? Theme.text : Theme.muted
+                        color: root.jumpWorking ? Theme.text : Theme.muted
                     }
                     Text {
                         text: "阈值 " + (root.jumpMs / 1000).toFixed(1) + " s"
@@ -254,8 +276,8 @@ Rectangle {
                     text: {
                         if (!root.active)
                             return "未开启"
-                        if (root.paused)
-                            return "已暂停，仍在听"
+                        if (root.jumpPaused)
+                            return root.tempoPaused ? "已暂停，仍在听" : "已暂停，不跳转，只跟速度"
                         if (root.inputState === "stalled")
                             return "音频中断"
                         if (root.inputState === "quiet")
@@ -283,9 +305,9 @@ Rectangle {
                     implicitHeight: 3
                     radius: 1.5
                     color: Theme.line
-                    opacity: root.working && !!root.match ? 1 : 0.4
+                    opacity: root.jumpWorking && !!root.match ? 1 : 0.4
                     Rectangle {
-                        width: parent.width * Math.min(1, root.working ? root.pressure : 0)
+                        width: parent.width * Math.min(1, root.jumpWorking ? root.pressure : 0)
                         height: parent.height
                         radius: 1.5
                         color: root.alert ? Theme.warn : Theme.text
@@ -300,6 +322,12 @@ Rectangle {
                         color: root.alert ? Theme.warn : Theme.muted
                     }
                 }
+            }
+            IconButton {
+                visible: root.active
+                iconName: root.jumpPaused ? "play" : "pause"
+                tip: root.jumpPaused ? "继续跳转" : "暂停跳转（只跟速度）"
+                onClicked: root.jumpToggled()
             }
         }
     }

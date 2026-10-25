@@ -23,6 +23,9 @@ Rectangle {
     property var player: null
 
     readonly property bool manual: !!player && player.manual
+    // The speed is the player's (对速 paused), play and seeking are (跳转 paused).
+    readonly property bool manualTempo: !!player && player.manualTempo
+    readonly property bool manualSeek: !!player && player.manualSeek
     readonly property var transport: player ? player.transport : null
     readonly property var shown: player ? player.shownEntry : null
     readonly property string playingId: shown ? shown.id : ""
@@ -74,7 +77,7 @@ Rectangle {
             IconButton {
                 iconName: line.match || (line.transport && line.transport.playing) ? "pause" : "play"
                 tip: "播放 / 暂停（空格）"
-                enabled: line.manual && !!line.transport && !!line.transport.entry
+                enabled: line.manualSeek && !!line.transport && !!line.transport.entry
                 onClicked: line.player.toggle()
             }
             Text {
@@ -108,6 +111,8 @@ Rectangle {
                 font.weight: Font.DemiBold
                 font.features: { "tnum": 1 }
                 color: line.shown ? Theme.text : Theme.faint
+                // Double-click: back to the material's own speed.
+                MouseArea { anchors.fill: parent; enabled: line.manualTempo; onDoubleClicked: line.player.resetTempo() }
             }
             ColumnLayout {
                 spacing: 0
@@ -116,9 +121,11 @@ Rectangle {
                     font.pixelSize: Theme.sizeXs
                     font.features: { "tnum": 1 }
                     color: Theme.body
+                    MouseArea { anchors.fill: parent; enabled: line.manualTempo; onDoubleClicked: line.player.resetTempo() }
                 }
                 Text {
                     text: line.match ? (line.match.rate_confidence >= 0.7 ? "智能 · 已稳定" : "智能 · 校准中")
+                                     : line.player && line.player.aiLeads ? (line.player.tempoPaused ? "智能跳转 · 手动速度" : "智能调速 · 不跳转")
                                      : line.manual ? "手动" : "智能跟随"
                     font.pixelSize: 11
                     color: Theme.faint
@@ -135,13 +142,13 @@ Rectangle {
             Text {
                 text: "速度"
                 font.pixelSize: Theme.sizeSm
-                color: line.manual ? Theme.muted : Theme.faint
+                color: line.manualTempo ? Theme.muted : Theme.faint
             }
             IconButton {
                 iconName: "minus"
                 tip: "慢 1%"
                 autoRepeat: true
-                enabled: line.manual && line.transport.tempo > line.transport.minTempo
+                enabled: line.manualTempo && line.transport.tempo > line.transport.minTempo
                 onClicked: line.player.nudgeTempo(-0.01)
             }
             Seek {
@@ -151,20 +158,28 @@ Rectangle {
                 from: line.transport ? (line.transport.minTempo - 1) * 100 : -50
                 to: line.transport ? (line.transport.maxTempo - 1) * 100 : 50
                 value: (line.tempo - 1) * 100
-                enabled: line.manual
+                enabled: line.manualTempo
                 onMoved: line.transport.setTempo(1 + value / 100)
                 // Double-click: back to the material's own speed.
                 TapHandler {
-                    enabled: line.manual
-                    onDoubleTapped: line.transport.setTempo(1)
+                    enabled: line.manualTempo
+                    onDoubleTapped: line.player.resetTempo()
                 }
             }
             IconButton {
                 iconName: "plus"
                 tip: "快 1%"
                 autoRepeat: true
-                enabled: line.manual && line.transport.tempo < line.transport.maxTempo
+                enabled: line.manualTempo && line.transport.tempo < line.transport.maxTempo
                 onClicked: line.player.nudgeTempo(0.01)
+            }
+            TextButton {
+                text: "复原"
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: "回到素材原速（也可双击速度）"
+                enabled: line.manualTempo && !!line.transport && line.transport.tempo !== 1
+                onClicked: line.player.resetTempo()
             }
             Rectangle {
                 Layout.preferredWidth: 1
@@ -235,7 +250,7 @@ Rectangle {
                     // The name plays the entry from its start.
                     MouseArea {
                         anchors.fill: parent
-                        enabled: line.manual
+                        enabled: line.manualSeek
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: line.player.play(lane.modelData, 0)
                     }
@@ -293,7 +308,7 @@ Rectangle {
                         anchors.fill: parent
                         anchors.topMargin: -6
                         anchors.bottomMargin: -6
-                        enabled: line.manual
+                        enabled: line.manualSeek
                         cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         preventStealing: true
                         function seek(mouse) {

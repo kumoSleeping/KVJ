@@ -52,14 +52,28 @@ ApplicationWindow {
     readonly property bool startsSending: Qt.application.arguments.indexOf("--send") >= 0
     readonly property var match: Engine.matched && Engine.matched.entry ? Engine.matched : null
     property var lastMatch: null
-    // Smart following is on. Paused, it keeps listening but the player has the
-    // picture; it leads only while on and not paused, and draws the picture
-    // once it has found where the music is.
+    // Smart following is on. Its two helpers (Assistants) pause on their own:
+    // 对速 keeps the speed with the music, 跳转 moves the picture to where the
+    // music is. With both at work following draws the picture once it has found
+    // the music; with one paused the player draws it and the other helper steers
+    // the player (steer()); with both paused it only listens.
     readonly property bool following: running && view.mode !== "send"
-    property bool followPaused: false
+    property bool tempoPaused: false
+    property bool jumpPaused: false
+    readonly property bool followPaused: tempoPaused && jumpPaused
     readonly property bool aiLeads: following && !followPaused
-    readonly property bool aiPicture: aiLeads && !!match
+    readonly property bool aiPicture: aiLeads && !tempoPaused && !jumpPaused && !!match
     readonly property bool manual: !aiLeads
+    // The player's keys no helper at work owns: the speed while 对速 is paused,
+    // play and seeking while 跳转 is.
+    readonly property bool manualTempo: manual || tempoPaused
+    readonly property bool manualSeek: manual || jumpPaused
+    // The engine's rule (core/engine/src/runtime.rs): further than this from the
+    // followed position is a jump, closer is followed by speed.
+    readonly property real jumpSeconds: 2.5
+    // 跳转 is paused, 对速 at work, and the music is not where the picture is:
+    // the speed is left as it was, since the music's says nothing about it.
+    property bool musicAway: false
     readonly property var devices: Engine.devices
     readonly property var device: devices.length ? devices[Math.min(deviceBox.currentIndex, devices.length - 1)] : null
     // Adding never waits for a Set: the first files make "Set 1".
@@ -82,8 +96,17 @@ ApplicationWindow {
     property int fadeMs: 400
     property bool scrubbing: false
 
-    onMatchChanged: if (match) lastMatch = match
-    onFollowingChanged: if (!following) followPaused = false
+    onMatchChanged: {
+        if (match)
+            lastMatch = match
+        steer()
+    }
+    onFollowingChanged: {
+        if (!following) {
+            tempoPaused = false
+            jumpPaused = false
+        }
+    }
     // Following let go of the picture: the player carries on from the same
     // frame at the same speed.
     onAiPictureChanged: if (!aiPicture) takeOver()
@@ -98,6 +121,38 @@ ApplicationWindow {
         transport.load(m.entry, at, true)
         app.tick()
     }
+    // One helper paused: the player has the picture and the helper at work moves
+    // it, measured against the picture itself.
+    function steer() {
+        app.musicAway = false
+        if (!app.aiLeads || app.aiPicture || !app.match)
+            return
+        const m = app.match
+        const music = m.position + (Engine.clockMs() - m.clock_at_ms + offset.value) / 1000 * m.rate
+        const near = !!transport.entry && transport.entry.id === m.entry.id
+                     && Math.abs(transport.now() - music) < app.jumpSeconds
+        if (app.tempoPaused) {
+            // Jumps only, at the player's speed: once the picture is a jump
+            // away from the music (or on another entry), it goes there.
+            if (!near) {
+                transport.load(m.entry, music, true)
+                app.tick()
+            }
+        } else if (near) {
+            // Speed only, never a jump: followed, small corrections included,
+            // while the music is where the picture is and the picture plays.
+            if (transport.playing) {
+                transport.tempo = Math.max(transport.minTempo, Math.min(transport.maxTempo, m.rate))
+                transport.anchor(music)
+            }
+        } else {
+            app.musicAway = true
+        }
+    }
+    function resetTempo() {
+        if (app.manualTempo)
+            transport.setTempo(1)
+    }
     // Something on the screen from the start: the first entry, paused.
     function cue() {
         if (!transport.entry && app.entries.length)
@@ -106,7 +161,7 @@ ApplicationWindow {
     // That entry from `at` seconds: a seek within the one shown keeps playing or
     // paused as it was; another entry starts playing.
     function play(entry, at) {
-        if (app.aiLeads)
+        if (!app.manualSeek)
             return
         if (transport.entry && transport.entry.id === entry.id)
             transport.seek(at)
@@ -115,19 +170,19 @@ ApplicationWindow {
         app.tick()
     }
     function toggle() {
-        if (app.aiLeads)
+        if (!app.manualSeek)
             return
         transport.toggle()
         app.tick()
     }
     function seekBy(seconds) {
-        if (app.aiLeads || !transport.entry)
+        if (!app.manualSeek || !transport.entry)
             return
         transport.seek(transport.now() + seconds)
         app.tick()
     }
     function nudgeTempo(step) {
-        if (!app.aiLeads)
+        if (app.manualTempo)
             transport.setTempo(transport.tempo + step)
     }
     // The playhead for the timeline; at the end of an entry the player goes on
@@ -170,7 +225,8 @@ ApplicationWindow {
     }
     // Development aid, through KVJ_DEV_DIR/cmd (main.cpp): drive the player
     // from a shell. "play <entry no.> <seconds>", "pause", "resume", "tempo
-    // <rate>", "fade <ms>" (0 = off), "follow", "stop", "hold", "send", "back".
+    // <rate>", "fade <ms>" (0 = off), "follow", "stop", "hold [tempo|jump]",
+    // "send", "back".
     function devCommand(line) {
         const w = String(line).trim().split(/\s+/)
         switch (w[0]) {
@@ -181,7 +237,14 @@ ApplicationWindow {
         case "fade": app.fadeOn = Number(w[1]) > 0; if (app.fadeOn) app.fadeMs = Number(w[1]); break
         case "follow": Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", 0); break
         case "stop": Engine.stop(); break
-        case "hold": app.followPaused = !app.followPaused; break
+        case "hold":
+            if (w[1] === "tempo")
+                app.tempoPaused = !app.tempoPaused
+            else if (w[1] === "jump")
+                app.jumpPaused = !app.jumpPaused
+            else
+                app.tempoPaused = app.jumpPaused = !app.followPaused
+            break
         case "send": app.openSender(); break
         case "back": sender.close(); break
         default: return "unknown"
@@ -242,6 +305,18 @@ ApplicationWindow {
         maxHeight: desk.maxHeight
         maxFps: desk.maxFps
     }
+    // The sound of what the picture shows, on the picture's timing.
+    AudioFollower {
+        id: sound
+        enabled: desk.soundOn
+        source: app.shownEntry ? app.shownEntry.path : ""
+        position: projection.position
+        rate: projection.rate
+        clockAtMs: projection.clockAtMs
+        offsetMs: projection.offsetMs
+        device: desk.soundDevice
+        volume: desk.soundVolume
+    }
     SendWindow {
         id: sender
         visible: app.startsSending
@@ -260,17 +335,17 @@ ApplicationWindow {
     }
     Shortcut {
         sequence: "Space"
-        enabled: app.manual && !!transport.entry
+        enabled: app.manualSeek && !!transport.entry
         onActivated: app.toggle()
     }
     Shortcut {
         sequence: "Left"
-        enabled: app.manual && !!transport.entry
+        enabled: app.manualSeek && !!transport.entry
         onActivated: app.seekBy(-5)
     }
     Shortcut {
         sequence: "Right"
-        enabled: app.manual && !!transport.entry
+        enabled: app.manualSeek && !!transport.entry
         onActivated: app.seekBy(5)
     }
 
@@ -310,6 +385,7 @@ ApplicationWindow {
             phase: app.phase
             player: app
             projection: projection
+            sound: sound
         }
 
         // —— Live controls ——
@@ -337,7 +413,7 @@ ApplicationWindow {
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: "开启后按 Master 音频找位置、跳转和调速，播放器的手动按键变灰；暂停或停止后，播放器从当前画面接着放。"
+                        text: "开启后按 Master 音频找位置、跳转和调速，播放器的手动按键变灰。下方两个助手可以各自暂停，播放器接管暂停的那一项；停止后，播放器从当前画面接着放。"
                         font.pixelSize: Theme.sizeXs
                         color: Theme.muted
                         wrapMode: Text.Wrap
@@ -401,13 +477,6 @@ ApplicationWindow {
                                                    && app.entries.some(e => e.enabled !== false) && !Engine.importing)
                         onClicked: app.following ? Engine.stop()
                                                  : Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2)
-                    }
-                    // Hand the picture to the player without stopping to listen.
-                    TextButton {
-                        visible: app.following
-                        iconName: app.followPaused ? "play" : "pause"
-                        text: app.followPaused ? "继续" : "暂停"
-                        onClicked: app.followPaused = !app.followPaused
                     }
                 }
 
@@ -527,7 +596,13 @@ ApplicationWindow {
                 Assistants {
                     Layout.fillWidth: true
                     active: app.following
-                    paused: app.followPaused
+                    tempoPaused: app.tempoPaused
+                    jumpPaused: app.jumpPaused
+                    musicAway: app.musicAway
+                    tempo: app.shownTempo
+                    onTempoToggled: app.tempoPaused = !app.tempoPaused
+                    onJumpToggled: app.jumpPaused = !app.jumpPaused
+                    onTempoReset: app.resetTempo()
                     view: app.view
                     match: app.match
                 }

@@ -30,6 +30,12 @@ ColumnLayout {
     // a second (0 = the material's own).
     readonly property int maxHeight: [480, 720, 1080, 0][heightBox.currentIndex] ?? 720
     readonly property int maxFps: [24, 30, 60, 0][fpsBox.currentIndex] ?? 30
+    // The picture's own sound (AudioFollower): whether it plays, on which output
+    // (an id from its devices, empty for the system's default) and how loud.
+    property var sound: null
+    property bool soundOn: false
+    property string soundDevice: ""
+    property real soundVolume: 0.8
 
     // Stickers in waiting, kept between runs: { id, kind: "image" | "text", source, text, name }.
     property var gallery: []
@@ -94,6 +100,9 @@ ColumnLayout {
         property alias height: heightBox.currentIndex
         property alias fps: fpsBox.currentIndex
         property alias fullscreen: fullscreen.checked
+        property alias sound: desk.soundOn
+        property alias soundDevice: desk.soundDevice
+        property alias soundVolume: desk.soundVolume
     }
     Component.onCompleted: {
         try {
@@ -325,6 +334,52 @@ ColumnLayout {
                     onClicked: desk.projection.visible ? desk.projection.closeOutput()
                                                        : desk.projection.openOn(screenBox.currentIndex, fullscreen.checked)
                 }
+            }
+
+            // The picture's sound, off by default (the room hears the DJ), on an
+            // output of its own: headphones to listen in, or the speakers.
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                Toggle {
+                    text: "播放声音"
+                    checked: desk.soundOn
+                    onToggled: desk.soundOn = checked
+                }
+                Select {
+                    id: outputBox
+                    readonly property var outputs: desk.sound ? desk.sound.devices : []
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 90
+                    enabled: desk.soundOn
+                    model: ["系统默认输出"].concat(outputs.map(d => d.name))
+                    currentIndex: outputs.findIndex(d => d.id === desk.soundDevice) + 1
+                    onActivated: index => desk.soundDevice = index > 0 ? outputs[index - 1].id : ""
+                }
+                Seek {
+                    Layout.preferredWidth: 110
+                    from: 0
+                    to: 1
+                    value: desk.soundVolume
+                    enabled: desk.soundOn
+                    onMoved: desk.soundVolume = value
+                }
+                Text {
+                    Layout.preferredWidth: 34
+                    horizontalAlignment: Text.AlignRight
+                    text: Math.round(desk.soundVolume * 100) + "%"
+                    font.pixelSize: Theme.sizeSm
+                    font.features: { "tnum": 1 }
+                    color: desk.soundOn ? Theme.body : Theme.faint
+                }
+            }
+            Text {
+                Layout.fillWidth: true
+                visible: desk.soundOn && !!desk.sound && desk.sound.error.length > 0
+                text: desk.sound ? desk.sound.error : ""
+                font.pixelSize: Theme.sizeXs
+                color: Theme.warn
+                elide: Text.ElideRight
             }
 
             // Words: scrolling across, or large in the middle. Enter sends.

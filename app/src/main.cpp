@@ -95,6 +95,15 @@ int bluetoothTest(const QString &file, bool connect, bool send)
 
 int main(int argc, char *argv[])
 {
+    // The picture's sound plays through the system's own media stack, like the
+    // video; Qt's FFmpeg backend is not shipped.
+    if (!qEnvironmentVariableIsSet("QT_MEDIA_BACKEND")) {
+#if defined(Q_OS_MACOS)
+        qputenv("QT_MEDIA_BACKEND", "darwin");
+#elif defined(Q_OS_WIN)
+        qputenv("QT_MEDIA_BACKEND", "windows");
+#endif
+    }
     QGuiApplication app(argc, argv);
     QGuiApplication::setOrganizationName(QStringLiteral("kumo"));
     QGuiApplication::setApplicationName(QStringLiteral("KVJ"));
