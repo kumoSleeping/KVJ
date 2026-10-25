@@ -124,8 +124,7 @@ QtObject {
         { key: "halftone", name: "网点", preset: 0.45 },
         { key: "posterize", name: "色调分离", preset: 0.5 },
         { key: "hue", name: "色相", preset: 0.3 },
-        { key: "mono", name: "黑白", preset: 1 },
-        { key: "vignette", name: "暗角", preset: 0.6 }
+        { key: "mono", name: "黑白", preset: 1 }
     ]
     property var level: ({})
 

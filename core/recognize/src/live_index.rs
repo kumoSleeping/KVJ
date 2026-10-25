@@ -13,10 +13,14 @@ const MAGIC: &[u8; 8] = b"KDJLVI06";
 const HASHES: usize = 1 << 20;
 const MAX_TARGETS: usize = 65_536;
 // Resident Set postings are not the per-recording feature cache or query work
-// area. Dense landmarks need their own bounded budget (about 40 MiB for the
-// user's half-hour Set); keeping the old 32 MiB cache cap aborts preprocessing.
-const INDEX_MEMORY_BUDGET: usize = 128 * 1024 * 1024;
-const MAX_POSTINGS: usize = (INDEX_MEMORY_BUDGET - (HASHES + 1) * 4 - MAX_TARGETS * 4) / 8;
+// area. Dense landmarks need their own bounded budget: about 0.33 MiB a minute
+// of audio once packed, so 192 MiB holds some nine hours. It covers every entry
+// of the Set, turned off or not, so turning one on during the show never waits.
+// While the index is built each landmark also carries its fingerprint (8
+// bytes, to sort by); `warm` groups them by fingerprint and keeps only target
+// and frame (4 bytes), halving what stays in memory for the show.
+const INDEX_MEMORY_BUDGET: usize = 192 * 1024 * 1024;
+const MAX_POSTINGS: usize = (INDEX_MEMORY_BUDGET - (HASHES + 1) * 4 - MAX_TARGETS * 4) / 4;
 const MAX_VOTES: usize =
     FEATURE_MEMORY_BUDGET / (std::mem::size_of::<Vote>() + std::mem::size_of::<usize>());
 const RATES: usize = 19;
@@ -97,10 +101,20 @@ struct Vote {
     weight: f32,
     last_pair: u32,
 }
+// A warmed posting: target << 16 | frame, its fingerprint told by `offsets`.
+fn packed_target(p: u32) -> usize {
+    (p >> 16) as usize
+}
+fn packed_frame(p: u32) -> usize {
+    (p & 0xffff) as usize
+}
 #[derive(Default)]
 pub struct LiveIndex {
     lengths: Vec<u32>,
+    // Postings being added, with their fingerprints; empty once warmed.
     postings: Vec<Posting>,
+    // Warmed postings, grouped by fingerprint: offsets[h]..offsets[h + 1].
+    packed: Vec<u32>,
     offsets: Vec<u32>,
     // Query scratch is separate from the resident index budget. Reuse pages,
     // clearing only touched cells rather than allocating/zeroing every query.
@@ -119,6 +133,7 @@ impl LiveIndex {
                 && features.peaks.len() == features.spectra.len(),
             "Set 地标素材块长度无效"
         );
+        self.unpack()?;
         let additional = landmarks(features).count();
         let needed = self
             .postings
@@ -127,8 +142,9 @@ impl LiveIndex {
             .ok_or_else(|| anyhow::anyhow!("Set 地标数量溢出"))?;
         anyhow::ensure!(
             needed <= MAX_POSTINGS,
-            "Set 地标索引需要 {:.1} MiB，超过独立索引预算 {} MiB（{} 条地标）；素材未被删减",
-            (needed * 8 + (HASHES + 1) * 4 + (self.lengths.len() + 1) * 4) as f64 / 1_048_576.,
+            "Set 地标索引需要 {:.1} MiB，超过常驻索引预算 {} MiB（{} 条地标，约九小时音频）。\
+             索引包含 Set 里全部素材（未勾选的也在内，演出中勾选才不用等）；请把素材分到几个 Set",
+            (needed * 4 + (HASHES + 1) * 4 + (self.lengths.len() + 1) * 4) as f64 / 1_048_576.,
             INDEX_MEMORY_BUDGET / 1_048_576,
             needed
         );
@@ -154,13 +170,45 @@ impl LiveIndex {
         Ok(())
     }
     pub fn landmark_count(&self) -> usize {
-        self.postings.len()
+        self.postings.len() + self.packed.len()
     }
     /// Allocated storage, including the directory required after warming.
     pub fn memory_bytes(&self) -> usize {
         self.postings.capacity() * 8
+            + self.packed.capacity() * 4
             + self.lengths.capacity() * 4
             + self.offsets.capacity().max(HASHES + 1) * 4
+    }
+    fn warmed(&self) -> bool {
+        self.offsets.len() == HASHES + 1
+    }
+    // The postings with their fingerprints, in order, as they are kept while
+    // adding and on disk.
+    fn each_posting(&self, mut each: impl FnMut(Posting)) {
+        if self.warmed() {
+            for hash in 0..HASHES {
+                for &p in &self.packed[self.offsets[hash] as usize..self.offsets[hash + 1] as usize] {
+                    each(Posting::new(hash, packed_target(p), packed_frame(p)));
+                }
+            }
+        } else {
+            self.postings.iter().copied().for_each(each);
+        }
+    }
+    // Back to adding: postings with fingerprints.
+    fn unpack(&mut self) -> Result<()> {
+        if !self.warmed() {
+            return Ok(());
+        }
+        let mut postings = Vec::new();
+        postings
+            .try_reserve_exact(self.packed.len())
+            .map_err(|e| anyhow::anyhow!("无法分配 Set 地标索引内存：{e}"))?;
+        self.each_posting(|p| postings.push(p));
+        self.postings = postings;
+        self.packed = Vec::new();
+        self.offsets.clear();
+        Ok(())
     }
     pub fn targets(&self) -> Vec<usize> {
         (0..self.lengths.len()).collect()
@@ -169,24 +217,33 @@ impl LiveIndex {
         if canceled() {
             bail!("匹配已取消")
         }
-        if self.offsets.len() == HASHES + 1 {
+        if self.warmed() {
             return Ok(());
         }
-        self.offsets
-            .try_reserve_exact(HASHES + 1 - self.offsets.len())
+        let mut offsets = Vec::new();
+        offsets
+            .try_reserve_exact(HASHES + 1)
             .map_err(|e| anyhow::anyhow!("无法分配地标查表目录：{e}"))?;
+        offsets.resize(HASHES + 1, 0u32);
+        let mut packed = Vec::new();
+        packed
+            .try_reserve_exact(self.postings.len())
+            .map_err(|e| anyhow::anyhow!("无法分配 Set 地标索引内存：{e}"))?;
         self.postings.sort_unstable_by_key(|p| p.0);
-        self.offsets.resize(HASHES + 1, 0);
-        self.offsets.fill(0);
         for p in &self.postings {
-            self.offsets[p.hash() + 1] += 1;
+            offsets[p.hash() + 1] += 1;
+            packed.push(((p.target() as u32) << 16) | p.frame() as u32);
         }
-        for i in 1..self.offsets.len() {
-            self.offsets[i] += self.offsets[i - 1];
+        for i in 1..offsets.len() {
+            offsets[i] += offsets[i - 1];
         }
         if canceled() {
             bail!("匹配已取消")
         }
+        // The fingerprints are the buckets now; the 8-byte postings go.
+        self.offsets = offsets;
+        self.packed = packed;
+        self.postings = Vec::new();
         Ok(())
     }
     pub fn search_slice(
@@ -296,25 +353,25 @@ impl LiveIndex {
                                         continue;
                                     }
                                     let weight = (1.
-                                        + self.postings.len() as f32 / (end - start) as f32)
+                                        + self.packed.len() as f32 / (end - start) as f32)
                                         .ln();
-                                    let bucket = &self.postings[start..end];
-                                    let lo = bucket.partition_point(|p| p.target() < first);
-                                    let hi = bucket.partition_point(|p| p.target() < last);
-                                    for posting in &bucket[lo..hi] {
+                                    let bucket = &self.packed[start..end];
+                                    let lo = bucket.partition_point(|&p| packed_target(p) < first);
+                                    let hi = bucket.partition_point(|&p| packed_target(p) < last);
+                                    for &posting in &bucket[lo..hi] {
                                         let offset =
-                                            posting.frame() as f64 - pair.frame as f64 * rate;
+                                            packed_frame(posting) as f64 - pair.frame as f64 * rate;
                                         let bin = (offset / 4.).round() as i32;
                                         for bin in bin - 1..=bin + 1 {
                                             if bin < 0
                                                 || bin as f64 * 4.
                                                     + (query.spectra.len() - 1) as f64 * rate
-                                                    >= self.lengths[posting.target()] as f64 - 1.
+                                                    >= self.lengths[packed_target(posting)] as f64 - 1.
                                             {
                                                 continue;
                                             }
                                             let cell = r * width
-                                                + bases[posting.target() - first]
+                                                + bases[packed_target(posting) - first]
                                                 + bin as usize;
                                             let vote = &mut self.votes[cell];
                                             if vote.anchors == 0 {
@@ -389,14 +446,17 @@ impl LiveIndex {
     pub fn write_to(&self, mut writer: impl Write) -> Result<()> {
         writer.write_all(MAGIC)?;
         writer.write_all(&(self.lengths.len() as u32).to_le_bytes())?;
-        writer.write_all(&(self.postings.len() as u32).to_le_bytes())?;
+        writer.write_all(&(self.landmark_count() as u32).to_le_bytes())?;
         for length in &self.lengths {
             writer.write_all(&length.to_le_bytes())?;
         }
-        for p in &self.postings {
-            writer.write_all(&p.0.to_le_bytes())?;
-        }
-        Ok(())
+        let mut written = Ok(());
+        self.each_posting(|p| {
+            if written.is_ok() {
+                written = writer.write_all(&p.0.to_le_bytes());
+            }
+        });
+        Ok(written?)
     }
     pub fn read_from(mut reader: impl Read) -> Result<Self> {
         let mut magic = [0; 8];

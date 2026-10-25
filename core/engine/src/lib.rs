@@ -122,9 +122,8 @@ pub struct Engine {
     connections: bluetooth::Hub,
     notify: Notify,
 }
-const MEDIA: &[&str] = &[
-    "mp4", "m4v", "mkv", "mov", "webm", "mp3", "m4a", "flac", "wav", "aac", "ogg", "opus",
-];
+// Only videos go into a Set: KVJ projects pictures. Their sound is what is
+// followed.
 const VIDEO: &[&str] = &["mp4", "m4v", "mkv", "mov", "webm"];
 
 impl Engine {
@@ -259,11 +258,11 @@ impl Engine {
                     .collect();
                 children.sort();
                 pending.extend(children.into_iter().rev());
-            } else if extension(&path).is_some_and(|e| MEDIA.contains(&e.as_str())) {
+            } else if extension(&path).is_some_and(|e| VIDEO.contains(&e.as_str())) {
                 files.push(path);
             }
         }
-        anyhow::ensure!(!files.is_empty(), "没有可导入的音视频文件");
+        anyhow::ensure!(!files.is_empty(), "没有可导入的视频文件（只导入 mp4、m4v、mkv、mov、webm）");
         let entries = files
             .iter()
             .map(|path| {

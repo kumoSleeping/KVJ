@@ -157,6 +157,8 @@ Item {
     // The chosen sticker comes down with Delete, unless words are being typed.
     Shortcut {
         sequences: [StandardKey.Delete, "Backspace"]
+        // From the projection window too, which takes the focus when it opens.
+        context: Qt.ApplicationShortcut
         enabled: desk.chosenSid !== "" && !(desk.focusItem && typeof desk.focusItem.selectedText === "string")
         onActivated: {
             Live.unpost(desk.chosenSid)

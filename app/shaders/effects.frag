@@ -122,11 +122,6 @@ void main()
         color = texture(source, uv).rgb;
         float light = dot(color, vec3(0.299, 0.587, 0.114));
         color = mix(color, vec3(smoothstep(0.02, 0.98, light)), amount);
-    } else if (k == 12) {
-        // Vignette.
-        color = texture(source, uv).rgb;
-        float d = length((uv - 0.5) * vec2(aspect, 1.0)) / length(vec2(aspect, 1.0) * 0.5);
-        color *= 1.0 - amount * 0.95 * smoothstep(0.35, 1.0, d);
     } else {
         color = texture(source, uv).rgb;
     }

@@ -47,6 +47,39 @@ mod tests {
     }
 
     #[test]
+    fn a_packed_index_writes_and_searches_as_the_unpacked_one() {
+        let features: Vec<_> = [song(7, 20.), song(99, 20.)]
+            .iter()
+            .map(|pcm| LiveFeatures::prepare(pcm, &|| false).unwrap())
+            .collect();
+        let mut index = LiveIndex::default();
+        for (target, f) in features.iter().enumerate() {
+            index.add(target, f).unwrap();
+        }
+        let mut before = Vec::new();
+        index.write_to(&mut before).unwrap();
+        let count = index.landmark_count();
+        let building = index.memory_bytes();
+        index.warm(&|| false).unwrap();
+        // Packed: the same landmarks in half the bytes, written out the same.
+        assert_eq!(index.landmark_count(), count);
+        assert!(index.memory_bytes() < building);
+        let mut after = Vec::new();
+        index.write_to(&mut after).unwrap();
+        let mut sorted = LiveIndex::read_from(&before[..]).unwrap();
+        sorted.warm(&|| false).unwrap();
+        let mut resorted = Vec::new();
+        sorted.write_to(&mut resorted).unwrap();
+        assert_eq!(after, resorted);
+        // Adding after warming unpacks it again; nothing is lost.
+        let mut alone = LiveIndex::default();
+        alone.add(0, &features[0]).unwrap();
+        index.add(2, &features[0]).unwrap();
+        index.warm(&|| false).unwrap();
+        assert_eq!(index.landmark_count(), count + alone.landmark_count());
+    }
+
+    #[test]
     fn a_short_live_window_finds_its_recording_and_position() {
         let recordings = [song(7, 40.), song(99, 40.)];
         let mut index = LiveIndex::default();

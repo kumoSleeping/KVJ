@@ -98,7 +98,9 @@ ApplicationWindow {
     // Space does nothing: one touch of it during a show is too easy.
     property bool keysOn: true
     readonly property bool typing: !!activeFocusItem && typeof activeFocusItem.selectedText === "string"
-    readonly property bool keysLive: keysOn && !typing
+    // They work from the projection window too (it takes the focus when it
+    // opens), not while the sender stands in for the player.
+    readonly property bool keysLive: keysOn && !typing && !sender.visible
 
     // The player, for the desk and its timeline: what the picture shows, from
     // whichever leads, and the keys that move it.
@@ -436,28 +438,33 @@ ApplicationWindow {
     }
     Shortcut {
         sequences: ["Left", "A", "Num+4"]
+        context: Qt.ApplicationShortcut
         autoRepeat: false
         enabled: app.keysLive && app.manualSeek && app.manualTempo && !!transport.entry
         onActivated: app.nudge(-1)
     }
     Shortcut {
         sequences: ["Right", "D", "Num+6"]
+        context: Qt.ApplicationShortcut
         autoRepeat: false
         enabled: app.keysLive && app.manualSeek && app.manualTempo && !!transport.entry
         onActivated: app.nudge(1)
     }
     Shortcut {
         sequences: ["Up", "W", "Num+8"]
+        context: Qt.ApplicationShortcut
         enabled: app.keysLive && app.manualTempo
         onActivated: app.nudgeTempo(0.01)
     }
     Shortcut {
         sequences: ["Down", "S", "Num+2"]
+        context: Qt.ApplicationShortcut
         enabled: app.keysLive && app.manualTempo
         onActivated: app.nudgeTempo(-0.01)
     }
     Shortcut {
         sequences: ["Return", "Enter"]
+        context: Qt.ApplicationShortcut
         enabled: app.keysLive && app.manualSeek && !!timeline.markClip
         onActivated: timeline.jump()
     }
@@ -515,253 +522,268 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 color: Theme.raised
 
-                ColumnLayout {
+                // Everything fits a window of the usual height; a shorter one
+                // scrolls the panel rather than cutting its foot off.
+                Flickable {
+                    id: panel
                     anchors.fill: parent
                     anchors.margins: Theme.gap
-                    spacing: 14
+                    contentWidth: width
+                    contentHeight: Math.max(height, liveColumn.implicitHeight)
+                    interactive: contentHeight > height
+                    boundsBehavior: Flickable.StopAtBounds
+                    clip: true
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                    // Every place here is fixed from the start: nothing appears
-                    // or goes away when listening starts, so no key moves.
-                    Text {
-                        Layout.fillWidth: true
-                        text: "音频对位"
-                        font.pixelSize: Theme.sizeLg
-                        font.weight: Font.DemiBold
-                        color: Theme.text
-                        elide: Text.ElideRight
-                    }
-
-                    // Where following itself puts the picture; the desk shows
-                    // what really plays, the same while following draws it.
-                    FollowMonitor {
-                        Layout.fillWidth: true
-                        active: app.following
-                        mirror: app.aiPicture
-                        match: app.match
-                        offsetMs: offset.value
-                        source: projection.surface
-                    }
-
-                    // What following is doing now, and the input's level: their
-                    // lines are there while it is off too, so nothing moves when
-                    // it starts. They must not take a share of the height
-                    // (layouts fill by default).
                     ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: false
-                        spacing: 4
+                        id: liveColumn
+                        width: panel.width
+                        height: panel.contentHeight
+                        spacing: 10
+
+                        // Every place here is fixed from the start: nothing appears
+                        // or goes away when listening starts, so no key moves.
                         Text {
                             Layout.fillWidth: true
-                            text: app.match ? app.match.entry.title : app.following ? app.phaseText(app.phase) : "未监听"
-                            font.pixelSize: 18
+                            text: "音频对位"
+                            font.pixelSize: Theme.sizeLg
                             font.weight: Font.DemiBold
-                            color: app.match && !app.followPaused ? Theme.text : Theme.muted
+                            color: Theme.text
                             elide: Text.ElideRight
                         }
-                        Text {
-                            Layout.fillWidth: true
-                            text: app.match ? (app.followPaused ? "只监听" : app.phaseText(app.phase)) + " · " + app.clock(app.match.position, true)
-                                              + " · ×" + app.match.rate.toFixed(3) : " "
-                            font.pixelSize: Theme.sizeSm
-                            font.features: { "tnum": 1 }
-                            color: Theme.muted
-                        }
-                        // Input level of the selected channels.
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.topMargin: 6
-                            Layout.preferredHeight: 3
-                            radius: 1.5
-                            color: Theme.line
-                            Rectangle {
-                                readonly property real db: app.following && app.view.input && app.view.input.rms_dbfs !== null ? app.view.input.rms_dbfs : -70
-                                width: parent.width * Math.max(0, Math.min(1, (db + 70) / 70))
-                                height: parent.height
-                                radius: 1.5
-                                color: Theme.text
-                                Behavior on width { NumberAnimation { duration: 120 } }
-                            }
-                        }
-                    }
 
-                    // Listening: the engine hears the music and judges where it is.
-                    TextButton {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 34
-                        iconName: app.following ? "square" : "play"
-                        text: app.following ? "停止监听" : "开始监听"
-                        // At least one entry on; more can be turned on while listening.
-                        enabled: app.following || app.canStart
-                        onClicked: app.following ? Engine.stop() : app.listen()
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.topMargin: -6
-                        spacing: 8
-                        // Following: that judgement moves the picture. Stopping
-                        // it keeps listening.
-                        TextButton {
+                        // Where following itself puts the picture; the desk shows
+                        // what really plays, the same while following draws it.
+                        FollowMonitor {
                             Layout.fillWidth: true
-                            primary: true
-                            iconName: app.aiLeads ? "pause" : "play"
-                            text: app.aiLeads ? "停止跟随" : "开始跟随"
-                            enabled: app.following || app.canStart
-                            onClicked: {
-                                if (app.aiLeads)
-                                    app.tempoPaused = app.jumpPaused = true
-                                else
-                                    app.follow()
+                            active: app.following
+                            mirror: app.aiPicture
+                            match: app.match
+                            offsetMs: offset.value
+                            source: projection.surface
+                        }
+
+                        // What following is doing now, and the input's level: their
+                        // lines are there while it is off too, so nothing moves when
+                        // it starts. They must not take a share of the height
+                        // (layouts fill by default).
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: false
+                            spacing: 4
+                            Text {
+                                Layout.fillWidth: true
+                                text: app.match ? app.match.entry.title : app.following ? app.phaseText(app.phase) : "未监听"
+                                font.pixelSize: 18
+                                font.weight: Font.DemiBold
+                                color: app.match && !app.followPaused ? Theme.text : Theme.muted
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: app.match ? (app.followPaused ? "只监听" : app.phaseText(app.phase)) + " · " + app.clock(app.match.position, true)
+                                                  + " · ×" + app.match.rate.toFixed(3) : " "
+                                font.pixelSize: Theme.sizeSm
+                                font.features: { "tnum": 1 }
+                                color: Theme.muted
+                            }
+                            // Input level of the selected channels.
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 6
+                                Layout.preferredHeight: 3
+                                radius: 1.5
+                                color: Theme.line
+                                Rectangle {
+                                    readonly property real db: app.following && app.view.input && app.view.input.rms_dbfs !== null ? app.view.input.rms_dbfs : -70
+                                    width: parent.width * Math.max(0, Math.min(1, (db + 70) / 70))
+                                    height: parent.height
+                                    radius: 1.5
+                                    color: Theme.text
+                                    Behavior on width { NumberAnimation { duration: 120 } }
+                                }
                             }
                         }
-                        // Once, by hand: the player to where following hears the music.
+
+                        // Listening: the engine hears the music and judges where it is.
                         TextButton {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 34
-                            text: "跳至此处"
-                            outlined: true
-                            enabled: !!app.match && app.manualSeek
-                            ToolTip.visible: hovered
-                            ToolTip.delay: 600
-                            ToolTip.text: "播放器跳到智能跟随判断的位置"
-                            onClicked: app.jumpToMatch()
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        Caption { text: "声音输入" }
-                        Select {
-                            id: deviceBox
-                            Layout.fillWidth: true
-                            enabled: !app.running
-                            model: app.devices.map(d => d.label + (d.error ? "（不可用）" : ""))
+                            iconName: app.following ? "square" : "play"
+                            text: app.following ? "停止监听" : "开始监听"
+                            // At least one entry on; more can be turned on while listening.
+                            enabled: app.following || app.canStart
+                            onClicked: app.following ? Engine.stop() : app.listen()
                         }
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 6
-                            Select {
-                                id: channelBox
-                                Layout.preferredWidth: 120
-                                enabled: !app.running
-                                model: {
-                                    const channels = app.device ? Math.max(1, app.device.channels) : 2
-                                    const pairs = []
-                                    for (let i = 0; i < channels; i += 2)
-                                        pairs.push(i + 1 < channels ? "CH " + (i + 1) + "/" + (i + 2) : "CH " + (i + 1))
-                                    return pairs
+                            Layout.topMargin: -6
+                            spacing: 8
+                            // Following: that judgement moves the picture. Stopping
+                            // it keeps listening.
+                            TextButton {
+                                Layout.fillWidth: true
+                                primary: true
+                                iconName: app.aiLeads ? "pause" : "play"
+                                text: app.aiLeads ? "停止跟随" : "开始跟随"
+                                enabled: app.following || app.canStart
+                                onClicked: {
+                                    if (app.aiLeads)
+                                        app.tempoPaused = app.jumpPaused = true
+                                    else
+                                        app.follow()
                                 }
                             }
-                            Item { Layout.fillWidth: true }
-                            Toggle {
-                                id: roomMode
-                                text: "现场模式"
-                                checked: app.microphone
-                                enabled: !app.running
+                            // Once, by hand: the player to where following hears the music.
+                            TextButton {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 34
+                                text: "跳至此处"
+                                outlined: true
+                                enabled: !!app.match && app.manualSeek
                                 ToolTip.visible: hovered
                                 ToolTip.delay: 600
-                                ToolTip.text: "麦克风听现场：在混响里也能跟上。选麦克风时自动打开；电脑内录或蓝牙接收时关闭"
-                            }
-                            IconButton {
-                                iconName: "refresh"
-                                tip: "刷新设备"
-                                enabled: !app.running && !Engine.busy
-                                onClicked: Engine.refreshDevices()
+                                ToolTip.text: "播放器跳到智能跟随判断的位置"
+                                onClicked: app.jumpToMatch()
                             }
                         }
-                    }
 
-                    // Calibration of the followed picture against the music.
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        Text { text: "画面偏移"; font.pixelSize: Theme.sizeSm; color: Theme.muted }
-                        Seek {
-                            id: offset
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            from: -400
-                            to: 400
-                            stepSize: 10
-                            value: 0
-                        }
-                        Text {
-                            Layout.preferredWidth: 58
-                            horizontalAlignment: Text.AlignRight
-                            text: (offset.value > 0 ? "+" : "") + offset.value.toFixed(0) + " ms"
-                            font.pixelSize: Theme.sizeSm
-                            font.features: { "tnum": 1 }
-                            color: offset.value === 0 ? Theme.muted : Theme.text
-                            MouseArea { anchors.fill: parent; onDoubleClicked: offset.value = 0 }
-                        }
-                    }
-
-                    // Receiving over Bluetooth: the operator picks the current DJ.
-                    // Below everything that is always there, so nothing moves.
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 4
-                        visible: app.receiving
-                        Caption { text: "DJ" }
-                        Repeater {
-                            model: (app.view.connections && app.view.connections.incoming) || []
-                            ItemDelegate {
-                                id: dj
-                                required property var modelData
+                            spacing: 8
+                            Caption { text: "声音输入" }
+                            Select {
+                                id: deviceBox
                                 Layout.fillWidth: true
-                                implicitHeight: 32
-                                topPadding: 0
-                                bottomPadding: 0
-                                leftPadding: 8
-                                onClicked: Engine.selectBluetooth(modelData.selected ? "" : modelData.link.peer)
-                                contentItem: RowLayout {
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: dj.modelData.device.name
-                                        font.pixelSize: Theme.size
-                                        font.weight: dj.modelData.selected ? Font.DemiBold : Font.Normal
-                                        color: dj.modelData.selected ? Theme.text : Theme.muted
-                                        elide: Text.ElideRight
-                                    }
-                                    Text {
-                                        text: dj.modelData.link.state === "receiving" ? "发送中"
-                                            : dj.modelData.link.state === "connected" ? "待命" : "已断开"
-                                        font.pixelSize: Theme.sizeXs
-                                        color: Theme.muted
+                                enabled: !app.running
+                                model: app.devices.map(d => d.label + (d.error ? "（不可用）" : ""))
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+                                Select {
+                                    id: channelBox
+                                    Layout.preferredWidth: 120
+                                    enabled: !app.running
+                                    model: {
+                                        const channels = app.device ? Math.max(1, app.device.channels) : 2
+                                        const pairs = []
+                                        for (let i = 0; i < channels; i += 2)
+                                            pairs.push(i + 1 < channels ? "CH " + (i + 1) + "/" + (i + 2) : "CH " + (i + 1))
+                                        return pairs
                                     }
                                 }
-                                background: Rectangle {
-                                    radius: Theme.radius
-                                    color: dj.hovered ? Theme.hover : "transparent"
+                                Item { Layout.fillWidth: true }
+                                Toggle {
+                                    id: roomMode
+                                    text: "现场模式"
+                                    checked: app.microphone
+                                    enabled: !app.running
+                                    ToolTip.visible: hovered
+                                    ToolTip.delay: 600
+                                    ToolTip.text: "麦克风听现场：在混响里也能跟上。选麦克风时自动打开；电脑内录或蓝牙接收时关闭"
+                                }
+                                IconButton {
+                                    iconName: "refresh"
+                                    tip: "刷新设备"
+                                    enabled: !app.running && !Engine.busy
+                                    onClicked: Engine.refreshDevices()
                                 }
                             }
                         }
-                    }
 
-                    Text {
-                        Layout.fillWidth: true
-                        visible: Engine.error.length > 0
-                        text: Engine.error
-                        font.pixelSize: Theme.sizeSm
-                        color: Theme.warn
-                        wrapMode: Text.Wrap
-                        MouseArea { anchors.fill: parent; onClicked: Engine.clearError() }
-                    }
+                        // Calibration of the followed picture against the music.
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            Text { text: "画面偏移"; font.pixelSize: Theme.sizeSm; color: Theme.muted }
+                            Seek {
+                                id: offset
+                                Layout.fillWidth: true
+                                from: -400
+                                to: 400
+                                stepSize: 10
+                                value: 0
+                            }
+                            Text {
+                                Layout.preferredWidth: 58
+                                horizontalAlignment: Text.AlignRight
+                                text: (offset.value > 0 ? "+" : "") + offset.value.toFixed(0) + " ms"
+                                font.pixelSize: Theme.sizeSm
+                                font.features: { "tnum": 1 }
+                                color: offset.value === 0 ? Theme.muted : Theme.text
+                                MouseArea { anchors.fill: parent; onDoubleClicked: offset.value = 0 }
+                            }
+                        }
 
-                    Item { Layout.fillHeight: true }
+                        // Receiving over Bluetooth: the operator picks the current DJ.
+                        // Below everything that is always there, so nothing moves.
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+                            visible: app.receiving
+                            Caption { text: "DJ" }
+                            Repeater {
+                                model: (app.view.connections && app.view.connections.incoming) || []
+                                ItemDelegate {
+                                    id: dj
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    implicitHeight: 32
+                                    topPadding: 0
+                                    bottomPadding: 0
+                                    leftPadding: 8
+                                    onClicked: Engine.selectBluetooth(modelData.selected ? "" : modelData.link.peer)
+                                    contentItem: RowLayout {
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: dj.modelData.device.name
+                                            font.pixelSize: Theme.size
+                                            font.weight: dj.modelData.selected ? Font.DemiBold : Font.Normal
+                                            color: dj.modelData.selected ? Theme.text : Theme.muted
+                                            elide: Text.ElideRight
+                                        }
+                                        Text {
+                                            text: dj.modelData.link.state === "receiving" ? "发送中"
+                                                : dj.modelData.link.state === "connected" ? "待命" : "已断开"
+                                            font.pixelSize: Theme.sizeXs
+                                            color: Theme.muted
+                                        }
+                                    }
+                                    background: Rectangle {
+                                        radius: Theme.radius
+                                        color: dj.hovered ? Theme.hover : "transparent"
+                                    }
+                                }
+                            }
+                        }
 
-                    // The two helpers at work: tempo, and whether to jump.
-                    Assistants {
-                        Layout.fillWidth: true
-                        active: app.following
-                        tempoPaused: app.tempoPaused
-                        jumpPaused: app.jumpPaused
-                        musicAway: app.musicAway
-                        tempo: app.shownTempo
-                        onTempoToggled: app.tempoPaused = !app.tempoPaused
-                        onJumpToggled: app.jumpPaused = !app.jumpPaused
-                        onTempoReset: app.resetTempo()
-                        view: app.view
-                        match: app.match
+                        Text {
+                            Layout.fillWidth: true
+                            visible: Engine.error.length > 0
+                            text: Engine.error
+                            font.pixelSize: Theme.sizeSm
+                            color: Theme.warn
+                            wrapMode: Text.Wrap
+                            MouseArea { anchors.fill: parent; onClicked: Engine.clearError() }
+                        }
+
+                        Item { Layout.fillHeight: true }
+
+                        // The two helpers at work: tempo, and whether to jump.
+                        Assistants {
+                            Layout.fillWidth: true
+                            active: app.following
+                            tempoPaused: app.tempoPaused
+                            jumpPaused: app.jumpPaused
+                            musicAway: app.musicAway
+                            tempo: app.shownTempo
+                            onTempoToggled: app.tempoPaused = !app.tempoPaused
+                            onJumpToggled: app.jumpPaused = !app.jumpPaused
+                            onTempoReset: app.resetTempo()
+                            view: app.view
+                            match: app.match
+                        }
                     }
                 }
             }

@@ -84,7 +84,7 @@ ColumnLayout {
     FileDialog {
         id: fileDialog
         fileMode: FileDialog.OpenFiles
-        nameFilters: ["音视频 (*.mp4 *.m4v *.mkv *.mov *.webm *.mp3 *.m4a *.flac *.wav *.aac *.ogg *.opus)"]
+        nameFilters: ["视频 (*.mp4 *.m4v *.mkv *.mov *.webm)"]
         onAccepted: bar.addUrls(selectedFiles)
     }
     FolderDialog {
@@ -203,8 +203,8 @@ ColumnLayout {
             color: bar.currentSet ? Theme.text : Theme.muted
             elide: Text.ElideRight
         }
-        IconButton { iconName: "file-plus"; tip: "添加文件"; enabled: bar.editable; onClicked: fileDialog.open() }
-        IconButton { iconName: "folder-plus"; tip: "添加文件夹"; enabled: bar.editable; onClicked: folderDialog.open() }
+        IconButton { iconName: "file-plus"; tip: "添加视频"; enabled: bar.editable; onClicked: fileDialog.open() }
+        IconButton { iconName: "folder-plus"; tip: "添加文件夹里的视频"; enabled: bar.editable; onClicked: folderDialog.open() }
         IconButton {
             iconName: "trash"
             tip: "删除这个 Set"

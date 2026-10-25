@@ -28,12 +28,15 @@ chooses the current DJ among the connected ones. Pair the two computers in the s
 
 Everything is in one window, and nothing in it appears or moves when following
 starts. The sidebar holds **发送** and **蓝牙** at the top, the Sets and the
-selected Set's entries; each entry has a switch that takes effect at once, also
+selected Set's entries (videos only: mp4, m4v, mkv, mov, webm; a folder adds
+the videos in it); each entry has a switch that takes effect at once, also
 during the show: an entry that is off leaves the timeline and is not followed,
 while the picture and its sound go on. At a handover between DJs the next DJ's
 entries are turned on while the last ones stay on, and the last are turned off
 once the next set is under way. Every entry is indexed either way, so switching
-never waits for indexing. Turning off the entry on the screen asks again in red
+never waits for indexing: the index holds the whole Set, entries that are off
+included (about a third of a MiB a minute of sound, up to 192 MiB, some nine
+hours; a larger collection goes into several Sets). Turning off the entry on the screen asks again in red
 under it; the second press goes on to the start of the next entry that is on,
 with the jump's dissolve. The middle is the live desk with the player; the
 right side is smart following (**音频对位**).
@@ -127,8 +130,8 @@ has a point at each corner that sizes it, a point above that turns it (Shift:
 steps of 15°, double-click: upright) and a key that takes it down (or Delete).
 The size bar works on the chosen sticker, or else on the one posted last, and
 sets the size of the next. Each effect (mosaic, RGB split, video wall, lens,
-zoom blur, wave, glitch, scanlines, halftone, posterize, hue, black and white,
-vignette) has a key that turns it on at the strength it looks best at (or off;
+zoom blur, wave, glitch, scanlines, halftone, posterize, hue, black and
+white) has a key that turns it on at the strength it looks best at (or off;
 dragged on over the other keys, it switches them the same way) and a bar that
 fine-tunes it; they apply from the
 top down, each to the picture the ones above made, and a grip at the left of

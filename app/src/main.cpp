@@ -8,8 +8,10 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMouseEvent>
 #include <QThread>
 #include <QQmlApplicationEngine>
+#include <QQuickItem>
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QSaveFile>
@@ -28,6 +30,30 @@ QQuickWindow *shownWindow()
     }
     return nullptr;
 }
+
+// A press anywhere but in the text box being typed in leaves it: the box
+// keeps no focus that would hold the player's keys off (they rest while words
+// are typed). Pressing another box gives it the focus as usual.
+class LeaveTyping : public QObject
+{
+public:
+    using QObject::QObject;
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto *window = qobject_cast<QQuickWindow *>(watched);
+            QQuickItem *typing = window ? window->activeFocusItem() : nullptr;
+            if (typing && (typing->inherits("QQuickTextInput") || typing->inherits("QQuickTextEdit"))) {
+                const QPointF at = typing->mapFromScene(static_cast<QMouseEvent *>(event)->scenePosition());
+                if (!typing->contains(at))
+                    window->contentItem()->forceActiveFocus(Qt::MouseFocusReason);
+            }
+        }
+        return false;
+    }
+};
 
 QJsonObject command(KvjEngine *engine, const QJsonObject &request)
 {
@@ -123,6 +149,7 @@ int main(int argc, char *argv[])
         &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
         [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     engine.loadFromModule("KVJ", "Main");
+    app.installEventFilter(new LeaveTyping(&app));
 
     // Development aid: KVJ_SNAPSHOT=<file.png> saves the window on screen (the
     // player's, or the sender's with --send) and quits.
