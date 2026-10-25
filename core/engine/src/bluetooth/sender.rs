@@ -303,7 +303,10 @@ fn capture_inner(
 ) -> Result<()> {
     let _ = clock_ms();
     update(engine, session, |v| v.phase = "permission".into());
-    let (_capture, ring) = audio_input::Capture::start(input)?;
+    // Opened once here (a refusal ends the session); lost later, it is opened
+    // again while the link and the session stay.
+    let mut capture = Some(audio_input::Capture::start(input)?);
+    let mut reopen_at = Instant::now();
     canceled(cancel)?;
     {
         let mut s = shared.lock().unwrap();
@@ -320,12 +323,42 @@ fn capture_inner(
     let mut published = Instant::now() - Duration::from_secs(1);
     loop {
         canceled(cancel)?;
-        let (packet, status) = {
+        let polled = capture.as_ref().map(|(_, ring)| {
             let mut ring = ring.lock().unwrap();
-            if let Some(error) = &ring.error {
-                bail!("{error}");
+            match ring.error.clone() {
+                Some(error) => Err(error),
+                None => Ok((ring.take(), ring.status())),
             }
-            (ring.take(), ring.status())
+        });
+        let (packet, status) = match polled {
+            Some(Ok(polled)) if seen.elapsed() < Duration::from_secs(3) => polled,
+            lost => {
+                // An unplugged interface or a driver hiccup must not end
+                // sending during a show.
+                if capture.is_some() {
+                    capture = None;
+                    reopen_at = Instant::now() + Duration::from_secs(2);
+                    let reason = match lost {
+                        Some(Err(error)) => error,
+                        _ => "声音输入已断流".into(),
+                    };
+                    update(engine, session, |v| v.error = format!("{reason}；正在重新打开"));
+                } else if Instant::now() >= reopen_at {
+                    match audio_input::Capture::start(input) {
+                        Ok(reopened) => {
+                            capture = Some(reopened);
+                            features.reset();
+                            generation = u64::MAX;
+                            seen = Instant::now();
+                            update(engine, session, |v| v.error.clear());
+                            continue;
+                        }
+                        Err(_) => reopen_at = Instant::now() + Duration::from_secs(2),
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(50));
+                continue;
+            }
         };
         if let Some((pcm, at, next)) = packet {
             if next != generation {
@@ -336,7 +369,6 @@ fn capture_inner(
             captured = at;
             seen = Instant::now();
         }
-        anyhow::ensure!(seen.elapsed() < Duration::from_secs(3), "声音输入已断流");
         if sent.elapsed() >= Duration::from_millis(50) {
             if let Some((chunk, first, tail)) = features.take_committed() {
                 let at = captured - Duration::from_secs_f64(tail);
