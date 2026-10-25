@@ -35,8 +35,8 @@ while the picture and its sound go on. At a handover between DJs the next DJ's
 entries are turned on while the last ones stay on, and the last are turned off
 once the next set is under way. Every entry is indexed either way, so switching
 never waits for indexing: the index holds the whole Set, entries that are off
-included (about a third of a MiB a minute of sound, up to 192 MiB, some nine
-hours; a larger collection goes into several Sets). Turning off the entry on the screen asks again in red
+included (about 0.6 MiB a minute of sound, up to 192 MiB, some five hours; a
+larger collection goes into several Sets). Turning off the entry on the screen asks again in red
 under it; the second press goes on to the start of the next entry that is on,
 with the jump's dissolve. The middle is the live desk with the player; the
 right side is smart following (**音频对位**).
