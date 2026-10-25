@@ -92,9 +92,10 @@ ApplicationWindow {
     property int localInput: 0
 
     // The player's keys (keysOn, switched on the timeline): ←/→, A/D or 4/6 on
-    // the number pad nudge the picture a second back or ahead (much slower or
-    // faster for a moment, never a jump); ↑/↓, W/S or 8/2 change the speed by
-    // 1%; Enter plays from the timeline's cursor. None while words are typed.
+    // the number pad, held, play the picture at 0.7 or 1.5 of its speed until
+    // let go (never a jump; paused, a press steps a second); ↑/↓, W/S or 8/2
+    // change the speed by 1%; Enter plays from the timeline's cursor. None
+    // while words are typed.
     // Space does nothing: one touch of it during a show is too easy.
     property bool keysOn: true
     readonly property bool typing: !!activeFocusItem && typeof activeFocusItem.selectedText === "string"
@@ -225,13 +226,25 @@ ApplicationWindow {
         if (app.manualTempo)
             transport.setTempo(transport.tempo + step)
     }
-    // The picture `seconds` ahead (or back), reached by playing faster (or
-    // slower) for a moment instead of a jump.
-    function nudge(seconds) {
+    // The picture ahead (direction > 0) or back by playing faster or slower
+    // until `letGo` (or for `ms`), instead of a jump.
+    function nudge(direction, ms) {
         if (!app.manualSeek || !app.manualTempo || !transport.entry)
             return
-        transport.nudge(seconds)
+        transport.nudge(direction, ms || 0)
         app.tick()
+    }
+    // A nudge key let go (main.cpp sees the release; 0 when the app loses the
+    // keyboard, which would never hear it).
+    function letGo(direction) {
+        transport.letGo(direction)
+    }
+    Connections {
+        target: Qt.application
+        function onStateChanged() {
+            if (Qt.application.state !== Qt.ApplicationActive)
+                app.letGo(0)
+        }
     }
     // Receiving over Bluetooth is an input like the others; off goes back to
     // the one chosen before.
@@ -316,9 +329,10 @@ ApplicationWindow {
     // <rate>", "fade <ms>" (0 = off), "listen", "follow", "here", "stop", "hold [tempo|jump]",
     // "send", "back"; on the timeline "zoom <factor> <x>", "mark <x>" (x in px
     // along the strip), "jump"; "post <px> <py> <words>" posts a sticker of
-    // words and chooses it; "nudge <seconds>"; "drop" turns the entry on the
-    // screen off as the sidebar's confirmed second press does; "effect <key>
-    // <0–1>" sets an effect, "move <from> <to>" reorders them.
+    // words and chooses it; "nudge <±1> <ms>" holds a nudge key that long;
+    // "drop" turns the entry on the screen off as the sidebar's confirmed
+    // second press does; "effect <key> <0–1>" sets an effect, "move <from>
+    // <to>" reorders them.
     function devCommand(line) {
         const w = String(line).trim().split(/\s+/)
         switch (w[0]) {
@@ -344,7 +358,7 @@ ApplicationWindow {
         case "zoom": timeline.zoomAt(Number(w[2] || 0), Number(w[1])); break
         case "mark": timeline.setMark(Number(w[1])); break
         case "jump": timeline.jump(); break
-        case "nudge": app.nudge(Number(w[1] || 1)); break
+        case "nudge": app.nudge(Number(w[1] || 1), Number(w[2] || 1000)); break
         case "drop": if (transport.entry) app.dropPlaying(transport.entry.id); break
         case "effect": Live.setLevel(w[1], Number(w[2] || 0)); break
         case "move": Live.moveEffect(Number(w[1]), Number(w[2])); break

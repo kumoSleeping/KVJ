@@ -81,6 +81,35 @@ protected:
     }
 };
 
+// A nudge lasts while its key is held (Main.qml), and a Shortcut hears only
+// the press: the release of ←/→, A/D or 4/6 on the number pad goes to the
+// window's letGo, -1 for back and 1 for ahead.
+class NudgeRelease : public QObject
+{
+public:
+    NudgeRelease(QObject *window, QObject *parent) : QObject(parent), m_window(window) {}
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::KeyRelease && qobject_cast<QQuickWindow *>(watched)) {
+            auto *key = static_cast<QKeyEvent *>(event);
+            const bool pad = key->modifiers() & Qt::KeypadModifier;
+            int direction = 0;
+            if (key->key() == Qt::Key_Left || key->key() == Qt::Key_A || (pad && key->key() == Qt::Key_4))
+                direction = -1;
+            else if (key->key() == Qt::Key_Right || key->key() == Qt::Key_D || (pad && key->key() == Qt::Key_6))
+                direction = 1;
+            if (direction && !key->isAutoRepeat())
+                QMetaObject::invokeMethod(m_window, "letGo", Q_ARG(QVariant, direction));
+        }
+        return false;
+    }
+
+private:
+    QObject *m_window;
+};
+
 QJsonObject command(KvjEngine *engine, const QJsonObject &request)
 {
     char *reply = kvj_call(engine, QJsonDocument(request).toJson(QJsonDocument::Compact).constData());
@@ -177,6 +206,8 @@ int main(int argc, char *argv[])
     engine.loadFromModule("KVJ", "Main");
     app.installEventFilter(new LeaveTyping(&app));
     app.installEventFilter(new QuietSpace(&app));
+    if (!engine.rootObjects().isEmpty())
+        app.installEventFilter(new NudgeRelease(engine.rootObjects().first(), &app));
 
     // Development aid: KVJ_SNAPSHOT=<file.png> saves the window on screen (the
     // player's, or the sender's with --send) and quits.

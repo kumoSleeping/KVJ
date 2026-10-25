@@ -23,8 +23,8 @@
 namespace {
 // The sound seeks only when the picture jumps: its time moves further than
 // its own speed explains. Otherwise it is steered, faster or slower with the
-// pitch kept, however far off it is (after a nudge at four times the speed
-// the stretcher's delay leaves it half a second behind): gently while close,
+// pitch kept, however far off it is (after a sudden change of speed the
+// stretcher's delay leaves it behind): gently while close,
 // up to half as fast again to catch up; and only when it is lost altogether.
 constexpr double kJumpBeyond = 0.25;
 constexpr double kLostBeyond = 2.0;

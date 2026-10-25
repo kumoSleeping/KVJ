@@ -14,17 +14,12 @@ QtObject {
     // 1 is the material's own speed.
     property real tempo: 1
     property bool playing: false
-    // A nudge, as a DJ nudges a jog wheel: for a moment this much faster (or,
-    // negative, slower) than `tempo`, until the picture has gained (or lost)
-    // the `owed` seconds; then back to `tempo`. Ahead is quick, four times
-    // the speed (a second in a third of one); back cannot be quicker than the
-    // second itself without playing backwards, so it is a tenth of the speed
-    // for a little over a second. Presses meanwhile add up.
+    // A nudge, as a DJ holds a pitch bend: while a key is held the picture
+    // plays half as fast again as `tempo` (ahead) or at 0.7 of it (back); let
+    // go, it is back at `tempo`.
     property real bend: 0
-    readonly property real bendUp: 3
-    readonly property real bendDown: -0.9
-    property real owed: 0
-    property real bentAt: 0
+    readonly property real bendUp: 0.5
+    readonly property real bendDown: -0.3
     readonly property real speed: tempo * (1 + bend)
     readonly property real rate: playing ? speed : 0
     readonly property real duration: entry ? entry.duration : 0
@@ -65,50 +60,41 @@ QtObject {
     }
     function setTempo(next) {
         const at = now()
-        settle()
         tempo = Math.round(Math.max(minTempo, Math.min(maxTempo, next)) * 1000) / 1000
-        bendFrom(at)
+        anchor(at)
     }
-    // Gains (positive) or loses `seconds` of picture by playing faster or
-    // slower for a moment; paused, it is a plain step.
-    function nudge(seconds) {
+    // Bends ahead (direction > 0) or back until `letGo`, or for `ms` only;
+    // paused, it is a plain step of a second.
+    function nudge(direction, ms) {
         if (!playing) {
-            seek(now() + seconds)
+            seek(now() + (direction > 0 ? 1 : -1))
             return
         }
-        const at = now()
-        settle()
-        owed += seconds
-        bendFrom(at)
-    }
-    // What the bend has paid off since it was last set.
-    function settle() {
-        if (bend !== 0)
-            owed -= (Engine.clockMs() - bentAt) / 1000 * tempo * bend
-    }
-    function bendFrom(at) {
-        bend = Math.abs(owed) < 0.005 ? 0 : owed > 0 ? bendUp : bendDown
-        if (bend === 0)
-            owed = 0
-        anchor(at)
-        bentAt = clockAtMs
-        if (bend !== 0) {
-            bendTimer.interval = Math.max(1, Math.abs(owed / (tempo * bend)) * 1000)
+        bendTo(direction > 0 ? bendUp : bendDown)
+        if (ms > 0) {
+            bendTimer.interval = ms
             bendTimer.restart()
         } else {
             bendTimer.stop()
         }
     }
+    // The key of `direction` let go (0: whichever): back at `tempo`.
+    function letGo(direction) {
+        if (bend !== 0 && (!direction || (direction > 0) === (bend > 0)))
+            bendTo(0)
+    }
+    function bendTo(next) {
+        const at = now()
+        bend = next
+        anchor(at)
+        if (next === 0)
+            bendTimer.stop()
+    }
     function unbend() {
         bendTimer.stop()
-        owed = 0
         bend = 0
     }
     property Timer bendTimer: Timer {
-        onTriggered: {
-            const at = transport.now()
-            transport.unbend()
-            transport.anchor(at)
-        }
+        onTriggered: transport.bendTo(0)
     }
 }

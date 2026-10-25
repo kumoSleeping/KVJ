@@ -76,9 +76,9 @@ one that is on follows. Seeks aim ahead by what passes while the decoder gets
 there, and a paused seek lands on the exact frame.
 
 With **快捷键** on (it is by default), ← / →, A / D or 4 / 6 on the number pad
-nudge the picture a second back or ahead without a jump, as a jog wheel does:
-ahead at four times the speed for a third of a second, back at a tenth of the
-speed for a little over a second (presses in a row add up); ↑ / ↓, W / S or
+nudge the picture back or ahead without a jump, as a pitch bend does: while
+held, the picture plays at 0.7 or 1.5 of its speed, and let go it is back at
+its speed (paused, a press steps a second); ↑ / ↓, W / S or
 8 / 2 change the speed by 1 % and the speed bar follows; Enter plays from the
 cursor.
 Space does nothing: one touch of it during a show is too easy. No key acts while
