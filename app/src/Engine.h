@@ -55,13 +55,13 @@ public:
     Q_INVOKABLE void importUrls(const QString &setId, const QList<QUrl> &urls);
     Q_INVOKABLE void start(const QString &setId, const QString &device, int channelStart);
     Q_INVOKABLE void stop();
-    // Bluetooth: paired devices (or a fresh search), standby connections to
-    // receivers, the current DJ on the receiving side, and sender-only sessions.
-    Q_INVOKABLE void scanBluetooth(bool inquiry);
+    // Bluetooth Low Energy: nearby KVJ receivers, advertising as one, standby
+    // connections to receivers, the current DJ, and sender-only sessions.
+    Q_INVOKABLE void scanBluetooth();
+    Q_INVOKABLE void listenBluetooth(bool on);
     Q_INVOKABLE void connectBluetooth(const QVariantMap &device);
     Q_INVOKABLE void disconnectBluetooth(const QString &id);
     Q_INVOKABLE void selectBluetooth(const QString &id);
-    Q_INVOKABLE void pairBluetooth();
     Q_INVOKABLE void startSending(const QString &peer, const QString &device, int channelStart);
     Q_INVOKABLE void clearError();
     Q_INVOKABLE static QUrl fileUrl(const QString &path) { return QUrl::fromLocalFile(path); }

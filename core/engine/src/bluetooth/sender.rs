@@ -145,7 +145,10 @@ fn connection_loop(device: &Device, shared: &Mutex<Shared>, cancel: &AtomicBool)
         s.status.selected = false;
     }
     let mut seen = Instant::now();
-    let mut pending: Option<(u64, Instant)> = None;
+    // Feature packets in flight, oldest first. A window rather than stop-and-wait:
+    // one BLE round trip is about as long as the 50 ms between packets.
+    let mut pending: VecDeque<(u64, Instant)> = VecDeque::new();
+    const WINDOW: usize = 4;
     let mut streaming: Option<u64> = None;
     loop {
         canceled(cancel)?;
@@ -154,7 +157,7 @@ fn connection_loop(device: &Device, shared: &Mutex<Shared>, cancel: &AtomicBool)
             "蓝牙接收端心跳超时"
         );
         anyhow::ensure!(
-            pending.is_none_or(|(_, sent)| sent.elapsed() < Duration::from_millis(1500)),
+            pending.front().is_none_or(|(_, sent)| sent.elapsed() < Duration::from_millis(1500)),
             "蓝牙发送积压，已停止发送并重新连接"
         );
         if let Some((kind, body)) = connection.receive()? {
@@ -164,10 +167,10 @@ fn connection_loop(device: &Device, shared: &Mutex<Shared>, cancel: &AtomicBool)
                 ACK => {
                     let end = u64::from_le_bytes(body.as_slice().try_into()?);
                     anyhow::ensure!(
-                        pending.is_some_and(|(expected, _)| expected == end),
+                        pending.front().is_some_and(|(expected, _)| *expected == end),
                         "蓝牙应答序号无效"
                     );
-                    pending = None;
+                    pending.pop_front();
                 }
                 SELECT => {
                     anyhow::ensure!(body.len() == 9 && body[0] <= 1, "DJ 选择消息无效");
@@ -196,7 +199,7 @@ fn connection_loop(device: &Device, shared: &Mutex<Shared>, cancel: &AtomicBool)
                         && stream.lease == s.lease
                 })
                 .map(|stream| stream.lease);
-            let packet = if wanted.is_some() && pending.is_none() {
+            let packet = if wanted.is_some() && pending.len() < WINDOW {
                 s.stream
                     .as_mut()
                     .and_then(|stream| stream.queue.pop_front())
@@ -219,7 +222,7 @@ fn connection_loop(device: &Device, shared: &Mutex<Shared>, cancel: &AtomicBool)
         }
         if let Some(packet) = packet.filter(|p| p.at.elapsed() < Duration::from_millis(500)) {
             connection.send(FEATURES, &packet.body, cancel)?;
-            pending = Some((packet.end, Instant::now()));
+            pending.push_back((packet.end, Instant::now()));
             let mut s = shared.lock().unwrap();
             s.status.link.packets += 1;
             s.status.link.bytes += packet.body.len() as u64 + 5;

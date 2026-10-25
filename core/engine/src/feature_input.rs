@@ -2,7 +2,7 @@
 //! source. Local device errors never enable Bluetooth as a fallback.
 use super::{
     audio_input::{Capture, Ring, Selection},
-    bluetooth::{LinkStatus, Observation, Receiver},
+    bluetooth::{Inbox, LinkStatus, Observation},
     diagnostics::{InputState, InputStatus},
     Engine,
 };
@@ -17,7 +17,9 @@ use std::{
 };
 pub struct Input {
     local: Option<(Capture, Arc<Mutex<Ring>>)>,
-    remote: Option<Receiver>,
+    /// The listener's inbox: the listener itself belongs to the engine, so it
+    /// keeps advertising between sessions.
+    remote: Option<Arc<Mutex<Inbox>>>,
     stream: LiveFeatureStream,
     generation: u64,
 }
@@ -34,7 +36,8 @@ impl Input {
     pub fn start(engine: &Arc<Engine>, selection: &Selection) -> Result<Self> {
         let (local, remote) = if selection.device == "bluetooth" {
             anyhow::ensure!(cfg!(any(target_os = "macos", windows)), "此平台不支持蓝牙接收");
-            (None, Some(Receiver::start(Arc::downgrade(engine))?))
+            engine.bluetooth_listen(true)?;
+            (None, Some(engine.connections.inbox.clone()))
         } else {
             (Some(Capture::start(selection)?), None)
         };
@@ -46,8 +49,8 @@ impl Input {
         })
     }
     pub fn poll(&mut self, cancel: &AtomicBool) -> Result<Poll> {
-        if let Some(receiver) = &self.remote {
-            let mut inbox = receiver.inbox.lock().unwrap();
+        if let Some(inbox) = &self.remote {
+            let mut inbox = inbox.lock().unwrap();
             let link = inbox
                 .selected
                 .as_ref()

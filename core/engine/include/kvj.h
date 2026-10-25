@@ -20,9 +20,9 @@ void kvj_engine_free(KvjEngine *engine);
  * {"cmd":"import","set_id":"..","revision":n,"paths":[..]} {"cmd":"devices"}
  * {"cmd":"start","set_id":"..","device":"auto","channel_start":0,"prepare_only":false}
  * {"cmd":"stop"} {"cmd":"status","after_log_id":null}
- * Bluetooth: {"cmd":"bluetooth_scan","inquiry":false} {"cmd":"bluetooth_connect","device":{...}}
- * {"cmd":"bluetooth_disconnect","id":".."} {"cmd":"bluetooth_select","id":".."|null}
- * {"cmd":"bluetooth_pair"} {"cmd":"send_start","peer":"<address>","device":"auto","channel_start":0}.
+ * Bluetooth (BLE): {"cmd":"bluetooth_scan"} {"cmd":"bluetooth_listen","on":true}
+ * {"cmd":"bluetooth_connect","device":{"id":"..","name":".."}} {"cmd":"bluetooth_disconnect","id":".."}
+ * {"cmd":"bluetooth_select","id":".."|null} {"cmd":"send_start","peer":"<id>","device":"auto","channel_start":0}.
  * Free the reply with kvj_string_free. */
 char *kvj_call(KvjEngine *engine, const char *request);
 void kvj_string_free(char *text);

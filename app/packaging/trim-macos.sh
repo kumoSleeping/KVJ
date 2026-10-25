@@ -60,6 +60,21 @@ find "$C" -type f \( -perm -u+x -o -name '*.dylib' \) | while IFS= read -r file;
     strip -x "$file" 2>/dev/null || true
 done
 
-# 4. Every change above invalidated the signatures.
-codesign --force --deep --sign - "$APP" > /dev/null
+# 4. Every change above invalidated the signatures. macOS remembers privacy
+# grants (Bluetooth, microphone, audio capture) by the designated requirement;
+# an ad-hoc signature's requirement is its own hash, so every build would ask
+# again. With a local signing identity the requirement is "com.kumo.kvj signed
+# by this certificate" and grants survive updates. Set it up with
+# packaging/make-signing-identity.sh; without it the bundle is signed ad hoc.
+SIGN_DIR="${KVJ_SIGN_DIR:-$HOME/kvj-toolchain/signing}"
+RCODESIGN="${KVJ_RCODESIGN:-$HOME/kvj-toolchain/rcodesign/bin/rcodesign}"
+if [ -f "$SIGN_DIR/cert.pem" ] && [ -f "$SIGN_DIR/key.pem" ] && [ -f "$SIGN_DIR/requirement.bin" ] && [ -x "$RCODESIGN" ]; then
+    "$RCODESIGN" sign --pem-file "$SIGN_DIR/cert.pem" --pem-file "$SIGN_DIR/key.pem" --timestamp-url none \
+        --code-requirements-path "@main:$SIGN_DIR/requirement.bin" "$APP" > /dev/null 2>&1
+    codesign --verify --deep --strict "$APP"
+    echo "signed with the local KVJ identity"
+else
+    codesign --force --deep --sign - "$APP" > /dev/null
+    echo "signed ad hoc (privacy grants will be asked again after updates)"
+fi
 du -sh "$APP"

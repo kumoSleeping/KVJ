@@ -71,7 +71,7 @@ if(APPLE)
     # when present at run time; weak links keep KVJ launching on macOS 12.
     target_link_libraries(KVJ PRIVATE
         "-weak_framework ScreenCaptureKit" "-weak_framework CoreAudio"
-        "-framework CoreMedia" "-framework AudioToolbox" "-framework IOBluetooth"
+        "-framework CoreMedia" "-framework AudioToolbox" "-framework CoreBluetooth"
         "-framework Foundation" "-framework CoreFoundation" iconv objc)
 elseif(WIN32)
     target_link_libraries(KVJ PRIVATE kernel32 ntdll userenv ws2_32 dbghelp)

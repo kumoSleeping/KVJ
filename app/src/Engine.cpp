@@ -207,9 +207,9 @@ void Engine::stop()
     }, false);
 }
 
-void Engine::scanBluetooth(bool inquiry)
+void Engine::scanBluetooth()
 {
-    call({{"cmd", "bluetooth_scan"}, {"inquiry", inquiry}}, [this](const QJsonValue &ok) {
+    call({{"cmd", "bluetooth_scan"}}, [this](const QJsonValue &ok) {
         m_bluetoothDevices = ok.toArray().toVariantList();
         emit bluetoothDevicesChanged();
     }, true);
@@ -230,9 +230,9 @@ void Engine::selectBluetooth(const QString &id)
     call({{"cmd", "bluetooth_select"}, {"id", id.isEmpty() ? QJsonValue() : QJsonValue(id)}}, nullptr, false);
 }
 
-void Engine::pairBluetooth()
+void Engine::listenBluetooth(bool on)
 {
-    call({{"cmd", "bluetooth_pair"}}, nullptr, true);
+    call({{"cmd", "bluetooth_listen"}, {"on", on}}, nullptr, true);
 }
 
 void Engine::startSending(const QString &peer, const QString &device, int channelStart)

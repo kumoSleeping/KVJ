@@ -242,6 +242,9 @@ impl Selection {
         Ok(Self { device: self.device.clone(), channel_start: self.channel_start })
     }
     pub fn validate(&self) -> Result<()> {
+        if self.device == TEST_SIGNAL {
+            return Ok(());
+        }
         let resolved = self.resolved()?;
         #[cfg(target_os = "macos")]
         {
@@ -284,7 +287,60 @@ pub(super) fn channel_label(selected: &std::ops::Range<usize>) -> String {
     else { format!("CH {}/{}", selected.start + 1, selected.end) }
 }
 
+/// A synthetic music-like input for checks that must not need a microphone or
+/// recording permission. Never listed among the devices.
+pub const TEST_SIGNAL: &str = "test-signal";
+pub struct TestSignal {
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+impl Drop for TestSignal {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+impl TestSignal {
+    fn start(ring: Arc<Mutex<Ring>>) -> Result<Self> {
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let running = stop.clone();
+        let worker = std::thread::Builder::new().name("kvj-test-signal".into()).spawn(move || {
+            let mut state = 7u32;
+            let mut random = move || {
+                state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                state as f32 / u32::MAX as f32
+            };
+            let (rate, block) = (48000usize, 480usize);
+            let started = Instant::now();
+            let mut note = (220f32, 0.3f32);
+            let mut produced = 0usize;
+            while !running.load(std::sync::atomic::Ordering::Relaxed) {
+                let mut mono = Vec::with_capacity(block);
+                for i in produced..produced + block {
+                    if i % (rate / 8) == 0 {
+                        note = (220. * 2f32.powf((random() * 24.).floor() / 12.), 0.2 + 0.3 * random());
+                    }
+                    let t = i as f32 / rate as f32;
+                    let attack = (1. - (t * 8.).fract()).powi(2);
+                    mono.push(note.1 * attack * (std::f32::consts::TAU * note.0 * t).sin() + (random() - 0.5) * 0.01);
+                }
+                let first = started + Duration::from_secs_f64(produced as f64 / rate as f64);
+                produced += block;
+                let due = started + Duration::from_secs_f64(produced as f64 / rate as f64);
+                if let Some(wait) = due.checked_duration_since(Instant::now()) {
+                    std::thread::sleep(wait);
+                }
+                let _ = ring.lock().unwrap().push(&mono, vec![], first, Instant::now());
+            }
+        })?;
+        Ok(Self { stop, worker: Some(worker) })
+    }
+}
+
 pub enum Capture {
+    Test { _signal: TestSignal },
     #[cfg(target_os = "macos")]
     System { _capture: super::capture::Capture },
     #[cfg(target_os = "macos")]
@@ -293,6 +349,11 @@ pub enum Capture {
 }
 impl Capture {
     pub fn start(input: &Selection) -> Result<(Self, Arc<Mutex<Ring>>)> {
+        if input.device == TEST_SIGNAL {
+            let ring = Arc::new(Mutex::new(Ring::new("测试信号".into(), 48000)));
+            let signal = TestSignal::start(ring.clone())?;
+            return Ok((Self::Test { _signal: signal }, ring));
+        }
         let resolved = input.resolved()?;
         let input = &resolved;
         #[cfg(target_os = "macos")]

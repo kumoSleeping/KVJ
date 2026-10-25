@@ -51,6 +51,10 @@ ApplicationWindow {
     readonly property var device: devices.length ? devices[Math.min(deviceBox.currentIndex, devices.length - 1)] : null
     // Adding never waits for a Set: the first files make "Set 1".
     readonly property bool editable: !running && !Engine.importing
+    // Receiving over Bluetooth: advertise for as long as it is the chosen input,
+    // so the DJ's computer can find this one before following starts.
+    readonly property bool receiving: page === 0 && !!device && device.id === "bluetooth"
+    onReceivingChanged: Engine.listenBluetooth(receiving)
 
     function addUrls(urls) {
         if (!urls || urls.length === 0 || !app.editable)
@@ -444,7 +448,7 @@ ApplicationWindow {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 4
-                    visible: app.running && !!app.device && app.device.id === "bluetooth"
+                    visible: app.page === 0 && !!app.device && app.device.id === "bluetooth"
                     Caption { text: "DJ" }
                     Repeater {
                         model: (app.view.connections && app.view.connections.incoming) || []

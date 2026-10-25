@@ -44,8 +44,15 @@ ColumnLayout {
         }
     }
 
-    // Bluetooth is touched only once this page is opened (the system may ask for access).
-    onVisibleChanged: if (visible) Engine.scanBluetooth(false)
+    // Bluetooth is touched only once this page is opened (the system may ask for
+    // access). Receivers come and go, so the list refreshes while it is shown.
+    onVisibleChanged: if (visible) Engine.scanBluetooth()
+    Timer {
+        interval: 8000
+        repeat: true
+        running: panel.visible && !panel.running
+        onTriggered: Engine.scanBluetooth()
+    }
 
     ColumnLayout {
         Layout.fillWidth: true
@@ -53,8 +60,8 @@ ColumnLayout {
         RowLayout {
             Layout.fillWidth: true
             Caption { text: "接收电脑"; Layout.fillWidth: true }
-            // Only paired computers running a KVJ receiver are listed; finding
-            // them asks each one over Bluetooth and takes a few seconds.
+            // Only computers whose KVJ is receiving are listed (they advertise
+            // the KVJ service); finding them takes a few seconds.
             BusyIndicator {
                 running: Engine.busy
                 visible: running
@@ -65,12 +72,7 @@ ColumnLayout {
                 iconName: "refresh"
                 tip: "查找正在接收的 KVJ"
                 enabled: !Engine.busy
-                onClicked: Engine.scanBluetooth(false)
-            }
-            IconButton {
-                iconName: "plus"
-                tip: "在系统设置里配对新设备"
-                onClicked: Engine.pairBluetooth()
+                onClicked: Engine.scanBluetooth()
             }
         }
         Repeater {

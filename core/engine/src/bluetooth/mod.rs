@@ -1,5 +1,7 @@
-//! Bluetooth (classic RFCOMM) link between a DJ computer that only sends live
-//! audio features and the projecting computer that recognizes and shows video.
+//! Bluetooth Low Energy link between a DJ computer that only sends live audio
+//! features and the projecting computer that recognizes and shows video. The
+//! projector advertises the KVJ service while 蓝牙接收 is chosen; senders list
+//! only such receivers and need no system pairing.
 //! Connection preparation is separate from audio capture and from following.
 //! The operator, never discovery or reconnection, owns the active DJ selection.
 //! Ported from KDJ's Live VJ (`src-tauri/src/live_vj/bluetooth` at 00f377a).
@@ -8,7 +10,7 @@ mod receiver;
 mod sender;
 mod transport;
 use super::{diagnostics::InputStatus, Engine};
-use anyhow::{bail, Result};
+use anyhow::Result;
 use kvj_recognize::LiveFeatures;
 pub use receiver::Receiver;
 use serde::Serialize;
@@ -77,6 +79,8 @@ impl Inbox {
 pub struct Hub {
     pub inbox: Arc<Mutex<Inbox>>,
     senders: Mutex<BTreeMap<String, sender::Sender>>,
+    /// Advertising and accepting senders, independent of any session.
+    listener: Mutex<Option<Receiver>>,
 }
 impl Hub {
     pub fn snapshot(&self) -> ConnectionStatus {
@@ -105,10 +109,12 @@ impl Hub {
             ..result
         }
     }
-    /// Stops and joins every outgoing connection.
+    /// Stops and joins every outgoing connection and the listener.
     pub fn shutdown(&self) {
         let senders = std::mem::take(&mut *self.senders.lock().unwrap());
         drop(senders);
+        let listener = self.listener.lock().unwrap().take();
+        drop(listener);
     }
     fn prepare_send(&self, id: &str) -> Result<Arc<Mutex<sender::Shared>>> {
         let senders = self.senders.lock().unwrap();
@@ -137,35 +143,53 @@ pub(super) fn route_changed(engine: &Engine) {
         }
     });
 }
-pub(super) fn paired() -> Result<Vec<Device>> {
-    transport::scan(false)
-}
 fn random_lease() -> u64 {
     u64::from_str_radix(&super::document::id()[..16], 16).unwrap_or(1).max(1)
 }
 
 static SCAN_GATE: Mutex<()> = Mutex::new(());
 impl Engine {
-    /// Paired devices; `inquiry` also searches the air for new ones (not while running).
-    pub fn bluetooth_scan(&self, inquiry: bool) -> Result<Vec<Device>> {
-        // Inquiry shares radio airtime. Listing paired devices is harmless; a fresh
-        // scan is not run during a performance.
-        if inquiry && self.running() {
-            bail!("运行中仅可读取已添加设备，请停止后扫描新设备");
-        }
+    /// What the current DJ's stream delivers to recognition (diagnostics).
+    pub fn connections_input(&self) -> String {
+        let inbox = self.connections.inbox.lock().unwrap();
+        format!(
+            "{} window={}",
+            inbox.input.as_ref().map_or_else(|| "none".into(), |i| serde_json::json!({
+                "state": i.state, "buffered": (i.buffered_seconds * 100.).round() / 100.,
+                "rms": i.rms_dbfs.map(|v| v.round()), "age_ms": i.packet_age_ms.map(|v| v.round()),
+            }).to_string()),
+            inbox.latest.is_some()
+        )
+    }
+    /// KVJ receivers advertising nearby (a three-second listen; nothing else is listed).
+    pub fn bluetooth_scan(&self) -> Result<Vec<Device>> {
         let _scan = SCAN_GATE
             .try_lock()
             .map_err(|_| anyhow::anyhow!("蓝牙扫描正在进行"))?;
-        transport::receivers(inquiry)
+        transport::receivers()
+    }
+    /// On the projecting computer: advertise and accept senders, or stop.
+    pub fn bluetooth_listen(self: &Arc<Self>, on: bool) -> Result<()> {
+        anyhow::ensure!(!on || cfg!(any(target_os = "macos", windows)), "此平台不支持蓝牙接收");
+        let mut listener = self.connections.listener.lock().unwrap();
+        if on && listener.is_none() {
+            *listener = Some(Receiver::start(Arc::downgrade(self))?);
+        } else if !on {
+            let stopped = listener.take();
+            drop(listener);
+            // Joins the listening worker outside the lock.
+            drop(stopped);
+            route_changed(self);
+        }
+        Ok(())
     }
     /// Prepares a standby connection to a receiving computer (at most eight).
     pub fn bluetooth_connect(self: &Arc<Self>, device: Device) -> Result<()> {
         let key = device_key(&device.id);
         anyhow::ensure!(
-            key.len() == 12 && key.bytes().all(|b| b.is_ascii_hexdigit()) && device.name.len() <= 512,
+            (1..=64).contains(&key.len()) && key.bytes().all(|b| b.is_ascii_alphanumeric()) && device.name.len() <= 512,
             "蓝牙设备无效"
         );
-        anyhow::ensure!(device.paired, "请先通过系统配对添加设备，再刷新设备列表");
         let _gate = self.gate.lock().unwrap();
         let mut senders = self.connections.senders.lock().unwrap();
         if senders.contains_key(&key) {
@@ -184,7 +208,7 @@ impl Engine {
     /// On the receiving computer: make one connected DJ the current source.
     pub fn bluetooth_select(&self, id: Option<String>) -> Result<()> {
         let mut inbox = self.connections.inbox.lock().unwrap();
-        anyhow::ensure!(inbox.listening, "请先选择蓝牙接收并开始跟随");
+        anyhow::ensure!(inbox.listening, "请先把声音输入选为蓝牙接收");
         if let Some(id) = &id {
             anyhow::ensure!(
                 inbox
@@ -203,24 +227,6 @@ impl Engine {
         drop(inbox);
         route_changed(self);
         Ok(())
-    }
-    /// Pairing and its numeric confirmation belong to the system; open its settings.
-    pub fn bluetooth_pair(&self) -> Result<()> {
-        #[cfg(target_os = "macos")]
-        let status = std::process::Command::new("/usr/bin/open")
-            .arg("x-apple.systempreferences:com.apple.BluetoothSettings")
-            .status();
-        #[cfg(windows)]
-        let status = std::process::Command::new("cmd.exe")
-            .args(["/C", "start", "", "ms-settings:bluetooth"])
-            .status();
-        #[cfg(not(any(target_os = "macos", windows)))]
-        bail!("此平台不支持蓝牙配对入口");
-        #[cfg(any(target_os = "macos", windows))]
-        {
-            anyhow::ensure!(status?.success(), "无法打开系统蓝牙设置");
-            Ok(())
-        }
     }
     /// Sender-only session: capture the chosen input and stream its features to
     /// the connected receiver. No Set, index or video is loaded.

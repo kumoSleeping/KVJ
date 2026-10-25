@@ -1,361 +1,420 @@
-//! Windows' classic BR/EDR socket API; no virtual COM port or BLE peripheral role.
+//! Windows Bluetooth Low Energy transport through WinRT. The receiving KVJ
+//! publishes the KVJ GATT service and advertises it; a sending KVJ watches for
+//! that service only, connects, writes without response to the inbound
+//! characteristic and subscribes to notifications on the outbound one. No
+//! system pairing is involved. WinRT callbacks run on the thread pool and only
+//! touch the shared buffers.
 use super::*;
 use std::{
-    mem::{size_of, zeroed},
-    ptr::null_mut,
-    sync::OnceLock,
+    collections::{BTreeMap, HashMap, VecDeque},
+    sync::{Arc, Mutex, Once},
 };
-use windows_sys::{
-    core::GUID,
-    Win32::{
-        Devices::Bluetooth::*,
-        Foundation::{CloseHandle, GetLastError, ERROR_NO_MORE_ITEMS, HANDLE},
-        Networking::WinSock::*,
+use windows::{
+    core::{Ref, GUID},
+    Devices::Bluetooth::{
+        Advertisement::{
+            BluetoothLEAdvertisementReceivedEventArgs, BluetoothLEAdvertisementWatcher,
+            BluetoothLEAdvertisementWatcherStatus, BluetoothLEScanningMode,
+        },
+        BluetoothCacheMode, BluetoothConnectionStatus, BluetoothError, BluetoothLEDevice,
+        GenericAttributeProfile::{
+            GattCharacteristic, GattCharacteristicProperties, GattClientCharacteristicConfigurationDescriptorValue,
+            GattCommunicationStatus, GattLocalCharacteristic, GattLocalCharacteristicParameters,
+            GattProtectionLevel, GattServiceProvider, GattServiceProviderAdvertisementStatus,
+            GattServiceProviderAdvertisingParameters, GattSession, GattSubscribedClient, GattValueChangedEventArgs,
+            GattWriteOption, GattWriteRequestedEventArgs,
+        },
     },
+    Foundation::TypedEventHandler,
+    Storage::Streams::{DataReader, DataWriter, IBuffer},
+    Win32::System::Com::CoIncrementMTAUsage,
 };
+
 const SERVICE: GUID = GUID::from_u128(0xd148ef97_f0ea_4e9e_aa99_959b9856283e);
-fn initialize() -> Result<()> {
-    static INIT: OnceLock<i32> = OnceLock::new();
-    let result = *INIT.get_or_init(|| unsafe {
-        let mut data = zeroed();
-        WSAStartup(0x0202, &mut data)
+const INBOUND: GUID = GUID::from_u128(0xd148ef97_f0ea_4e9e_aa99_959b98562801);
+const OUTBOUND: GUID = GUID::from_u128(0xd148ef97_f0ea_4e9e_aa99_959b98562802);
+// A peer that stops reading is dropped rather than buffered without bound.
+const BUFFER_LIMIT: usize = 64 * 1024;
+
+/// WinRT needs an apartment; keep the process MTA alive for every worker thread.
+fn initialize() {
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| unsafe {
+        let _ = CoIncrementMTAUsage();
     });
-    anyhow::ensure!(result == 0, "初始化蓝牙 Socket 失败：{result}");
-    Ok(())
 }
-fn check(result: i32) -> Result<()> {
-    anyhow::ensure!(
-        result != SOCKET_ERROR,
-        "蓝牙操作失败（Windows {}）",
-        unsafe { WSAGetLastError() }
-    );
-    Ok(())
+fn bytes_of(buffer: &IBuffer) -> windows::core::Result<Vec<u8>> {
+    let reader = DataReader::FromBuffer(buffer)?;
+    let mut bytes = vec![0; buffer.Length()? as usize];
+    reader.ReadBytes(&mut bytes)?;
+    Ok(bytes)
 }
-fn address(value: u64) -> String {
-    (0..6)
-        .rev()
-        .map(|i| format!("{:02X}", (value >> (i * 8)) & 255))
-        .collect::<Vec<_>>()
-        .join(":")
+fn buffer_of(bytes: &[u8]) -> windows::core::Result<IBuffer> {
+    let writer = DataWriter::new()?;
+    writer.WriteBytes(bytes)?;
+    writer.DetachBuffer()
 }
-fn parse_address(value: &str) -> Result<u64> {
-    let compact = value.replace([':', '-'], "");
+fn address_text(address: u64) -> String {
+    format!("{address:012X}")
+}
+fn parse_address(id: &str) -> Result<u64> {
+    let compact = id.replace([':', '-'], "");
     anyhow::ensure!(
         compact.len() == 12 && compact.bytes().all(|b| b.is_ascii_hexdigit()),
-        "蓝牙设备地址无效"
+        "蓝牙设备无效"
     );
     Ok(u64::from_str_radix(&compact, 16)?)
 }
-pub fn scan(inquiry: bool) -> Result<Vec<Device>> {
-    // All structures are initialized with the ABI-required size; returned handles
-    // are closed on every path. Inquiry runs off the UI thread and is bounded.
-    unsafe {
-        let params = BLUETOOTH_FIND_RADIO_PARAMS {
-            dwSize: size_of::<BLUETOOTH_FIND_RADIO_PARAMS>() as u32,
-        };
-        let mut radio = null_mut();
-        let radios = BluetoothFindFirstRadio(&params, &mut radio);
-        anyhow::ensure!(!radios.is_null(), "蓝牙未开启或没有可用适配器");
-        CloseHandle(radio);
-        BluetoothFindRadioClose(radios);
-        let params = BLUETOOTH_DEVICE_SEARCH_PARAMS {
-            dwSize: size_of::<BLUETOOTH_DEVICE_SEARCH_PARAMS>() as u32,
-            fReturnAuthenticated: 1,
-            fReturnRemembered: 1,
-            fReturnUnknown: i32::from(inquiry),
-            fReturnConnected: 1,
-            fIssueInquiry: i32::from(inquiry),
-            cTimeoutMultiplier: 5,
-            hRadio: null_mut(),
-        };
-        let mut info: BLUETOOTH_DEVICE_INFO = zeroed();
-        info.dwSize = size_of::<BLUETOOTH_DEVICE_INFO>() as u32;
-        let find = BluetoothFindFirstDevice(&params, &mut info);
-        if find.is_null() {
-            let error = GetLastError();
-            anyhow::ensure!(
-                error == ERROR_NO_MORE_ITEMS,
-                "蓝牙扫描失败（Windows {error}）"
-            );
-            return Ok(Vec::new());
-        }
-        let mut devices = Vec::new();
-        loop {
-            let id = address(info.Address.Anonymous.ullLong);
-            let end = info
-                .szName
-                .iter()
-                .position(|c| *c == 0)
-                .unwrap_or(info.szName.len());
-            let name = String::from_utf16_lossy(&info.szName[..end]);
-            // Major device class 1 is Computer; 0 (unknown) and 0x1f (uncategorized) are kept too.
-            let major = (info.ulClassofDevice >> 8) & 0x1f;
-            devices.push(Device {
-                name: if name.is_empty() { id.clone() } else { name },
-                id,
-                paired: info.fAuthenticated != 0,
-                computer: major == 1 || major == 0 || major == 0x1f,
-            });
-            if BluetoothFindNextDevice(find, &mut info) == 0 {
-                break;
+
+pub fn host_name() -> String {
+    std::env::var("COMPUTERNAME").unwrap_or_else(|_| "KVJ".into())
+}
+
+/// KVJ receivers advertising nearby, found by their service UUID alone.
+pub fn scan(duration: Duration) -> Result<Vec<Device>> {
+    initialize();
+    let watcher = BluetoothLEAdvertisementWatcher::new()?;
+    watcher.SetScanningMode(BluetoothLEScanningMode::Active)?;
+    watcher
+        .AdvertisementFilter()?
+        .Advertisement()?
+        .ServiceUuids()?
+        .Append(SERVICE)?;
+    let found: Arc<Mutex<BTreeMap<u64, String>>> = Arc::default();
+    let sink = found.clone();
+    let token = watcher.Received(&TypedEventHandler::new(
+        move |_, args: Ref<BluetoothLEAdvertisementReceivedEventArgs>| {
+            if let Some(args) = args.as_ref() {
+                let address = args.BluetoothAddress()?;
+                let name = args.Advertisement()?.LocalName()?.to_string();
+                let mut found = sink.lock().unwrap();
+                let entry = found.entry(address).or_default();
+                if !name.is_empty() {
+                    *entry = name;
+                }
             }
+            Ok(())
+        },
+    ))?;
+    watcher.Start()?;
+    let deadline = Instant::now() + duration;
+    while Instant::now() < deadline {
+        if watcher.Status()? == BluetoothLEAdvertisementWatcherStatus::Aborted {
+            break;
         }
-        let error = GetLastError();
-        BluetoothFindDeviceClose(find);
-        anyhow::ensure!(
-            error == ERROR_NO_MORE_ITEMS,
-            "蓝牙扫描中断（Windows {error}）"
-        );
-        Ok(devices)
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let aborted = watcher.Status()? == BluetoothLEAdvertisementWatcherStatus::Aborted;
+    let _ = watcher.Stop();
+    let _ = watcher.RemoveReceived(token);
+    anyhow::ensure!(!aborted, "蓝牙未开启或不可用");
+    let found = found.lock().unwrap();
+    Ok(found
+        .iter()
+        .map(|(address, name)| Device {
+            id: address_text(*address),
+            name: if name.is_empty() { address_text(*address) } else { name.clone() },
+        })
+        .collect())
+}
+
+#[derive(Default)]
+struct Buffer {
+    inbox: Vec<u8>,
+    closed: bool,
+}
+impl Buffer {
+    fn receive(&mut self, bytes: &[u8]) {
+        if self.inbox.len() + bytes.len() > BUFFER_LIMIT {
+            self.closed = true;
+        } else if !self.closed {
+            self.inbox.extend_from_slice(bytes);
+        }
     }
 }
-/// Whether a device publishes the KVJ service, from a fresh (uncached) SDP query.
-fn offers_one(id: &str) -> bool {
-    let mut context: Vec<u16> = format!("({id})").encode_utf16().chain(Some(0)).collect();
-    unsafe {
-        let mut query: WSAQUERYSETW = zeroed();
-        query.dwSize = size_of::<WSAQUERYSETW>() as u32;
-        query.lpServiceClassId = &SERVICE as *const GUID as *mut GUID;
-        query.dwNameSpace = NS_BTH;
-        query.lpszContext = context.as_mut_ptr();
-        let mut lookup: HANDLE = null_mut();
-        if WSALookupServiceBeginW(&query, LUP_FLUSHCACHE | LUP_RETURN_ADDR, &mut lookup) != 0 {
-            return false;
-        }
-        // The result set holds variable-length data after the fixed header.
-        let mut buffer = vec![0u64; 512];
-        let mut length = (buffer.len() * 8) as u32;
-        let found = WSALookupServiceNextW(lookup, LUP_RETURN_ADDR, &mut length, buffer.as_mut_ptr().cast()) == 0;
-        WSALookupServiceEnd(lookup);
-        found
-    }
+type Shared = Arc<Mutex<Buffer>>;
+
+/// One accepted central on the receiving side.
+#[derive(Default)]
+struct Peer {
+    buffer: Shared,
+    client: Option<GattSubscribedClient>,
 }
-pub fn offers(ids: &[String], timeout: Duration) -> Result<Vec<String>> {
-    initialize()?;
-    // Each lookup blocks for up to a page timeout; run them side by side and keep
-    // whatever has answered by the deadline (late threads finish on their own).
-    let (tx, rx) = std::sync::mpsc::channel();
-    for id in ids {
-        let (tx, id) = (tx.clone(), id.clone());
-        std::thread::spawn(move || {
-            let _ = tx.send((offers_one(&id), id));
-        });
-    }
-    drop(tx);
-    let deadline = Instant::now() + timeout;
-    let mut found = Vec::new();
-    while let Some(left) = deadline.checked_duration_since(Instant::now()) {
-        match rx.recv_timeout(left) {
-            Ok((true, id)) => found.push(id),
-            Ok((false, _)) => {}
-            Err(_) => break,
-        }
-    }
-    Ok(found)
+#[derive(Default)]
+struct Accepting {
+    peers: HashMap<String, Peer>,
+    pending: VecDeque<(String, Shared)>,
+}
+pub struct Server {
+    provider: GattServiceProvider,
+    outbound: GattLocalCharacteristic,
+    state: Arc<Mutex<Accepting>>,
+}
+pub struct Central {
+    device: BluetoothLEDevice,
+    session: GattSession,
+    inbound: GattCharacteristic,
+    _outbound: GattCharacteristic,
+}
+enum Kind {
+    Server(Server),
+    // Accepted on the receiving side: notify this subscribed central.
+    Accepted {
+        server: (GattLocalCharacteristic, Arc<Mutex<Accepting>>),
+        id: String,
+    },
+    Central(Central),
 }
 pub struct Native {
-    socket: SOCKET,
-    published: bool,
+    kind: Kind,
+    buffer: Shared,
+}
+impl Drop for Native {
+    fn drop(&mut self) {
+        self.buffer.lock().unwrap().closed = true;
+        match &self.kind {
+            Kind::Server(server) => {
+                let _ = server.provider.StopAdvertising();
+            }
+            Kind::Accepted { server, id } => {
+                server.1.lock().unwrap().peers.remove(id);
+            }
+            Kind::Central(central) => {
+                let _ = central.session.Close();
+                let _ = central.device.Close();
+            }
+        }
+    }
 }
 impl Native {
-    fn create() -> Result<Self> {
-        initialize()?;
-        unsafe {
-            let socket = socket(AF_BTH as i32, SOCK_STREAM, BTHPROTO_RFCOMM as i32);
-            anyhow::ensure!(
-                socket != INVALID_SOCKET,
-                "无法创建 RFCOMM Socket，请检查蓝牙适配器和驱动"
-            );
-            let native = Self {
-                socket,
-                published: false,
-            };
-            let enabled: u32 = 1;
-            for option in [SO_BTH_AUTHENTICATE, SO_BTH_ENCRYPT] {
-                check(setsockopt(
-                    socket,
-                    SOL_RFCOMM as i32,
-                    option as i32,
-                    (&enabled as *const u32).cast(),
-                    4,
-                ))?;
-            }
-            let mut nonblocking = 1;
-            check(ioctlsocket(socket, FIONBIO, &mut nonblocking))?;
-            Ok(native)
-        }
-    }
-    fn registration(&self, operation: WSAESETSERVICEOP) -> Result<()> {
-        unsafe {
-            let mut local: SOCKADDR_BTH = zeroed();
-            let mut length = size_of::<SOCKADDR_BTH>() as i32;
-            check(getsockname(
-                self.socket,
-                (&mut local as *mut SOCKADDR_BTH).cast(),
-                &mut length,
-            ))?;
-            let mut addresses: CSADDR_INFO = zeroed();
-            addresses.LocalAddr = SOCKET_ADDRESS {
-                lpSockaddr: (&mut local as *mut SOCKADDR_BTH).cast(),
-                iSockaddrLength: length,
-            };
-            addresses.RemoteAddr = addresses.LocalAddr;
-            addresses.iSocketType = SOCK_STREAM;
-            addresses.iProtocol = BTHPROTO_RFCOMM as i32;
-            let mut uuid = SERVICE;
-            let mut name: Vec<u16> = "KVJ Audio Features\0".encode_utf16().collect();
-            let mut query: WSAQUERYSETW = zeroed();
-            query.dwSize = size_of::<WSAQUERYSETW>() as u32;
-            query.lpszServiceInstanceName = name.as_mut_ptr();
-            query.lpServiceClassId = &mut uuid;
-            query.dwNameSpace = NS_BTH;
-            query.dwNumberOfCsAddrs = 1;
-            query.lpcsaBuffer = &mut addresses;
-            check(WSASetServiceW(&query, operation, 0))
-        }
-    }
+    /// Publish the KVJ service and advertise it.
     pub fn listen() -> Result<Self> {
-        let mut native = Self::create()?;
-        unsafe {
-            let mut local: SOCKADDR_BTH = zeroed();
-            local.addressFamily = AF_BTH;
-            local.port = u32::MAX;
-            check(bind(
-                native.socket,
-                (&local as *const SOCKADDR_BTH).cast(),
-                size_of::<SOCKADDR_BTH>() as i32,
-            ))?;
-            check(listen(native.socket, 1))?;
-        }
-        native.registration(RNRSERVICE_REGISTER)?;
-        native.published = true;
-        Ok(native)
+        initialize();
+        let created = GattServiceProvider::CreateAsync(SERVICE)?.get()?;
+        anyhow::ensure!(
+            created.Error()? == BluetoothError::Success,
+            "这台电脑的蓝牙不支持作为接收端（{:?}）",
+            created.Error()?
+        );
+        let provider = created.ServiceProvider()?;
+        let service = provider.Service()?;
+
+        let inbound_parameters = GattLocalCharacteristicParameters::new()?;
+        inbound_parameters.SetCharacteristicProperties(
+            GattCharacteristicProperties::WriteWithoutResponse | GattCharacteristicProperties::Write,
+        )?;
+        inbound_parameters.SetWriteProtectionLevel(GattProtectionLevel::Plain)?;
+        let inbound = service
+            .CreateCharacteristicAsync(INBOUND, &inbound_parameters)?
+            .get()?
+            .Characteristic()?;
+        let outbound_parameters = GattLocalCharacteristicParameters::new()?;
+        outbound_parameters.SetCharacteristicProperties(GattCharacteristicProperties::Notify)?;
+        outbound_parameters.SetReadProtectionLevel(GattProtectionLevel::Plain)?;
+        let outbound = service
+            .CreateCharacteristicAsync(OUTBOUND, &outbound_parameters)?
+            .get()?
+            .Characteristic()?;
+
+        let state: Arc<Mutex<Accepting>> = Arc::default();
+        let writes = state.clone();
+        inbound.WriteRequested(&TypedEventHandler::new(
+            move |_, args: Ref<GattWriteRequestedEventArgs>| {
+                let Some(args) = args.as_ref() else { return Ok(()) };
+                let deferral = args.GetDeferral()?;
+                let id = args.Session()?.DeviceId()?.Id()?.to_string();
+                let request = args.GetRequestAsync()?.get()?;
+                let bytes = bytes_of(&request.Value()?)?;
+                if request.Option()? == GattWriteOption::WriteWithResponse {
+                    request.Respond()?;
+                }
+                let mut state = writes.lock().unwrap();
+                let buffer = peer(&mut state, &id);
+                buffer.lock().unwrap().receive(&bytes);
+                drop(state);
+                deferral.Complete()
+            },
+        ))?;
+        let subscriptions = state.clone();
+        outbound.SubscribedClientsChanged(&TypedEventHandler::new(
+            move |sender: Ref<GattLocalCharacteristic>, _| {
+                let Some(sender) = sender.as_ref() else { return Ok(()) };
+                let mut subscribed = Vec::new();
+                for client in sender.SubscribedClients()? {
+                    subscribed.push((client.Session()?.DeviceId()?.Id()?.to_string(), client));
+                }
+                let mut state = subscriptions.lock().unwrap();
+                // A central that unsubscribed has disconnected: its stream is over.
+                for (id, peer) in state.peers.iter_mut() {
+                    if peer.client.is_some() && !subscribed.iter().any(|(s, _)| s == id) {
+                        peer.buffer.lock().unwrap().closed = true;
+                        peer.client = None;
+                    }
+                }
+                for (id, client) in subscribed {
+                    peer(&mut state, &id);
+                    state.peers.get_mut(&id).unwrap().client = Some(client);
+                }
+                Ok(())
+            },
+        ))?;
+
+        let parameters = GattServiceProviderAdvertisingParameters::new()?;
+        parameters.SetIsConnectable(true)?;
+        parameters.SetIsDiscoverable(true)?;
+        provider.StartAdvertisingWithParameters(&parameters)?;
+        Ok(Self {
+            kind: Kind::Server(Server { provider, outbound, state }),
+            buffer: Shared::default(),
+        })
     }
     pub fn connect(id: &str, cancel: &AtomicBool) -> Result<Self> {
-        let remote = parse_address(id)?;
-        let native = Self::create()?;
-        unsafe {
-            let mut info: BLUETOOTH_DEVICE_INFO = zeroed();
-            info.dwSize = size_of::<BLUETOOTH_DEVICE_INFO>() as u32;
-            info.Address.Anonymous.ullLong = remote;
+        initialize();
+        canceled(cancel)?;
+        let device = BluetoothLEDevice::FromBluetoothAddressAsync(parse_address(id)?)?
+            .get()
+            .map_err(|_| anyhow::anyhow!("找不到这台接收电脑，请重新查找"))?;
+        let services = device
+            .GetGattServicesForUuidWithCacheModeAsync(SERVICE, BluetoothCacheMode::Uncached)?
+            .get()?;
+        anyhow::ensure!(
+            services.Status()? == GattCommunicationStatus::Success && services.Services()?.Size()? > 0,
+            "对方没有运行 KVJ 接收"
+        );
+        let service = services.Services()?.GetAt(0)?;
+        let session = service.Session()?;
+        session.SetMaintainConnection(true)?;
+        canceled(cancel)?;
+        let characteristic = |uuid| -> Result<GattCharacteristic> {
+            let found = service
+                .GetCharacteristicsForUuidWithCacheModeAsync(uuid, BluetoothCacheMode::Uncached)?
+                .get()?;
             anyhow::ensure!(
-                BluetoothGetDeviceInfo(null_mut(), &mut info) == 0 && info.fAuthenticated != 0,
-                "请先在系统蓝牙设置中配对这两台电脑，再开始发送"
+                found.Status()? == GattCommunicationStatus::Success && found.Characteristics()?.Size()? > 0,
+                "KVJ 蓝牙服务不完整，请更新两端"
             );
-            let target = SOCKADDR_BTH {
-                addressFamily: AF_BTH,
-                btAddr: remote,
-                serviceClassId: SERVICE,
-                port: 0,
-            };
-            if connect(
-                native.socket,
-                (&target as *const SOCKADDR_BTH).cast(),
-                size_of::<SOCKADDR_BTH>() as i32,
-            ) == 0
-            {
-                return Ok(native);
-            }
-            let error = WSAGetLastError();
-            anyhow::ensure!(
-                error == WSAEWOULDBLOCK || error == WSAEINPROGRESS,
-                "蓝牙连接失败（Windows {error}），请确认对方已启动实时 VJ"
-            );
-        }
-        let start = Instant::now();
-        loop {
-            canceled(cancel)?;
-            anyhow::ensure!(start.elapsed() < Duration::from_secs(15), "蓝牙连接超时");
-            // select is supported by the Bluetooth Winsock provider; unlike
-            // WSAPoll it also reports a failed nonblocking connect explicitly.
-            unsafe {
-                let mut write: FD_SET = zeroed();
-                write.fd_count = 1;
-                write.fd_array[0] = native.socket;
-                let mut errors = write;
-                let timeout = TIMEVAL {
-                    tv_sec: 0,
-                    tv_usec: 20_000,
-                };
-                let count = select(0, null_mut(), &mut write, &mut errors, &timeout);
-                check(count)?;
-                if count > 0 {
-                    anyhow::ensure!(
-                        errors.fd_count == 0 && write.fd_count > 0,
-                        "蓝牙连接被拒绝，请确认对方已启动实时 VJ"
-                    );
-                    return Ok(native);
+            Ok(found.Characteristics()?.GetAt(0)?)
+        };
+        let inbound = characteristic(INBOUND)?;
+        let outbound = characteristic(OUTBOUND)?;
+
+        let buffer = Shared::default();
+        let incoming = buffer.clone();
+        outbound.ValueChanged(&TypedEventHandler::new(
+            move |_, args: Ref<GattValueChangedEventArgs>| {
+                if let Some(args) = args.as_ref() {
+                    let bytes = bytes_of(&args.CharacteristicValue()?)?;
+                    incoming.lock().unwrap().receive(&bytes);
                 }
-            }
-        }
+                Ok(())
+            },
+        ))?;
+        let lost = buffer.clone();
+        device.ConnectionStatusChanged(&TypedEventHandler::new(
+            move |sender: Ref<BluetoothLEDevice>, _| {
+                if let Some(sender) = sender.as_ref() {
+                    if sender.ConnectionStatus()? == BluetoothConnectionStatus::Disconnected {
+                        lost.lock().unwrap().closed = true;
+                    }
+                }
+                Ok(())
+            },
+        ))?;
+        let subscribed = outbound
+            .WriteClientCharacteristicConfigurationDescriptorAsync(
+                GattClientCharacteristicConfigurationDescriptorValue::Notify,
+            )?
+            .get()?;
+        anyhow::ensure!(subscribed == GattCommunicationStatus::Success, "无法接收对方消息");
+        Ok(Self {
+            kind: Kind::Central(Central { device, session, inbound, _outbound: outbound }),
+            buffer,
+        })
     }
     pub fn accept(&mut self) -> Result<Option<(Self, String)>> {
-        unsafe {
-            let mut remote: SOCKADDR_BTH = zeroed();
-            let mut len = size_of::<SOCKADDR_BTH>() as i32;
-            let socket = accept(
-                self.socket,
-                (&mut remote as *mut SOCKADDR_BTH).cast(),
-                &mut len,
-            );
-            if socket == INVALID_SOCKET {
-                let error = WSAGetLastError();
-                if error == WSAEWOULDBLOCK {
-                    return Ok(None);
-                }
-                bail!("蓝牙接收失败（Windows {error}）");
-            }
-            let native = Self {
-                socket,
-                published: false,
-            };
-            let mut nonblocking = 1;
-            check(ioctlsocket(socket, FIONBIO, &mut nonblocking))?;
-            Ok(Some((native, address(remote.btAddr))))
+        let Kind::Server(server) = &self.kind else { return Ok(None) };
+        let status = server.provider.AdvertisementStatus()?;
+        anyhow::ensure!(
+            status != GattServiceProviderAdvertisementStatus::Aborted,
+            "蓝牙广播已中止，请检查蓝牙是否开启"
+        );
+        let next = server.state.lock().unwrap().pending.pop_front();
+        Ok(next.map(|(id, buffer)| {
+            (
+                Self {
+                    kind: Kind::Accepted {
+                        server: (server.outbound.clone(), server.state.clone()),
+                        id: id.clone(),
+                    },
+                    buffer,
+                },
+                id,
+            )
+        }))
+    }
+    /// Why advertising has not started yet, if it has not.
+    pub fn waiting(&mut self) -> Option<String> {
+        let Kind::Server(server) = &self.kind else { return None };
+        match server.provider.AdvertisementStatus() {
+            Ok(GattServiceProviderAdvertisementStatus::Started)
+            | Ok(GattServiceProviderAdvertisementStatus::StartedWithoutAllAdvertisementData) => None,
+            Ok(status) => Some(format!("蓝牙广播尚未开始（{status:?}）")),
+            Err(error) => Some(format!("蓝牙广播状态未知：{error}")),
         }
     }
     pub fn read(&mut self, bytes: &mut [u8]) -> Result<usize> {
-        unsafe {
-            let count = recv(self.socket, bytes.as_mut_ptr(), bytes.len() as i32, 0);
-            if count == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK {
-                return Ok(0);
-            }
-            check(count)?;
-            anyhow::ensure!(count != 0, "蓝牙连接已断开");
-            Ok(count as usize)
-        }
+        let mut buffer = self.buffer.lock().unwrap();
+        let count = buffer.inbox.len().min(bytes.len());
+        anyhow::ensure!(count > 0 || !buffer.closed, "蓝牙连接已断开");
+        bytes[..count].copy_from_slice(&buffer.inbox[..count]);
+        buffer.inbox.drain(..count);
+        Ok(count)
     }
-    pub fn write(&mut self, mut bytes: &[u8], cancel: &AtomicBool) -> Result<()> {
-        let start = Instant::now();
-        while !bytes.is_empty() {
-            canceled(cancel)?;
-            anyhow::ensure!(
-                start.elapsed() < Duration::from_millis(750),
-                "蓝牙发送积压，连接已停止"
-            );
-            unsafe {
-                let count = send(self.socket, bytes.as_ptr(), bytes.len() as i32, 0);
-                if count == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK {
+    /// Sends a whole message, split to the link's packet size.
+    pub fn write(&mut self, bytes: &[u8], cancel: &AtomicBool) -> Result<()> {
+        anyhow::ensure!(!self.buffer.lock().unwrap().closed, "蓝牙连接已断开");
+        match &self.kind {
+            Kind::Server(_) => bail!("监听端不能发送"),
+            Kind::Accepted { server, id } => {
+                // Wait briefly for the central to finish subscribing.
+                let started = Instant::now();
+                let client = loop {
+                    canceled(cancel)?;
+                    if let Some(client) = server.1.lock().unwrap().peers.get(id).and_then(|p| p.client.clone()) {
+                        break client;
+                    }
+                    anyhow::ensure!(started.elapsed() < Duration::from_millis(750), "对方尚未订阅 KVJ 消息");
                     std::thread::sleep(Duration::from_millis(5));
-                    continue;
+                };
+                let size = (client.MaxNotificationSize()? as usize).max(20);
+                for chunk in bytes.chunks(size) {
+                    let sent = server.0.NotifyValueForSubscribedClientAsync(&buffer_of(chunk)?, &client)?.get()?;
+                    anyhow::ensure!(sent.Status()? == GattCommunicationStatus::Success, "蓝牙发送失败或连接已断开");
                 }
-                check(count)?;
-                anyhow::ensure!(count > 0, "蓝牙连接已断开");
-                bytes = &bytes[count as usize..];
+            }
+            Kind::Central(central) => {
+                let size = (central.session.MaxPduSize()? as usize).saturating_sub(3).max(20);
+                for chunk in bytes.chunks(size) {
+                    canceled(cancel)?;
+                    let status = central
+                        .inbound
+                        .WriteValueWithOptionAsync(&buffer_of(chunk)?, GattWriteOption::WriteWithoutResponse)?
+                        .get()?;
+                    anyhow::ensure!(status == GattCommunicationStatus::Success, "蓝牙发送失败或连接已断开");
+                }
             }
         }
         Ok(())
     }
 }
-impl Drop for Native {
-    fn drop(&mut self) {
-        if self.published {
-            if let Err(error) = self.registration(RNRSERVICE_DELETE) {
-                tracing::warn!(%error, "移除蓝牙服务失败");
-            }
-        }
-        unsafe {
-            closesocket(self.socket);
-        }
+/// The buffer for a central, created (and offered for accepting) on first sight.
+fn peer(state: &mut Accepting, id: &str) -> Shared {
+    if let Some(peer) = state.peers.get(id).filter(|p| !p.buffer.lock().unwrap().closed) {
+        return peer.buffer.clone();
     }
+    let peer = Peer::default();
+    let buffer = peer.buffer.clone();
+    state.peers.insert(id.to_owned(), peer);
+    state.pending.push_back((id.to_owned(), buffer.clone()));
+    buffer
 }

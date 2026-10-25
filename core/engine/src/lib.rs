@@ -19,10 +19,6 @@ mod runtime;
 
 pub use audio_input::{InputDevice, Selection};
 pub use bluetooth::Device as BluetoothDevice;
-/// Every paired device with its Class of Device verdict (diagnostics).
-pub fn bluetooth_paired() -> anyhow::Result<Vec<BluetoothDevice>> {
-    bluetooth::paired()
-}
 pub use diagnostics::{Level, LogEntry, Stage};
 pub use document::{Document, Edit, Entry, Set};
 

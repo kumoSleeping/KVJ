@@ -1,250 +1,379 @@
-// IOBluetooth requires a serviced run loop. Each handle, delegate and SDP record
-// is owned by one Rust worker; no UI objects or global mutable session state.
+// macOS Bluetooth Low Energy transport. The receiving KVJ is a peripheral that
+// advertises the KVJ service; a sending KVJ is a central that looks for exactly
+// that service, so nothing else nearby is ever listed and no pairing is needed.
+// Each connection is a byte stream: the central writes (without response) to
+// the inbound characteristic, the peripheral notifies on the outbound one.
+// CoreBluetooth calls back on one private serial queue; the Rust workers touch
+// the shared buffers only through dispatch_sync on that queue.
+#import <CoreBluetooth/CoreBluetooth.h>
 #import <Foundation/Foundation.h>
-#import <IOBluetooth/IOBluetooth.h>
 #include <string.h>
 
-static IOBluetoothSDPUUID *serviceUUID(void) {
-    uuid_t bytes;
-    NSUUID *uuid = [[NSUUID alloc] initWithUUIDString:@"D148EF97-F0EA-4E9E-AA99-959B9856283E"];
-    [uuid getUUIDBytes:bytes];
-    return [IOBluetoothSDPUUID uuidWithBytes:bytes length:16];
-}
-static void pump(void) {
-    // The owning worker paces its whole peer sweep. Keep per-channel polling
-    // short so idle standby devices do not multiply the active stream's delay.
-    [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+static NSString *const kService = @"D148EF97-F0EA-4E9E-AA99-959B9856283E";
+static NSString *const kInbound = @"D148EF97-F0EA-4E9E-AA99-959B98562801";
+static NSString *const kOutbound = @"D148EF97-F0EA-4E9E-AA99-959B98562802";
+// A peer that stops reading is dropped rather than buffered without bound.
+static const NSUInteger kBufferLimit = 64 * 1024;
+
+static dispatch_queue_t queue(void) {
+    static dispatch_queue_t q;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ q = dispatch_queue_create("ltd.kumo.kvj.ble", DISPATCH_QUEUE_SERIAL); });
+    return q;
 }
 static void failure(char *out, size_t cap, NSString *message) {
     if (cap) snprintf(out, cap, "%s", message.UTF8String ?: "蓝牙操作失败");
 }
+static NSString *stateError(CBManagerState state) {
+    switch (state) {
+        case CBManagerStatePoweredOff: return @"蓝牙未开启";
+        case CBManagerStateUnauthorized: return @"KVJ 没有蓝牙权限，请在系统设置的“隐私与安全性 → 蓝牙”中允许";
+        case CBManagerStateUnsupported: return @"这台电脑不支持低功耗蓝牙";
+        default: return nil;
+    }
+}
+// A manager that never reaches "powered on" (for example a process macOS has
+// not granted Bluetooth) must say so instead of finding nothing.
+static NSString *notReady(CBManagerState state) {
+    return stateError(state) ?: [NSString stringWithFormat:@"蓝牙尚未就绪（状态 %ld），请确认已允许 KVJ 使用蓝牙", (long)state];
+}
+static char *json(id object) {
+    NSData *data = [NSJSONSerialization dataWithJSONObject:object options:0 error:nil];
+    return strdup([[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding].UTF8String ?: "[]");
+}
 
-@interface KVJRFCOMM : NSObject <IOBluetoothRFCOMMChannelDelegate, IOBluetoothDeviceInquiryDelegate>
-@property(nonatomic, strong) IOBluetoothRFCOMMChannel *channel;
-@property(nonatomic, strong) IOBluetoothSDPServiceRecord *record;
-@property(nonatomic, strong) IOBluetoothUserNotification *notification;
-@property(nonatomic, strong) KVJRFCOMM *incoming;
-@property(nonatomic, strong) NSMutableData *received;
-@property(nonatomic, strong) NSData *writing;
-@property(nonatomic, strong) NSMutableDictionary *devices;
-@property(nonatomic) BOOL done;
-@property(nonatomic) IOReturn result;
+// One connection in either role.
+@interface KVJLink : NSObject
+@property(nonatomic, strong) NSMutableData *inbox;
+@property(nonatomic, strong) NSMutableData *outbox;
 @property(nonatomic) BOOL closed;
-@property(nonatomic, strong) NSDate *sdpStarted;
-@property(nonatomic, strong) IOBluetoothDevice *target;
-@property(nonatomic) BOOL openDone;
+// Peripheral role: the subscribed central and our notifying characteristic.
+@property(nonatomic, weak) CBPeripheralManager *manager;
+@property(nonatomic, strong) CBCentral *central;
+@property(nonatomic, strong) CBMutableCharacteristic *outbound;
+// Central role: the remote peripheral, its inbound characteristic, and the
+// client object (central manager + delegate) kept alive by this link.
+@property(nonatomic, strong) CBPeripheral *peripheral;
+@property(nonatomic, strong) CBCharacteristic *inbound;
+@property(nonatomic, strong) id owner;
+- (void)pump;
 @end
-@implementation KVJRFCOMM
+@implementation KVJLink
 - (instancetype)init {
-    if ((self = [super init])) { _received = [NSMutableData data]; _devices = [NSMutableDictionary dictionary]; }
+    if ((self = [super init])) { _inbox = [NSMutableData data]; _outbox = [NSMutableData data]; }
     return self;
 }
-- (void)remember:(IOBluetoothDevice *)device {
-    NSString *address = device.addressString;
-    if (!address) return;
-    // Class of Device is known without touching the radio. Macs paired through
-    // Continuity often have no cached class at all (0), so unknown is kept too;
-    // only devices that say they are something else (audio, phone…) are skipped.
-    BluetoothDeviceClassMajor major = device.deviceClassMajor;
-    BOOL computer = major == kBluetoothDeviceClassMajorComputer || major == kBluetoothDeviceClassMajorMiscellaneous
-        || major == kBluetoothDeviceClassMajorUnclassified;
-    self.devices[address] = @{@"id": address, @"name": device.name ?: address, @"paired": @([device isPaired]), @"computer": @(computer)};
+- (void)receive:(NSData *)data {
+    if (self.closed) return;
+    if (self.inbox.length + data.length > kBufferLimit) { self.closed = YES; return; }
+    [self.inbox appendData:data];
 }
-- (void)deviceInquiryDeviceFound:(IOBluetoothDeviceInquiry *)sender device:(IOBluetoothDevice *)device { [self remember:device]; }
-- (void)deviceInquiryComplete:(IOBluetoothDeviceInquiry *)sender error:(IOReturn)error aborted:(BOOL)aborted { self.result = error; self.done = YES; }
-- (void)opened:(IOBluetoothUserNotification *)note channel:(IOBluetoothRFCOMMChannel *)channel {
-    // Only an OS-bonded, encrypted computer may take over the VJ input.
-    if (self.incoming || ![[channel getDevice] isPaired] || [[channel getDevice] getEncryptionMode] == kEncryptionDisabled) {
-        [channel closeChannel]; return;
+// Send as much of the outbox as the link accepts now; the ready callbacks resume it.
+- (void)pump {
+    while (self.outbox.length && !self.closed) {
+        NSUInteger size;
+        if (self.central) {
+            size = MIN(self.outbox.length, self.central.maximumUpdateValueLength);
+            NSData *chunk = [self.outbox subdataWithRange:NSMakeRange(0, size)];
+            if (![self.manager updateValue:chunk forCharacteristic:self.outbound onSubscribedCentrals:@[self.central]]) return;
+        } else if (self.peripheral && self.inbound) {
+            if (!self.peripheral.canSendWriteWithoutResponse) return;
+            size = MIN(self.outbox.length, [self.peripheral maximumWriteValueLengthForType:CBCharacteristicWriteWithoutResponse]);
+            NSData *chunk = [self.outbox subdataWithRange:NSMakeRange(0, size)];
+            [self.peripheral writeValue:chunk forCharacteristic:self.inbound type:CBCharacteristicWriteWithoutResponse];
+        } else {
+            return;
+        }
+        [self.outbox replaceBytesInRange:NSMakeRange(0, size) withBytes:NULL length:0];
     }
-    KVJRFCOMM *peer = [KVJRFCOMM new]; peer.channel = channel;
-    [channel setDelegate:peer]; self.incoming = peer;
 }
-- (void)rfcommChannelData:(IOBluetoothRFCOMMChannel *)channel data:(void *)bytes length:(size_t)length {
-    if (self.received.length + length > 32768) { self.closed = YES; [channel closeChannel]; return; }
-    [self.received appendBytes:bytes length:length];
-}
-- (void)rfcommChannelOpenComplete:(IOBluetoothRFCOMMChannel *)channel status:(IOReturn)status { self.result = status; self.openDone = YES; }
-- (void)rfcommChannelClosed:(IOBluetoothRFCOMMChannel *)channel { self.closed = YES; }
-- (void)rfcommChannelWriteComplete:(IOBluetoothRFCOMMChannel *)channel refcon:(void *)refcon status:(IOReturn)status {
-    self.result = status; self.writing = nil;
-}
-- (void)shutdown {
-    [_notification unregister]; _notification = nil;
-    [_record removeServiceRecord]; _record = nil;
-    [_channel setDelegate:nil]; [_channel closeChannel]; _channel = nil;
-    [_incoming shutdown]; _incoming = nil;
-    _writing = nil; _closed = YES;
-}
-- (void)dealloc { [self shutdown]; }
 @end
 
-char *kvj_bt_scan(int activeInquiry, char *error, size_t capacity) {
-    @autoreleasepool {
-        if ([IOBluetoothHostController defaultController].powerState != kBluetoothHCIPowerStateON) {
-            failure(error, capacity, @"蓝牙未开启或不可用"); return NULL;
-        }
-        KVJRFCOMM *sink = [KVJRFCOMM new];
-        for (IOBluetoothDevice *device in [IOBluetoothDevice pairedDevices]) [sink remember:device];
-        if (!activeInquiry) {
-            NSData *json = [NSJSONSerialization dataWithJSONObject:sink.devices.allValues options:0 error:nil];
-            return strdup([[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);
-        }
-        IOBluetoothDeviceInquiry *inquiry = [IOBluetoothDeviceInquiry inquiryWithDelegate:sink];
-        inquiry.inquiryLength = 6; inquiry.updateNewDeviceNames = YES;
-        IOReturn result = [inquiry start];
-        if (result != kIOReturnSuccess) { failure(error, capacity, @"蓝牙扫描失败，请检查蓝牙权限"); return NULL; }
-        NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:12];
-        while (!sink.done && deadline.timeIntervalSinceNow > 0) pump();
-        [inquiry stop]; [inquiry setDelegate:nil];
-        if (!sink.done || sink.result != kIOReturnSuccess) { failure(error, capacity, @"蓝牙扫描超时或失败"); return NULL; }
-        NSData *json = [NSJSONSerialization dataWithJSONObject:sink.devices.allValues options:0 error:nil];
-        return strdup([[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);
+// The receiving side: advertise, accept centrals, keep one link per central.
+@interface KVJServer : NSObject <CBPeripheralManagerDelegate>
+@property(nonatomic, strong) CBPeripheralManager *manager;
+@property(nonatomic, strong) CBMutableCharacteristic *inbound;
+@property(nonatomic, strong) CBMutableCharacteristic *outbound;
+@property(nonatomic, strong) NSMutableDictionary<NSUUID *, KVJLink *> *links;
+@property(nonatomic, strong) NSMutableArray<KVJLink *> *pending;
+@property(nonatomic, strong) NSMutableArray<NSString *> *pendingIds;
+@property(nonatomic, copy) NSString *name;
+@property(nonatomic, copy) NSString *error;
+@property(nonatomic) int state; // 0 starting, 1 advertising, -1 failed
+@property(nonatomic) BOOL added;
+@end
+@implementation KVJServer
+- (KVJLink *)linkFor:(CBCentral *)central {
+    KVJLink *link = self.links[central.identifier];
+    if (!link || link.closed) {
+        link = [KVJLink new];
+        link.manager = self.manager;
+        link.outbound = self.outbound;
+        self.links[central.identifier] = link;
+        [self.pending addObject:link];
+        [self.pendingIds addObject:central.identifier.UUIDString];
+    }
+    return link;
+}
+- (void)peripheralManagerDidUpdateState:(CBPeripheralManager *)manager {
+    NSString *problem = stateError(manager.state);
+    if (problem) { self.error = problem; self.state = -1; return; }
+    if (manager.state != CBManagerStatePoweredOn || self.added) return;
+    self.added = YES;
+    self.inbound = [[CBMutableCharacteristic alloc] initWithType:[CBUUID UUIDWithString:kInbound]
+        properties:CBCharacteristicPropertyWriteWithoutResponse value:nil permissions:CBAttributePermissionsWriteable];
+    self.outbound = [[CBMutableCharacteristic alloc] initWithType:[CBUUID UUIDWithString:kOutbound]
+        properties:CBCharacteristicPropertyNotify value:nil permissions:CBAttributePermissionsReadable];
+    CBMutableService *service = [[CBMutableService alloc] initWithType:[CBUUID UUIDWithString:kService] primary:YES];
+    service.characteristics = @[self.inbound, self.outbound];
+    [manager addService:service];
+}
+- (void)peripheralManager:(CBPeripheralManager *)manager didAddService:(CBService *)service error:(NSError *)error {
+    if (error) { self.error = error.localizedDescription; self.state = -1; return; }
+    [manager startAdvertising:@{
+        CBAdvertisementDataServiceUUIDsKey: @[[CBUUID UUIDWithString:kService]],
+        CBAdvertisementDataLocalNameKey: self.name ?: @"KVJ",
+    }];
+}
+- (void)peripheralManagerDidStartAdvertising:(CBPeripheralManager *)manager error:(NSError *)error {
+    if (error) { self.error = error.localizedDescription; self.state = -1; return; }
+    self.state = 1;
+}
+- (void)peripheralManager:(CBPeripheralManager *)manager didReceiveWriteRequests:(NSArray<CBATTRequest *> *)requests {
+    for (CBATTRequest *request in requests) {
+        if (![request.characteristic.UUID isEqual:self.inbound.UUID] || !request.value) continue;
+        [[self linkFor:request.central] receive:request.value];
     }
 }
-void kvj_bt_free_string(char *text) { free(text); }
-void *kvj_bt_listen(char *error, size_t capacity) {
-    @autoreleasepool {
-        if ([IOBluetoothHostController defaultController].powerState != kBluetoothHCIPowerStateON) {
-            failure(error, capacity, @"蓝牙未开启或不可用"); return NULL;
-        }
-        KVJRFCOMM *sink = [KVJRFCOMM new];
-        NSDictionary *channel = @{@"DataElementType": @1, @"DataElementSize": @1, @"DataElementValue": @1};
-        sink.record = [IOBluetoothSDPServiceRecord publishedServiceRecordWithDictionary:@{
-            @"0001 - ServiceClassIDList": @[serviceUUID()],
-            @"0004 - ProtocolDescriptorList": @[@[[IOBluetoothSDPUUID uuid16:0x0100]], @[[IOBluetoothSDPUUID uuid16:0x0003], channel]],
-            @"0005 - BrowseGroupList": @[[IOBluetoothSDPUUID uuid16:0x1002]],
-            @"0100 - ServiceName": @"KVJ Audio Features",
-            @"LocalAttributes": @{@"Persistent": @NO}
-        }];
-        BluetoothRFCOMMChannelID channelID = 0;
-        if (!sink.record || [sink.record getRFCOMMChannelID:&channelID] != kIOReturnSuccess) {
-            failure(error, capacity, @"发布 KVJ 蓝牙服务失败"); return NULL;
-        }
-        sink.notification = [IOBluetoothRFCOMMChannel registerForChannelOpenNotifications:sink selector:@selector(opened:channel:)
-            withChannelID:channelID direction:kIOBluetoothUserNotificationChannelDirectionIncoming];
-        if (!sink.notification) { failure(error, capacity, @"监听 KVJ 蓝牙服务失败"); return NULL; }
-        return (__bridge_retained void *)sink;
+- (void)peripheralManager:(CBPeripheralManager *)manager central:(CBCentral *)central didSubscribeToCharacteristic:(CBCharacteristic *)characteristic {
+    KVJLink *link = [self linkFor:central];
+    link.central = central;
+    [link pump];
+}
+- (void)peripheralManager:(CBPeripheralManager *)manager central:(CBCentral *)central didUnsubscribeFromCharacteristic:(CBCharacteristic *)characteristic {
+    // The central disconnected or stopped listening: the stream is over.
+    self.links[central.identifier].closed = YES;
+    [self.links removeObjectForKey:central.identifier];
+}
+- (void)peripheralManagerIsReadyToUpdateSubscribers:(CBPeripheralManager *)manager {
+    for (KVJLink *link in self.links.allValues) [link pump];
+}
+- (void)shutdown {
+    [self.manager stopAdvertising];
+    [self.manager removeAllServices];
+    for (KVJLink *link in self.links.allValues) link.closed = YES;
+    [self.links removeAllObjects];
+    self.manager.delegate = nil;
+}
+@end
+
+// The sending side: scan for KVJ receivers, or connect one link to a receiver.
+@interface KVJClient : NSObject <CBCentralManagerDelegate, CBPeripheralDelegate>
+@property(nonatomic, strong) CBCentralManager *central;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *found;
+@property(nonatomic) BOOL scanning;
+@property(nonatomic, strong) NSUUID *target;
+@property(nonatomic, weak) KVJLink *link;
+@property(nonatomic) int state; // 0 pending, 1 ready, -1 failed
+@property(nonatomic, copy) NSString *error;
+@end
+@implementation KVJClient
+- (void)fail:(NSString *)message {
+    if (self.state == 0) { self.error = message; self.state = -1; }
+    self.link.closed = YES;
+}
+- (void)centralManagerDidUpdateState:(CBCentralManager *)central {
+    NSString *problem = stateError(central.state);
+    if (problem) { [self fail:problem]; return; }
+    if (central.state != CBManagerStatePoweredOn) return;
+    CBUUID *service = [CBUUID UUIDWithString:kService];
+    if (self.scanning) {
+        [central scanForPeripheralsWithServices:@[service] options:nil];
+    } else if (self.target && !self.link.peripheral) {
+        CBPeripheral *peripheral = [central retrievePeripheralsWithIdentifiers:@[self.target]].firstObject;
+        if (!peripheral) { [self fail:@"找不到这台接收电脑，请重新查找"]; return; }
+        self.link.peripheral = peripheral;
+        peripheral.delegate = self;
+        [central connectPeripheral:peripheral options:nil];
     }
 }
-// Connect is advanced asynchronously from the Rust owner so Stop stays bounded.
-// Which of the given addresses (a JSON array) currently publish the KVJ service:
-// one fresh SDP query each, all in flight together, bounded by `timeoutMs`. A
-// computer that is off, out of range or not listening in KVJ is left out.
-char *kvj_bt_offers(const char *addresses, int timeoutMs, char *error, size_t capacity) {
-    @autoreleasepool {
-        NSData *input = [NSData dataWithBytes:addresses length:strlen(addresses)];
-        NSArray *list = [NSJSONSerialization JSONObjectWithData:input options:0 error:nil];
-        if (![list isKindOfClass:[NSArray class]]) { failure(error, capacity, @"蓝牙设备列表无效"); return NULL; }
-        NSDate *started = [NSDate date];
-        NSMutableArray<IOBluetoothDevice *> *pending = [NSMutableArray array];
-        for (id address in list) {
-            if (![address isKindOfClass:[NSString class]]) continue;
-            IOBluetoothDevice *device = [IOBluetoothDevice deviceWithAddressString:address];
-            if (device && [device performSDPQuery:nil uuids:@[serviceUUID()]] == kIOReturnSuccess) [pending addObject:device];
+- (void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral
+     advertisementData:(NSDictionary<NSString *, id> *)advertisement RSSI:(NSNumber *)RSSI {
+    NSString *id = peripheral.identifier.UUIDString;
+    NSString *name = peripheral.name ?: advertisement[CBAdvertisementDataLocalNameKey] ?: id;
+    self.found[id] = @{@"id": id, @"name": name, @"paired": @YES, @"computer": @YES};
+}
+- (void)centralManager:(CBCentralManager *)central didConnectPeripheral:(CBPeripheral *)peripheral {
+    [peripheral discoverServices:@[[CBUUID UUIDWithString:kService]]];
+}
+- (void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {
+    [self fail:error.localizedDescription ?: @"蓝牙连接失败"];
+}
+- (void)centralManager:(CBCentralManager *)central didDisconnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {
+    [self fail:@"蓝牙连接已断开"];
+}
+- (void)peripheral:(CBPeripheral *)peripheral didDiscoverServices:(NSError *)error {
+    CBService *service = nil;
+    for (CBService *candidate in peripheral.services)
+        if ([candidate.UUID isEqual:[CBUUID UUIDWithString:kService]]) service = candidate;
+    if (error || !service) { [self fail:@"对方没有运行 KVJ 接收"]; return; }
+    [peripheral discoverCharacteristics:@[[CBUUID UUIDWithString:kInbound], [CBUUID UUIDWithString:kOutbound]] forService:service];
+}
+- (void)peripheral:(CBPeripheral *)peripheral didDiscoverCharacteristicsForService:(CBService *)service error:(NSError *)error {
+    CBCharacteristic *outbound = nil;
+    for (CBCharacteristic *c in service.characteristics) {
+        if ([c.UUID isEqual:[CBUUID UUIDWithString:kInbound]]) self.link.inbound = c;
+        if ([c.UUID isEqual:[CBUUID UUIDWithString:kOutbound]]) outbound = c;
+    }
+    if (error || !self.link.inbound || !outbound) { [self fail:@"KVJ 蓝牙服务不完整，请更新两端"]; return; }
+    [peripheral setNotifyValue:YES forCharacteristic:outbound];
+}
+- (void)peripheral:(CBPeripheral *)peripheral didUpdateNotificationStateForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
+    if (error || !characteristic.isNotifying) { [self fail:error.localizedDescription ?: @"无法接收对方消息"]; return; }
+    self.state = 1;
+    [self.link pump];
+}
+- (void)peripheral:(CBPeripheral *)peripheral didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
+    if (!error && characteristic.value) [self.link receive:characteristic.value];
+}
+- (void)peripheralIsReadyToSendWriteWithoutResponse:(CBPeripheral *)peripheral {
+    [self.link pump];
+}
+@end
+
+// —— C interface (handles are retained Objective-C objects) ——
+
+char *kvj_ble_scan(int milliseconds, char *error, size_t capacity) {
+    KVJClient *client = [KVJClient new];
+    client.found = [NSMutableDictionary dictionary];
+    client.scanning = YES;
+    dispatch_sync(queue(), ^{ client.central = [[CBCentralManager alloc] initWithDelegate:client queue:queue()]; });
+    [NSThread sleepForTimeInterval:milliseconds / 1000.0];
+    __block NSArray *devices = nil;
+    __block NSString *problem = nil;
+    dispatch_sync(queue(), ^{
+        if (client.central.state != CBManagerStatePoweredOn) problem = notReady(client.central.state);
+        [client.central stopScan];
+        client.central.delegate = nil;
+        if (client.state < 0) problem = client.error;
+        devices = client.found.allValues;
+    });
+    if (problem) { failure(error, capacity, problem); return NULL; }
+    return json(devices);
+}
+void kvj_ble_free_string(char *text) { free(text); }
+
+char *kvj_ble_host_name(void) {
+    return strdup([NSHost currentHost].localizedName.UTF8String ?: "KVJ");
+}
+
+void *kvj_ble_listen(const char *name, char *error, size_t capacity) {
+    (void)error; (void)capacity; // start-up problems arrive through kvj_ble_listening
+    KVJServer *server = [KVJServer new];
+    server.links = [NSMutableDictionary dictionary];
+    server.pending = [NSMutableArray array];
+    server.pendingIds = [NSMutableArray array];
+    server.name = [NSString stringWithUTF8String:name] ?: @"KVJ";
+    dispatch_sync(queue(), ^{ server.manager = [[CBPeripheralManager alloc] initWithDelegate:server queue:queue()]; });
+    return (__bridge_retained void *)server;
+}
+// 1 advertising, 0 still starting (`error` says why), -1 failed.
+int kvj_ble_listening(void *handle, char *error, size_t capacity) {
+    KVJServer *server = (__bridge KVJServer *)handle;
+    __block int state = 0;
+    __block NSString *problem = nil;
+    dispatch_sync(queue(), ^{
+        state = server.state;
+        problem = state < 0 ? server.error : state == 0 ? notReady(server.manager.state) : nil;
+    });
+    if (problem) failure(error, capacity, problem);
+    return state;
+}
+void *kvj_ble_accept(void *handle, char *peer, size_t capacity) {
+    KVJServer *server = (__bridge KVJServer *)handle;
+    __block KVJLink *link = nil;
+    __block NSString *id = nil;
+    dispatch_sync(queue(), ^{
+        if (!server.pending.count) return;
+        link = server.pending.firstObject;
+        id = server.pendingIds.firstObject;
+        [server.pending removeObjectAtIndex:0];
+        [server.pendingIds removeObjectAtIndex:0];
+    });
+    if (!link) return NULL;
+    if (capacity) snprintf(peer, capacity, "%s", id.UTF8String);
+    return (__bridge_retained void *)link;
+}
+
+void *kvj_ble_connect(const char *identifier, char *error, size_t capacity) {
+    NSUUID *target = [[NSUUID alloc] initWithUUIDString:[NSString stringWithUTF8String:identifier]];
+    if (!target) { failure(error, capacity, @"蓝牙设备无效"); return NULL; }
+    KVJClient *client = [KVJClient new];
+    KVJLink *link = [KVJLink new];
+    link.owner = client;
+    client.link = link;
+    client.target = target;
+    dispatch_sync(queue(), ^{ client.central = [[CBCentralManager alloc] initWithDelegate:client queue:queue()]; });
+    return (__bridge_retained void *)link;
+}
+// 1 ready, 0 still connecting, -1 failed.
+int kvj_ble_connect_poll(void *handle, char *error, size_t capacity) {
+    KVJLink *link = (__bridge KVJLink *)handle;
+    __block int state = 0;
+    __block NSString *problem = nil;
+    dispatch_sync(queue(), ^{
+        KVJClient *client = link.owner;
+        state = client.state;
+        problem = client.error;
+    });
+    if (state < 0) failure(error, capacity, problem ?: @"蓝牙连接失败");
+    return state;
+}
+
+// Bytes copied into `bytes` (0 when none have arrived), or -1 once closed and drained.
+int kvj_ble_read(void *handle, uint8_t *bytes, size_t capacity) {
+    KVJLink *link = (__bridge KVJLink *)handle;
+    __block int count = 0;
+    dispatch_sync(queue(), ^{
+        NSUInteger n = MIN(link.inbox.length, capacity);
+        if (n) {
+            memcpy(bytes, link.inbox.bytes, n);
+            [link.inbox replaceBytesInRange:NSMakeRange(0, n) withBytes:NULL length:0];
+            count = (int)n;
+        } else if (link.closed) {
+            count = -1;
         }
-        NSMutableArray<NSString *> *offers = [NSMutableArray array];
-        NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeoutMs / 1000.0];
-        while (pending.count && deadline.timeIntervalSinceNow > 0) {
-            pump();
-            for (IOBluetoothDevice *device in [pending copy]) {
-                NSDate *updated = [device getLastServicesUpdate];
-                if (!updated || [updated compare:started] == NSOrderedAscending) continue;
-                [pending removeObject:device];
-                if ([device getServiceRecordForUUID:serviceUUID()]) [offers addObject:device.addressString];
+    });
+    return count;
+}
+// Bytes accepted for sending (all or none), or -1 when closed.
+int kvj_ble_write(void *handle, const uint8_t *bytes, size_t length) {
+    KVJLink *link = (__bridge KVJLink *)handle;
+    __block int accepted = 0;
+    dispatch_sync(queue(), ^{
+        if (link.closed) { accepted = -1; return; }
+        if (link.outbox.length + length > kBufferLimit) return;
+        [link.outbox appendBytes:bytes length:length];
+        [link pump];
+        accepted = (int)length;
+    });
+    return accepted;
+}
+void kvj_ble_close(void *handle) {
+    id object = CFBridgingRelease(handle);
+    dispatch_sync(queue(), ^{
+        if ([object isKindOfClass:[KVJServer class]]) {
+            [(KVJServer *)object shutdown];
+        } else if ([object isKindOfClass:[KVJLink class]]) {
+            KVJLink *link = object;
+            link.closed = YES;
+            KVJClient *client = link.owner;
+            if (client) {
+                if (link.peripheral) [client.central cancelPeripheralConnection:link.peripheral];
+                client.central.delegate = nil;
+                link.peripheral.delegate = nil;
+                link.owner = nil;
             }
         }
-        NSData *json = [NSJSONSerialization dataWithJSONObject:offers options:0 error:nil];
-        return strdup([[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);
-    }
-}
-void *kvj_bt_connect(const char *address, char *error, size_t capacity) {
-    @autoreleasepool {
-        IOBluetoothDevice *device = [IOBluetoothDevice deviceWithAddressString:[NSString stringWithUTF8String:address]];
-        if (!device || !device.isPaired) { failure(error, capacity, @"请先在系统蓝牙设置中配对这两台电脑，再开始发送"); return NULL; }
-        KVJRFCOMM *sink = [KVJRFCOMM new];
-        sink.target = device; sink.sdpStarted = [NSDate date];
-        // A nil query target avoids an outstanding delegate after Stop. Poll
-        // the documented service-update timestamp on this worker's run loop.
-        IOReturn result = [device performSDPQuery:nil uuids:@[serviceUUID()]];
-        if (result != kIOReturnSuccess) { failure(error, capacity, @"查询 KVJ 蓝牙服务失败"); return NULL; }
-        return (__bridge_retained void *)sink;
-    }
-}
-int kvj_bt_connect_poll(void *handle, char *error, size_t capacity) {
-    @autoreleasepool {
-        KVJRFCOMM *sink = (__bridge KVJRFCOMM *)handle; pump();
-        NSDate *updated = [sink.target getLastServicesUpdate];
-        if (!updated || [updated compare:sink.sdpStarted] == NSOrderedAscending) return 0;
-        if (sink.result != kIOReturnSuccess) { failure(error, capacity, @"蓝牙连接失败，请确认对方已启动实时 VJ"); return -1; }
-        if (!sink.channel) {
-            IOBluetoothDevice *device = sink.target;
-            IOBluetoothSDPServiceRecord *record = [device getServiceRecordForUUID:serviceUUID()];
-            BluetoothRFCOMMChannelID channelID = 0;
-            if (!record || [record getRFCOMMChannelID:&channelID] != kIOReturnSuccess) {
-                failure(error, capacity, @"对方未发布 KVJ 服务，请先启动实时 VJ"); return -1;
-            }
-            IOBluetoothRFCOMMChannel *channel = nil;
-            IOReturn result = [device openRFCOMMChannelAsync:&channel withChannelID:channelID delegate:sink];
-            sink.channel = channel;
-            if (result != kIOReturnSuccess) { failure(error, capacity, @"打开 RFCOMM 连接失败"); return -1; }
-            // The SDK explicitly returns a retained channel through this out
-            // parameter, which is not annotated for ARC. Balance that +1;
-            // sink.channel now owns our normal strong reference.
-            if (channel) CFRelease((__bridge CFTypeRef)channel);
-        }
-        if (!sink.openDone) return 0;
-        if (sink.closed || sink.result != kIOReturnSuccess || [[sink.channel getDevice] getEncryptionMode] == kEncryptionDisabled) {
-            failure(error, capacity, @"蓝牙连接未建立加密，请重新进行系统配对"); return -1;
-        }
-        return 1;
-    }
-}
-int kvj_bt_listening(void *handle) {
-    @autoreleasepool {
-        KVJRFCOMM *sink = (__bridge KVJRFCOMM *)handle;
-        return sink.record && sink.notification && [IOBluetoothHostController defaultController].powerState == kBluetoothHCIPowerStateON;
-    }
-}
-void *kvj_bt_accept(void *handle, char *peer, size_t capacity) {
-    @autoreleasepool {
-        KVJRFCOMM *sink = (__bridge KVJRFCOMM *)handle; pump();
-        KVJRFCOMM *incoming = sink.incoming;
-        if (!incoming) return NULL;
-        sink.incoming = nil;
-        failure(peer, capacity, [incoming.channel getDevice].addressString);
-        return (__bridge_retained void *)incoming;
-    }
-}
-int kvj_bt_read(void *handle, void *bytes, size_t capacity) {
-    @autoreleasepool {
-        KVJRFCOMM *sink = (__bridge KVJRFCOMM *)handle; pump();
-        if (sink.closed || !sink.channel.isOpen) return -1;
-        NSUInteger length = MIN(capacity, sink.received.length);
-        if (length) { memcpy(bytes, sink.received.bytes, length); [sink.received replaceBytesInRange:NSMakeRange(0, length) withBytes:NULL length:0]; }
-        return (int)length;
-    }
-}
-int kvj_bt_write(void *handle, const void *bytes, size_t length) {
-    @autoreleasepool {
-        KVJRFCOMM *sink = (__bridge KVJRFCOMM *)handle; pump();
-        if (sink.closed || !sink.channel.isOpen || sink.result != kIOReturnSuccess) return -1;
-        if (sink.writing) return 0;
-        size_t count = MIN(length, [sink.channel getMTU]);
-        if (!count) return -1;
-        sink.writing = [NSData dataWithBytes:bytes length:count];
-        IOReturn result = [sink.channel writeAsync:(void *)sink.writing.bytes length:(UInt16)count refcon:NULL];
-        if (result != kIOReturnSuccess) { sink.writing = nil; sink.result = result; return -1; }
-        return (int)count;
-    }
-}
-int kvj_bt_flushed(void *handle) {
-    @autoreleasepool {
-        KVJRFCOMM *sink = (__bridge KVJRFCOMM *)handle; pump();
-        if (sink.closed || sink.result != kIOReturnSuccess) return -1;
-        return sink.writing ? 0 : 1;
-    }
-}
-void kvj_bt_close(void *handle) {
-    @autoreleasepool { KVJRFCOMM *sink = (__bridge_transfer KVJRFCOMM *)handle; [sink shutdown]; }
+    });
 }

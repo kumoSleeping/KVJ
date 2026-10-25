@@ -20,7 +20,6 @@ use std::{
     time::{Duration, Instant},
 };
 pub struct Receiver {
-    pub inbox: Arc<Mutex<Inbox>>,
     stop: Arc<AtomicBool>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
@@ -64,7 +63,6 @@ impl Receiver {
                 }
             })?;
         Ok(Self {
-            inbox,
             stop,
             worker: Some(worker),
         })
@@ -156,12 +154,15 @@ impl Peer {
         self.seen = Instant::now();
         if !self.ready {
             anyhow::ensure!(kind == HELLO, "蓝牙握手失败");
-            check_hello(&body, 1)?;
+            let name = check_hello(&body, 1)?;
             self.connection.send(HELLO, &hello(2), cancel)?;
             self.connection.send(SELECT, &[0; 9], cancel)?;
             self.ready = true;
             let mut inbox = shared.lock().unwrap();
             let peer = inbox.peers.get_mut(&self.id).context("设备已移除")?;
+            if !name.is_empty() {
+                peer.device.name = name;
+            }
             peer.link.state = "connected".into();
             peer.link.error.clear();
             return Ok(false);
@@ -320,27 +321,29 @@ fn route_changed(engine: &Weak<Engine>) {
 }
 fn run(engine: &Weak<Engine>, shared: &Mutex<Inbox>, cancel: &AtomicBool) -> Result<()> {
     let mut listener = Native::listen()?;
-    let known = super::transport::scan(false).unwrap_or_default();
     {
         let mut inbox = shared.lock().unwrap();
         inbox.listening = true;
         inbox.error.clear();
     }
     let mut peers: Vec<Peer> = Vec::new();
+    let started = Instant::now();
+    let mut announced = false;
     loop {
         canceled(cancel)?;
+        // Advertising normally starts within a second; after three, say why not.
+        if !announced && started.elapsed() > Duration::from_secs(3) {
+            let waiting = listener.waiting();
+            announced = waiting.is_none();
+            shared.lock().unwrap().error = waiting.unwrap_or_default();
+        }
         if let Some((native, id)) = listener.accept()? {
             if peers.len() < 8 && !peers.iter().any(|p| p.id == id) {
-                let device = known
-                    .iter()
-                    .find(|d| super::device_key(&d.id) == super::device_key(&id))
-                    .cloned()
-                    .unwrap_or(super::Device {
-                        id: id.clone(),
-                        name: id.clone(),
-                        paired: true,
-                        computer: true,
-                    });
+                // The sender names itself in its HELLO.
+                let device = super::Device {
+                    id: id.clone(),
+                    name: "KVJ".into(),
+                };
                 let mut inbox = shared.lock().unwrap();
                 if inbox.peers.len() >= 32 {
                     if let Some(key) = inbox
