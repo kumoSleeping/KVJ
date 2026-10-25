@@ -1,48 +1,56 @@
 import QtQuick
 
 // One sticker: an image (animated when it is a GIF or WebP) or words, centred at
-// (x, y) of `area` and `size` of its height tall. The preview loads it small.
+// (px, py) of `area`, `size` of its height tall and turned by `angle` degrees.
+// The preview loads it small.
 Item {
     id: root
 
-    property var sticker
+    property string kind: "image"
+    property string source: ""
+    property string text: ""
+    property real px: 0.5
+    property real py: 0.5
+    property real size: 0.3
+    property real angle: 0
     property Item area
     property bool lite: false
-    readonly property real tall: (sticker ? sticker.size : 0) * (area ? area.height : 0)
-    readonly property bool words: !!sticker && sticker.kind === "text"
-    readonly property bool moving: !words && !!sticker && /\.(gif|webp)$/i.test(sticker.source || "")
+    readonly property real tall: size * (area ? area.height : 0)
+    readonly property bool words: kind === "text"
+    readonly property bool moving: !words && /\.(gif|webp)$/i.test(source)
     readonly property Item shown: words ? label : moving ? motion : still
 
     width: shown.implicitHeight > 0 && !words ? tall * shown.implicitWidth / shown.implicitHeight : words ? label.implicitWidth : tall
     height: tall
-    x: (sticker ? sticker.x : 0.5) * (area ? area.width : 0) - width / 2
-    y: (sticker ? sticker.y : 0.5) * (area ? area.height : 0) - height / 2
+    x: px * (area ? area.width : 0) - width / 2
+    y: py * (area ? area.height : 0) - height / 2
+    rotation: angle
 
     Image {
         id: still
         anchors.fill: parent
-        visible: !!root.sticker && !root.words && !root.moving
-        source: visible ? root.sticker.source : ""
+        visible: !root.words && !root.moving
+        source: visible ? root.source : ""
         sourceSize.height: root.lite ? 256 : 1440
         fillMode: Image.PreserveAspectFit
         asynchronous: true
         smooth: true
         mipmap: !root.lite
     }
+    // GIFs play in the preview too, so what is posted is seen moving.
     AnimatedImage {
         id: motion
         anchors.fill: parent
         visible: root.moving
-        source: visible ? root.sticker.source : ""
+        source: visible ? root.source : ""
         fillMode: Image.PreserveAspectFit
-        playing: !root.lite
         smooth: true
     }
     Text {
         id: label
         anchors.centerIn: parent
         visible: root.words
-        text: root.words ? root.sticker.text : ""
+        text: root.words ? root.text : ""
         color: "white"
         font.pixelSize: Math.max(1, root.tall * 0.8)
         font.weight: Font.Bold

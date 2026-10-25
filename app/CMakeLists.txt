@@ -47,6 +47,7 @@ qt_add_qml_module(KVJ
         qml/Live.qml
         qml/Stage.qml
         qml/Sticker.qml
+        qml/StickerFrame.qml
         qml/Desk.qml
         qml/Sidebar.qml
         qml/Timeline.qml
@@ -82,6 +83,7 @@ qt_add_qml_module(KVJ
         src/VideoSurface.h src/VideoSurface.cpp
         src/VideoPlayer.h src/VideoPlayer.cpp
         src/PreviewSurface.h src/PreviewSurface.cpp
+        src/FilmStrip.h src/FilmStrip.cpp
         src/FrameNode.h
         src/AudioFollower.h src/AudioFollower.cpp
         src/Decoder.h

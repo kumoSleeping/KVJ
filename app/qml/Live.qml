@@ -20,7 +20,13 @@ QtObject {
 
     // State: drawn for as long as it is set.
     property var caption: null // { text, born, hold } in the middle of the screen
-    property var stickers: []  // [{ id, kind: "image" | "text", source, text, x, y, size }]
+    // Posted stickers, changed in place so a moved one is not drawn anew:
+    // { sid, kind: "image" | "text", source, text, name, px, py (its centre, as
+    // shares of the screen), size (share of the screen's height), angle (degrees) }.
+    property ListModel stickers: ListModel {}
+    // The one posted last, and a count of changes for bindings that read the model.
+    property string lastSid: ""
+    property int revision: 0
 
     // The reactions on offer: Noto's animated emoji, as Google Meet shows them.
     // `still` is the frame that stands for one while it is not playing.
@@ -62,18 +68,47 @@ QtObject {
     }
     function post(sticker) {
         serial += 1
-        stickers = stickers.concat([Object.assign({}, sticker, { id: "s" + serial })])
+        const sid = "s" + serial
+        stickers.append({
+            sid: sid, kind: sticker.kind, source: sticker.source || "", text: sticker.text || "",
+            name: sticker.name || "", px: sticker.px, py: sticker.py, size: sticker.size, angle: sticker.angle || 0
+        })
+        lastSid = sid
+        revision += 1
+        return sid
     }
-    function unpost(id) {
-        stickers = stickers.filter(s => s.id !== id)
+    function find(sid) {
+        for (let i = 0; i < stickers.count; ++i)
+            if (stickers.get(i).sid === sid)
+                return i
+        return -1
+    }
+    function sticker(sid) {
+        const i = find(sid)
+        return i >= 0 ? stickers.get(i) : null
+    }
+    // Moves, sizes or turns one: `changes` holds any of px, py, size, angle.
+    function update(sid, changes) {
+        const i = find(sid)
+        if (i < 0)
+            return
+        for (const key in changes)
+            stickers.setProperty(i, key, changes[key])
+        revision += 1
+    }
+    function unpost(sid) {
+        const i = find(sid)
+        if (i >= 0)
+            stickers.remove(i)
+        revision += 1
     }
     function clearStickers() {
-        stickers = []
+        stickers.clear()
+        revision += 1
     }
 
     // —— Picture effects ——
-    // Every effect is on from the start and does nothing at 0; its slider brings
-    // it in. Switching one off keeps its level for later.
+    // An effect at 0 is off; its slider brings it in.
     readonly property var effects: [
         { key: "mosaic", name: "马赛克" },
         { key: "rgb", name: "RGB 分离", moving: true },
@@ -90,20 +125,14 @@ QtObject {
         { key: "vignette", name: "暗角" }
     ]
     property var level: ({})
-    property var off: ({})
 
     function setLevel(key, value) {
         const next = Object.assign({}, level)
         next[key] = Math.max(0, Math.min(1, value))
         level = next
     }
-    function setOn(key, on) {
-        const next = Object.assign({}, off)
-        next[key] = !on
-        off = next
-    }
     function amount(key) {
-        return off[key] ? 0 : (level[key] || 0)
+        return level[key] || 0
     }
     function resetEffects() {
         level = {}

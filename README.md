@@ -36,17 +36,24 @@ another entry is found. The middle is the live desk with the player; the right
 side is smart following.
 
 Under the preview are the output (screen, resolution, frame rate, full screen)
-and **开始投放**. The **timeline** is the player's transport: a lane per entry,
-the one on the screen with a playhead, the others holding where they were last
-seen; pressing or dragging on a lane plays that entry from there, its name plays
-it from the start, and at the end of an entry the next one follows. Above the
-lanes: play and pause (Space; ← and → jump five seconds), the speed (a bar from
-−50 % to +50 % and keys a percent at a time; double-click the bar for 100 %), and
-**跳转渐变**: every jump, by hand or by smart following, dissolves from the last
-picture over the chosen time (0.1–2 s), or cuts when it is off. Seeks aim ahead
-by what passes while the decoder gets there, and a paused seek lands on the exact
-frame. Below the timeline sits the sticker gallery; the effects have the column
-beside the desk.
+and **开始投放**. The **timeline** runs across the whole foot of the window and
+is the player's transport, laid out like a video editor's timeline without
+editing anything. Its top row has play and pause (Space; ← and → jump five
+seconds), the speed (a bar from −50 % to +50 % and keys a percent at a time;
+double-click the bar for 100 %) and **跳转渐变**: every jump, by hand or by
+smart following, dissolves from the last picture over the chosen time
+(0.1–2 s), or cuts when it is off. Under it, the seek bar of the entry on the
+screen jumps the picture. Below that the Set's entries lie end to end as strips
+of their frames, with a ruler in each entry's own time: pinch on the trackpad
+(or ⌘/Ctrl + scroll) zooms about the pointer down to a few frames, a two-finger
+swipe moves along, **全览** shows the whole Set again. Pressing or dragging on
+the strip only sets a mark and leaves the picture alone; **跳到此处** (or a
+double press) plays from the mark. While playing, the strip follows the
+playhead unless it was touched in the last few seconds. Frames for the strip
+are decoded small on one low-priority thread and kept up to 48 MB. At the end
+of an entry the next one follows. Seeks aim ahead by what passes while the
+decoder gets there, and a paused seek lands on the exact frame. Beside the
+desk, the sticker gallery sits over the effects. **只发送** is at the top right.
 
 **智能跟随音频跳转与调速** on the right takes the picture from the player while it
 is on: the player's keys grey out and the timeline shows where following is.
@@ -62,13 +69,18 @@ ripples in amber once it is passed or the music goes quiet.
 The live desk is a light preview of the
 projection, danmaku (Enter sends; scrolling or large in the middle), Google
 Meet–style reactions (Noto's animated emoji rising up the sides; hold to send a
-stream), stickers and picture effects. Stickers are kept in a gallery of images
-and words; the preview doubles as the stage, where a dot marks where the
-selected one goes and a slider sets its size, and it is drawn there as it will
-look before it is posted. Each effect (mosaic, RGB split, video wall, lens, zoom
-blur, wave, glitch, scanlines, halftone, posterize, hue, black and white,
-vignette) is on and at 0 until its slider moves; effects touch only the video,
-never the words or stickers. Danmaku from elsewhere can come in through
+stream), stickers and picture effects. Stickers are kept in a gallery of images (GIFs play), and words; one is posted
+by dragging it onto the preview and letting go where it should be (double-click
+posts it in the middle; images from the Finder dropped on the preview are added
+and posted there). Posted stickers are changed on the preview and the
+projection follows: press one to choose it and drag it around; the chosen one
+has a point at each corner that sizes it, a point above that turns it (Shift:
+steps of 15°, double-click: upright) and a key that takes it down (or Delete).
+The size bar works on the chosen sticker, or else on the one posted last, and
+sets the size of the next. Each effect (mosaic, RGB split, video wall, lens,
+zoom blur, wave, glitch, scanlines, halftone, posterize, hue, black and white,
+vignette) is off at 0 and comes in as its slider moves; effects touch only the
+video, never the words or stickers. Danmaku from elsewhere can come in through
 `Live.say(text, from)` (`app/qml/Live.qml`).
 
 ## Load

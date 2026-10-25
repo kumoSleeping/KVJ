@@ -12,6 +12,8 @@ Item {
     property bool lite: false
     property var entry: null
     default property alias picture: picture.data
+    // How each posted sticker is drawn; the operator's preview puts handles on them.
+    property Component stickerDelegate: posted
 
     // One clock for everything that moves, running only while something does.
     property real now: Date.now()
@@ -65,14 +67,24 @@ Item {
         font.pixelSize: stage.height / 12
         font.weight: Font.DemiBold
     }
-    Repeater {
-        model: Live.stickers
+    Component {
+        id: posted
         Sticker {
-            required property var modelData
-            sticker: modelData
+            required property var model
+            kind: model.kind
+            source: model.source
+            text: model.text
+            px: model.px
+            py: model.py
+            size: model.size
+            angle: model.angle
             area: stage
             lite: stage.lite
         }
+    }
+    Repeater {
+        model: Live.stickers
+        delegate: stage.stickerDelegate
     }
     Overlay {
         id: overlay
