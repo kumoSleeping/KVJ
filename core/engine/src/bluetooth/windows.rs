@@ -88,13 +88,13 @@ pub fn scan(inquiry: bool) -> Result<Vec<Device>> {
                 .position(|c| *c == 0)
                 .unwrap_or(info.szName.len());
             let name = String::from_utf16_lossy(&info.szName[..end]);
-            // Major device class 1 is Computer; 0 (miscellaneous) is kept too.
+            // Major device class 1 is Computer; 0 (unknown) and 0x1f (uncategorized) are kept too.
             let major = (info.ulClassofDevice >> 8) & 0x1f;
             devices.push(Device {
                 name: if name.is_empty() { id.clone() } else { name },
                 id,
                 paired: info.fAuthenticated != 0,
-                computer: major == 1 || major == 0,
+                computer: major == 1 || major == 0 || major == 0x1f,
             });
             if BluetoothFindNextDevice(find, &mut info) == 0 {
                 break;

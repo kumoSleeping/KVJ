@@ -1,5 +1,6 @@
 //! Headless driver for the engine: list inputs, index a folder, or follow live audio.
 //!   kvj-cli devices
+//!   kvj-cli bluetooth                               paired devices, then the KVJ receivers among them
 //!   kvj-cli prepare <folder|file>...                 index only, then exit
 //!   kvj-cli follow  <folder|file>... [--device ID] [--channel N]
 //! Data (Set document and caches) goes to $KVJ_DATA_DIR or the temp directory.
@@ -66,7 +67,15 @@ fn main() -> anyhow::Result<()> {
             }
             engine.shutdown();
         }
-        _ => println!("usage: kvj-cli devices | prepare <paths>... | follow <paths>... [--device ID] [--channel N]"),
+        "bluetooth" => {
+            for d in kvj_engine::bluetooth_paired()? {
+                println!("paired {:<20} computer={:<5} {}", d.id, d.computer, d.name);
+            }
+            for d in engine.bluetooth_scan(false)? {
+                println!("KVJ    {:<20} {}", d.id, d.name);
+            }
+        }
+        _ => println!("usage: kvj-cli devices | bluetooth | prepare <paths>... | follow <paths>... [--device ID] [--channel N]"),
     }
     Ok(())
 }

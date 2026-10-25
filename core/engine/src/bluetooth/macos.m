@@ -42,9 +42,12 @@ static void failure(char *out, size_t cap, NSString *message) {
 - (void)remember:(IOBluetoothDevice *)device {
     NSString *address = device.addressString;
     if (!address) return;
-    // Class of Device is known without touching the radio; an unknown class is kept.
+    // Class of Device is known without touching the radio. Macs paired through
+    // Continuity often have no cached class at all (0), so unknown is kept too;
+    // only devices that say they are something else (audio, phone…) are skipped.
     BluetoothDeviceClassMajor major = device.deviceClassMajor;
-    BOOL computer = major == kBluetoothDeviceClassMajorComputer || major == kBluetoothDeviceClassMajorUnclassified;
+    BOOL computer = major == kBluetoothDeviceClassMajorComputer || major == kBluetoothDeviceClassMajorMiscellaneous
+        || major == kBluetoothDeviceClassMajorUnclassified;
     self.devices[address] = @{@"id": address, @"name": device.name ?: address, @"paired": @([device isPaired]), @"computer": @(computer)};
 }
 - (void)deviceInquiryDeviceFound:(IOBluetoothDeviceInquiry *)sender device:(IOBluetoothDevice *)device { [self remember:device]; }

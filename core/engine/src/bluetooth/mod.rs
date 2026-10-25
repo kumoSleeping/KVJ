@@ -137,6 +137,9 @@ pub(super) fn route_changed(engine: &Engine) {
         }
     });
 }
+pub(super) fn paired() -> Result<Vec<Device>> {
+    transport::scan(false)
+}
 fn random_lease() -> u64 {
     u64::from_str_radix(&super::document::id()[..16], 16).unwrap_or(1).max(1)
 }
