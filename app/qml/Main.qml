@@ -450,6 +450,17 @@ ApplicationWindow {
                         }
                     }
 
+                    // Where following itself puts the picture; the desk shows
+                    // what really plays, the same while following draws it.
+                    FollowMonitor {
+                        Layout.fillWidth: true
+                        active: app.following
+                        mirror: app.aiPicture
+                        match: app.match
+                        offsetMs: offset.value
+                        source: projection.surface
+                    }
+
                     // What following is doing now. Empty while off, and then it
                     // must not take a share of the height (layouts fill by default).
                     ColumnLayout {

@@ -44,6 +44,7 @@ qt_add_qml_module(KVJ
         qml/SendWindow.qml
         qml/Transport.qml
         qml/Assistants.qml
+        qml/FollowMonitor.qml
         qml/Live.qml
         qml/Stage.qml
         qml/Sticker.qml
