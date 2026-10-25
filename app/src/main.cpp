@@ -8,6 +8,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QThread>
 #include <QQmlApplicationEngine>
@@ -18,6 +19,11 @@
 #include <QTimer>
 
 namespace {
+
+bool isTextBox(const QQuickItem *item)
+{
+    return item && (item->inherits("QQuickTextInput") || item->inherits("QQuickTextEdit"));
+}
 
 // The window on screen: the player's, or the sender's while it stands in.
 QQuickWindow *shownWindow()
@@ -45,11 +51,31 @@ protected:
         if (event->type() == QEvent::MouseButtonPress) {
             auto *window = qobject_cast<QQuickWindow *>(watched);
             QQuickItem *typing = window ? window->activeFocusItem() : nullptr;
-            if (typing && (typing->inherits("QQuickTextInput") || typing->inherits("QQuickTextEdit"))) {
+            if (isTextBox(typing)) {
                 const QPointF at = typing->mapFromScene(static_cast<QMouseEvent *>(event)->scenePosition());
                 if (!typing->contains(at))
                     window->contentItem()->forceActiveFocus(Qt::MouseFocusReason);
             }
+        }
+        return false;
+    }
+};
+
+// Space only types a space. Elsewhere it is dropped: a key, check or list
+// keeps the focus once pressed, and Space would press it again (open the
+// last file dialog, toggle play) — one touch of it during a show is too easy.
+class QuietSpace : public QObject
+{
+public:
+    using QObject::QObject;
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease) {
+            auto *window = qobject_cast<QQuickWindow *>(watched);
+            if (window && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Space)
+                return !isTextBox(window->activeFocusItem());
         }
         return false;
     }
@@ -150,6 +176,7 @@ int main(int argc, char *argv[])
         [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     engine.loadFromModule("KVJ", "Main");
     app.installEventFilter(new LeaveTyping(&app));
+    app.installEventFilter(new QuietSpace(&app));
 
     // Development aid: KVJ_SNAPSHOT=<file.png> saves the window on screen (the
     // player's, or the sender's with --send) and quits.
