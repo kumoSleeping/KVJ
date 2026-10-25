@@ -209,6 +209,14 @@ void Engine::stop()
 
 void Engine::scanBluetooth()
 {
+    // Development aid: KVJ_FAKE_RECEIVERS='[{"id":"…","name":"…"}]' lists made-up
+    // receivers without the radio, for checking the layout.
+    const QByteArray fake = qgetenv("KVJ_FAKE_RECEIVERS");
+    if (!fake.isEmpty()) {
+        m_bluetoothDevices = QJsonDocument::fromJson(fake).array().toVariantList();
+        emit bluetoothDevicesChanged();
+        return;
+    }
     call({{"cmd", "bluetooth_scan"}}, [this](const QJsonValue &ok) {
         m_bluetoothDevices = ok.toArray().toVariantList();
         emit bluetoothDevicesChanged();

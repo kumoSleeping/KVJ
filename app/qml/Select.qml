@@ -35,6 +35,8 @@ ComboBox {
         required property var modelData
         width: ListView.view.width
         height: 30
+        topPadding: 0
+        bottomPadding: 0
         leftPadding: 10
         highlighted: control.highlightedIndex === index
         contentItem: Text {

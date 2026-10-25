@@ -22,6 +22,8 @@ ColumnLayout {
                 return p
         return null
     }
+    // Connected, but the receiving computer has not made this one its DJ yet.
+    readonly property bool waiting: !granted && outgoing.some(p => p.link.state === "connected")
     readonly property var localInputs: inputs.filter(d => d.kind !== "bluetooth")
     readonly property var input: localInputs.length ? localInputs[Math.min(inputBox.currentIndex, localInputs.length - 1)] : null
 
@@ -46,10 +48,10 @@ ColumnLayout {
 
     // Bluetooth is touched only once this page is opened (the system may ask for
     // access). Receivers come and go, so the list refreshes while it is shown.
-    onVisibleChanged: if (visible) Engine.scanBluetooth()
     Timer {
         interval: 8000
         repeat: true
+        triggeredOnStart: true
         running: panel.visible && !panel.running
         onTriggered: Engine.scanBluetooth()
     }
@@ -82,7 +84,9 @@ ColumnLayout {
                 required property var modelData
                 readonly property var peer: panel.statusOf(modelData.id)
                 Layout.fillWidth: true
-                implicitHeight: 34
+                implicitHeight: 40
+                topPadding: 0
+                bottomPadding: 0
                 leftPadding: 8
                 rightPadding: 4
                 contentItem: RowLayout {
@@ -149,6 +153,15 @@ ColumnLayout {
                                  : Engine.startSending(panel.granted.device.id,
                                                        panel.input ? panel.input.id : "auto",
                                                        channelBox.currentIndex * 2)
+    }
+
+    Text {
+        Layout.fillWidth: true
+        visible: !panel.running && panel.waiting
+        text: "等待接收电脑把这台设为当前 DJ"
+        font.pixelSize: Theme.sizeSm
+        color: Theme.muted
+        wrapMode: Text.Wrap
     }
 
     Text {

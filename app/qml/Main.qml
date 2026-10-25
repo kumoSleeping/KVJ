@@ -157,6 +157,8 @@ ApplicationWindow {
                     readonly property bool current: !!app.currentSet && app.currentSet.id === modelData.id
                     width: ListView.view.width
                     height: 32
+                    topPadding: 0
+                    bottomPadding: 0
                     leftPadding: 8
                     enabled: !app.running || current
                     onClicked: app.setId = modelData.id
@@ -223,6 +225,8 @@ ApplicationWindow {
                     readonly property bool playing: !!app.match && app.match.entry.id === modelData.id
                     width: ListView.view.width
                     height: Theme.row
+                    topPadding: 0
+                    bottomPadding: 0
                     leftPadding: 10
                     rightPadding: 6
                     contentItem: RowLayout {
@@ -357,9 +361,11 @@ ApplicationWindow {
             ColumnLayout {
                 spacing: 18
 
-                // What is on the screen now.
+                // What is on the screen now. Empty while idle, and then it must
+                // not take a share of the height (layouts fill by default).
                 ColumnLayout {
                     Layout.fillWidth: true
+                    Layout.fillHeight: false
                     spacing: 4
                     Text {
                         Layout.fillWidth: true
@@ -463,6 +469,8 @@ ApplicationWindow {
                             required property var modelData
                             Layout.fillWidth: true
                             implicitHeight: 32
+                            topPadding: 0
+                            bottomPadding: 0
                             leftPadding: 8
                             onClicked: Engine.selectBluetooth(modelData.selected ? "" : modelData.link.peer)
                             contentItem: RowLayout {
