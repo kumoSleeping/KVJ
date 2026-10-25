@@ -113,10 +113,16 @@ the same frame at the same speed.
 **现场模式** is for listening through a microphone in the room. Reverberation
 fills in where notes stop, so a short window seldom clears the acceptance gates
 on its own. With it on, a window that misses them but has clear landmark and
-onset evidence is taken once two others from the last 1.5 s agree on the same
-recording and position. The usual gates are untouched, so direct capture
-follows exactly as before. It starts on when a recording input is chosen and
-off for captured or received audio.
+onset evidence is taken once two others from the last 3 s agree on the same
+recording and position, each heard at least 0.5 s before the next: windows
+125 ms apart share most of their audio, so only ones that do not overlap count
+as separate evidence. While searching, such a window's position is also checked
+again where the music should be by now, against neighbours 0.4–3.2 s away, so
+one lucky retrieval is enough to find a song that retrieval seldom ranks first.
+The usual gates are untouched, so direct capture follows exactly as before. It
+starts on when a recording input is chosen and off for captured or received
+audio. `kvj-follow-bench` (an engine example) measures it on a Set's own songs
+through a simulated laptop speaker and a noisy room, and on songs outside it.
 
 ## Live desk
 

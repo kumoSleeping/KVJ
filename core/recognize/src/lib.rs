@@ -8,7 +8,9 @@ use rustfft::{num_complex::Complex32, FftPlanner};
 mod live;
 mod live_features;
 mod live_index;
-pub use live::{track_live_prepared, verify_live_prepared, Corroboration, LiveAlignment, LiveHint};
+pub use live::{
+    recheck_live_prepared, track_live_prepared, verify_live_prepared, Corroboration, LiveAlignment, LiveHint,
+};
 pub use live_features::{LiveFeatureStream, LiveFeatures, LIVE_FEATURE_REVISION};
 pub use live_index::{LiveIndex, LiveSeed};
 

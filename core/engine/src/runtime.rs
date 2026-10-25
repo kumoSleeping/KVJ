@@ -10,7 +10,8 @@ use super::{
 };
 use anyhow::{bail, Result};
 use kvj_recognize::{
-    Corroboration, LiveAlignment, LiveFeatures, LiveHint, FEATURE_MEMORY_BUDGET,
+    recheck_live_prepared, Corroboration, LiveAlignment, LiveFeatures, LiveHint,
+    FEATURE_MEMORY_BUDGET,
 };
 use std::{
     collections::VecDeque,
@@ -78,6 +79,26 @@ impl Evidence {
     }
     fn agrees(&self, other: &Self) -> bool {
         self.same_position(other) && (self.rate - other.rate).abs() < 0.06
+    }
+}
+/// Room mode, searching: a plausible position not yet confirmed. Retrieval seldom
+/// ranks a reverberant song's position first twice, so once found it is checked
+/// again each round where the music should be by now.
+#[derive(Clone, Copy)]
+struct Candidate {
+    found: Evidence,
+    retrieval_score: f64,
+}
+fn remember(candidates: &mut Vec<Candidate>, candidate: Candidate) {
+    let c = candidate.found;
+    candidates.retain(|old| {
+        let since = c.at.saturating_duration_since(old.found.at).as_secs_f64();
+        old.found.recording != c.recording
+            || (old.found.position + since * old.found.rate - c.position).abs() >= 0.15
+    });
+    candidates.push(candidate);
+    if candidates.len() > 6 {
+        candidates.remove(0);
     }
 }
 /// Tempo is a slope across observations, not the noisy slope of one second.
@@ -327,10 +348,11 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                 session,
                 Level::Info,
                 Stage::Scan,
-                "现场模式 · 混响下的较弱证据在 1.5 s 内三次一致即采用".into(),
+                "现场模式 · 混响下的较弱证据在 3 s 内三次一致（窗口互不重叠）即采用，待印证位置逐轮复核".into(),
             );
         }
         let mut corroboration = Corroboration::default();
+        let mut candidates: Vec<Candidate> = Vec::new();
         let mut generation = 0;
         let mut input_epoch = 0;
         let mut features = FeatureCache(VecDeque::new());
@@ -400,7 +422,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
             if input_epoch != epoch {
                 input_epoch = epoch; current = None; estimate = None; lost = false;
                 generation = 0; search_cursor = 0; last_rejection = None;
-                corroboration.clear();
+                corroboration.clear(); candidates.clear();
             }
             if let Some(notice) = polled.notice {
                 // At most one warning every 5 s so a flaky driver cannot flush the bounded
@@ -509,6 +531,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                     generation = next_generation;
                     search_cursor = 0;
                     corroboration.clear();
+                    candidates.clear();
                     engine
                         .present(session, |v| v.candidate = None);
                 }
@@ -702,9 +725,85 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                                 if rescued.is_some() {
                                     break 'search;
                                 }
+                                if room && result.plausible {
+                                    remember(&mut candidates, Candidate {
+                                        found: Evidence {
+                                            target,
+                                            recording: set.targets[target].recording,
+                                            position: position(set, target, &query, &result),
+                                            at,
+                                            rate: result.rate,
+                                            score: result.score,
+                                            margin: result.score - result.runner_up,
+                                        },
+                                        retrieval_score: result.retrieval_score,
+                                    });
+                                }
                             }
                             if search_started.elapsed() >= Duration::from_millis(125) {
                                 break;
+                            }
+                        }
+                        // Earlier rounds' candidates, where they should be now. A
+                        // recheck searched around a guess, so even a pass of the
+                        // usual gates is taken only on a spaced agreement.
+                        candidates.retain(|c| {
+                            on[c.found.recording] && at.saturating_duration_since(c.found.at).as_secs_f64() <= 2.
+                        });
+                        for i in 0..candidates.len() {
+                            if rescued.is_some() || cancel.load(Ordering::Relaxed) {
+                                break;
+                            }
+                            let c = candidates[i];
+                            if c.found.at == at {
+                                continue;
+                            }
+                            let block = &set.targets[c.found.target];
+                            let predicted = c.found.position
+                                + at.saturating_duration_since(c.found.at).as_secs_f64() * c.found.rate;
+                            let started = Instant::now();
+                            let reference = features.get(&block.path)?;
+                            let result = recheck_live_prepared(
+                                &query,
+                                &reference,
+                                LiveHint {
+                                    offset_seconds: predicted
+                                        - query.duration_ms() / 1000. * c.found.rate
+                                        - block.start
+                                        - set.recordings[c.found.recording].entry.audio_offset
+                                        - LiveFeatures::origin_seconds(),
+                                    rate: c.found.rate,
+                                },
+                                c.retrieval_score,
+                                &|| cancel.load(Ordering::Relaxed),
+                            )?;
+                            let ms = started.elapsed().as_secs_f64() * 1000.;
+                            verify_ms += ms;
+                            let heard = result.matched || result.supported || result.plausible;
+                            let found = position(set, c.found.target, &query, &result);
+                            let confirmed = heard
+                                && corroboration.confirm(
+                                    (clock_ms() - at.elapsed().as_secs_f64() * 1000.) / 1000.,
+                                    c.found.recording,
+                                    found,
+                                    result.rate,
+                                );
+                            let gated = LiveAlignment {
+                                matched: false,
+                                supported: false,
+                                reason: if heard { "复核待印证".into() } else { result.reason.clone() },
+                                ..result.clone()
+                            };
+                            rescued = record(set, c.found.target, &query, at, &gated, confirmed, ms, &mut scanned);
+                            if heard {
+                                candidates[i].found = Evidence {
+                                    position: found,
+                                    at,
+                                    rate: result.rate,
+                                    score: result.score,
+                                    margin: result.score - result.runner_up,
+                                    ..c.found
+                                };
                             }
                         }
                     }
@@ -784,6 +883,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         }
                         current = Some(chosen);
                         lost = false;
+                        candidates.clear();
                         engine.present(session, |v| {
                             if v.presentation_epoch != epoch { return; }
                             v.phase = "matched".into();

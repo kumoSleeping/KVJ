@@ -20,7 +20,10 @@ pub struct LiveAlignment {
 /// Room mode: reverberation leaves single windows ambiguous, but a real position
 /// recurs and advances with time while chance agreements land anywhere. A
 /// plausible observation is confirmed when two other plausible ones from the
-/// last 1.5 s on the same recording predict it within 150 ms and 6% of speed.
+/// last 3 s on the same recording predict it within 150 ms and 6% of speed, each
+/// heard at least 0.5 s before the next. Queries 125 ms apart share most of their
+/// audio, so a chance alignment carries on through them by itself; only windows
+/// that do not overlap are independent evidence.
 /// Accepted results are not fed in: an existing false lock must not vouch for more.
 #[derive(Default)]
 pub struct Corroboration {
@@ -30,16 +33,21 @@ impl Corroboration {
     /// Records a plausible observation and says whether it is confirmed.
     /// `at` in seconds on a monotonic clock; `position` in recording seconds at `at`.
     pub fn confirm(&mut self, at: f64, recording: usize, position: f64, rate: f64) -> bool {
-        while self.recent.front().is_some_and(|&(old, ..)| at - old > 1.5) {
+        while self.recent.front().is_some_and(|&(old, ..)| at - old > 3.) {
             self.recent.pop_front();
         }
-        let agreeing = self
-            .recent
-            .iter()
-            .filter(|&&(old, r, p, s)| {
-                r == recording && (p + (at - old) * s - position).abs() < 0.15 && (s - rate).abs() < 0.06
-            })
-            .count();
+        let mut last = at;
+        let mut agreeing = 0;
+        for &(old, r, p, s) in self.recent.iter().rev() {
+            if r == recording
+                && last - old >= 0.5
+                && (p + (at - old) * s - position).abs() < 0.15
+                && (s - rate).abs() < 0.06
+            {
+                agreeing += 1;
+                last = old;
+            }
+        }
         self.recent.push_back((at, recording, position, rate));
         agreeing >= 2
     }
@@ -312,6 +320,28 @@ fn verify(
         refine(query, reference, p, negative, canceled)?;
     }
     Ok(result(query, distinct))
+}
+/// Room mode, while searching: a plausible position from an earlier round,
+/// verified where it should be now. Rivals 0.4–3.2 s away compete as retrieval
+/// seeds would, so a lone seed cannot win by default; a chance agreement does not
+/// move on with the music, a real position does.
+pub fn recheck_live_prepared(
+    query: &LiveFeatures,
+    reference: &LiveFeatures,
+    hint: LiveHint,
+    retrieval_score: f64,
+    canceled: &dyn Fn() -> bool,
+) -> Result<LiveAlignment> {
+    let seeds: Vec<_> = [0., -0.4, 0.4, -0.8, 0.8, -1.6, 1.6, -3.2, 3.2]
+        .into_iter()
+        .map(|dt| LiveSeed {
+            target: 0,
+            offset_seconds: hint.offset_seconds + dt,
+            rate: hint.rate,
+            retrieval_score,
+        })
+        .collect();
+    verify_live_prepared(query, reference, &seeds, true, canceled)
 }
 pub fn track_live_prepared(
     query: &LiveFeatures,
