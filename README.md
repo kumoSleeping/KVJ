@@ -99,6 +99,16 @@ paused the speed is the player's and 跳转 still moves the picture to the music
 With both paused it only listens. Paused or stopped, the player carries on from
 the same frame at the same speed.
 
+## Room mode
+
+**现场模式** is for listening through a microphone in the room. Reverberation
+fills in where notes stop, so a short window seldom clears the acceptance gates
+on its own. With it on, a window that misses them but has clear landmark and
+onset evidence is taken once two others from the last 1.5 s agree on the same
+recording and position. The usual gates are untouched, so direct capture
+follows exactly as before. It starts on when a recording input is chosen and
+off for captured or received audio.
+
 ## Live desk
 
 The live desk is a light preview of the

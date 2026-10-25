@@ -84,6 +84,10 @@ ApplicationWindow {
     readonly property bool receiving: !sender.visible && !!device && device.id === "bluetooth"
     onReceivingChanged: Engine.listenBluetooth(receiving)
     readonly property int bluetoothIndex: devices.findIndex(d => d.id === "bluetooth")
+    // A recording input (a microphone) hears the room: 现场模式 starts on for it
+    // and off for captured or received audio; the operator may switch it either way.
+    readonly property bool microphone: !!device && device.kind === "input"
+    onMicrophoneChanged: roomMode.checked = microphone
     // The input chosen before Bluetooth was, to go back to.
     property int localInput: 0
 
@@ -167,12 +171,12 @@ ApplicationWindow {
     // sets both to work, listening first if it was not.
     function listen() {
         app.tempoPaused = app.jumpPaused = true
-        Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2)
+        Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2, roomMode.checked)
     }
     function follow() {
         app.tempoPaused = app.jumpPaused = false
         if (!app.following)
-            Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2)
+            Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2, roomMode.checked)
     }
     // 跳至此处: the player goes once to where following hears the music.
     function jumpToMatch() {
@@ -649,6 +653,15 @@ ApplicationWindow {
                                 }
                             }
                             Item { Layout.fillWidth: true }
+                            Toggle {
+                                id: roomMode
+                                text: "现场模式"
+                                checked: app.microphone
+                                enabled: !app.running
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 600
+                                ToolTip.text: "麦克风听现场：在混响里也能跟上。选麦克风时自动打开；电脑内录或蓝牙接收时关闭"
+                            }
                             IconButton {
                                 iconName: "refresh"
                                 tip: "刷新设备"

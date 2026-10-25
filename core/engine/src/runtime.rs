@@ -10,7 +10,7 @@ use super::{
 };
 use anyhow::{bail, Result};
 use kvj_recognize::{
-    LiveAlignment, LiveFeatures, LiveHint, FEATURE_MEMORY_BUDGET,
+    Corroboration, LiveAlignment, LiveFeatures, LiveHint, FEATURE_MEMORY_BUDGET,
 };
 use std::{
     collections::VecDeque,
@@ -159,12 +159,24 @@ impl ClockEstimate {
         )
     }
 }
+/// Recording position (seconds) at the end of `query`.
+fn position(set: &PreparedSet, target: usize, query: &LiveFeatures, result: &LiveAlignment) -> f64 {
+    let block = &set.targets[target];
+    block.start
+        + set.recordings[block.recording].entry.audio_offset
+        + LiveFeatures::origin_seconds()
+        + result.offset_seconds
+        + query.duration_ms() / 1000. * result.rate
+}
+/// `corroborated`: room mode confirmed a plausible result over time.
+#[allow(clippy::too_many_arguments)]
 fn record(
     set: &PreparedSet,
     target: usize,
     query: &LiveFeatures,
     at: Instant,
     result: &LiveAlignment,
+    corroborated: bool,
     elapsed_ms: f64,
     scanned: &mut Vec<ScanResult>,
 ) -> Option<Evidence> {
@@ -174,25 +186,25 @@ fn record(
         query_ms = query.duration_ms(), capture_clock_ms = clock_ms() - at.elapsed().as_secs_f64() * 1000.,
         offset = result.offset_seconds, rate = result.rate, score = result.score,
         weakest = result.weakest_score, runner_up = result.runner_up, support = result.retrieval_score,
-        matched = result.matched, supported = result.supported, elapsed_ms, "verification");
+        matched = result.matched, supported = result.supported, plausible = result.plausible,
+        corroborated, elapsed_ms, "verification");
+    let accepted = result.matched || result.supported || corroborated;
     scanned.push(ScanResult {
         entry_id: recording.entry.id.clone(),
         title: recording.entry.title.clone(),
         block_start: block.start,
         elapsed_ms,
-        matched: result.matched || result.supported,
+        matched: accepted,
         reason: format!(
             "{} · 位置 {:.3} s · 得分 {:.3} / 最弱窗 {:.3} / 次选 {:.3} · {:.3}×",
             if result.matched || result.supported {
                 "定位通过"
+            } else if corroborated {
+                "现场印证通过"
             } else {
                 &result.reason
             },
-            block.start
-                + recording.entry.audio_offset
-                + LiveFeatures::origin_seconds()
-                + result.offset_seconds
-                + query.duration_ms() / 1000. * result.rate,
+            position(set, target, query, result),
             result.score,
             result.weakest_score,
             result.runner_up,
@@ -201,14 +213,10 @@ fn record(
     });
     // The acoustic matcher is the sole acceptance authority. A supported
     // short-window result is usable now, not a request for another confirmation.
-    (result.matched || result.supported).then_some(Evidence {
+    accepted.then_some(Evidence {
         target,
         recording: block.recording,
-        position: block.start
-            + recording.entry.audio_offset
-            + LiveFeatures::origin_seconds()
-            + result.offset_seconds
-            + query.duration_ms() / 1000. * result.rate,
+        position: position(set, target, query, result),
         at,
         rate: result.rate,
         score: result.score,
@@ -304,6 +312,17 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
             Stage::Scan,
             "监听就绪 · 550 ms 音频窗 / 命中即切 / 失锁时逐档检索".into(),
         );
+        let room = input.room;
+        if room {
+            log(
+                engine,
+                session,
+                Level::Info,
+                Stage::Scan,
+                "现场模式 · 混响下的较弱证据在 1.5 s 内三次一致即采用".into(),
+            );
+        }
+        let mut corroboration = Corroboration::default();
         let mut generation = 0;
         let mut input_epoch = 0;
         let mut features = FeatureCache(VecDeque::new());
@@ -328,6 +347,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
             if input_epoch != epoch {
                 input_epoch = epoch; current = None; estimate = None; lost = false;
                 generation = 0; search_cursor = 0; last_rejection = None;
+                corroboration.clear();
             }
             if let Some(notice) = polled.notice {
                 // At most one warning every 5 s so a flaky driver cannot flush the bounded
@@ -418,6 +438,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                     lost = current.is_some();
                     generation = next_generation;
                     search_cursor = 0;
+                    corroboration.clear();
                     engine
                         .present(session, |v| v.candidate = None);
                 }
@@ -459,6 +480,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                             &query,
                             at,
                             &result,
+                            false,
                             verify_ms,
                             &mut scanned,
                         );
@@ -563,12 +585,28 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                                     &query,
                                     &reference,
                                     &selected,
+                                    room,
                                     &|| cancel.load(Ordering::Relaxed),
                                 )?;
                                 let ms = started.elapsed().as_secs_f64() * 1000.;
                                 verify_ms += ms;
-                                rescued =
-                                    record(set, target, &query, at, &result, ms, &mut scanned);
+                                let corroborated = result.plausible
+                                    && corroboration.confirm(
+                                        (clock_ms() - at.elapsed().as_secs_f64() * 1000.) / 1000.,
+                                        set.targets[target].recording,
+                                        position(set, target, &query, &result),
+                                        result.rate,
+                                    );
+                                rescued = record(
+                                    set,
+                                    target,
+                                    &query,
+                                    at,
+                                    &result,
+                                    corroborated,
+                                    ms,
+                                    &mut scanned,
+                                );
                                 if rescued.is_some() {
                                     break 'search;
                                 }

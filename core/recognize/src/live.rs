@@ -12,7 +12,40 @@ pub struct LiveAlignment {
     pub weakest_score: f64,
     pub runner_up: f64,
     pub retrieval_score: f64,
+    /// Room mode only: below the acceptance gates, but with clear landmark and
+    /// onset evidence. Accept it once `Corroboration` confirms it.
+    pub plausible: bool,
     pub reason: String,
+}
+/// Room mode: reverberation leaves single windows ambiguous, but a real position
+/// recurs and advances with time while chance agreements land anywhere. A
+/// plausible observation is confirmed when two other plausible ones from the
+/// last 1.5 s on the same recording predict it within 150 ms and 6% of speed.
+/// Accepted results are not fed in: an existing false lock must not vouch for more.
+#[derive(Default)]
+pub struct Corroboration {
+    recent: std::collections::VecDeque<(f64, usize, f64, f64)>,
+}
+impl Corroboration {
+    /// Records a plausible observation and says whether it is confirmed.
+    /// `at` in seconds on a monotonic clock; `position` in recording seconds at `at`.
+    pub fn confirm(&mut self, at: f64, recording: usize, position: f64, rate: f64) -> bool {
+        while self.recent.front().is_some_and(|&(old, ..)| at - old > 1.5) {
+            self.recent.pop_front();
+        }
+        let agreeing = self
+            .recent
+            .iter()
+            .filter(|&&(old, r, p, s)| {
+                r == recording && (p + (at - old) * s - position).abs() < 0.15 && (s - rate).abs() < 0.06
+            })
+            .count();
+        self.recent.push_back((at, recording, position, rate));
+        agreeing >= 2
+    }
+    pub fn clear(&mut self) {
+        self.recent.clear();
+    }
 }
 #[derive(Clone, Copy)]
 pub struct LiveHint {
@@ -35,13 +68,18 @@ impl Proposal {
             && (self.offset - other.offset + frames as f64 * (self.rate - other.rate)).abs() < 15.
     }
 }
+/// Weight of falling band changes in room mode's plausibility score. A room's
+/// reverberation fills in where notes stop but keeps where they start.
+const ROOM_NEGATIVE: f64 = 0.25;
 fn scores(
     query: &LiveFeatures,
     reference: &LiveFeatures,
     offset: f64,
     rate: f64,
     stride: usize,
+    negative: f64,
 ) -> [f64; 3] {
+    let weigh = |v: f64| if v < 0. { v * negative } else { v };
     let guard = 2;
     let width = query.spectra.len().saturating_sub(guard * 2) / 3;
     if width < 4 {
@@ -67,12 +105,12 @@ fn scores(
                 let lo = t as usize;
                 let f = (t - lo as f64) as f32;
                 for (j, &(low, high, bf)) in bands.iter().enumerate() {
-                    let x = query.spectra[i][j + 3] as f64;
+                    let x = weigh(query.spectra[i][j + 3] as f64);
                     let left =
                         reference.spectra[lo][low] * (1. - bf) + reference.spectra[lo][high] * bf;
                     let right = reference.spectra[lo + 1][low] * (1. - bf)
                         + reference.spectra[lo + 1][high] * bf;
-                    let y = (left * (1. - f) + right * f) as f64;
+                    let y = weigh((left * (1. - f) + right * f) as f64);
                     a += x;
                     b += y;
                     aa += x * x;
@@ -104,9 +142,10 @@ fn refine(
     query: &LiveFeatures,
     reference: &LiveFeatures,
     p: &mut Proposal,
+    negative: f64,
     canceled: &dyn Fn() -> bool,
 ) -> Result<()> {
-    p.scores = scores(query, reference, p.offset, p.rate, 2);
+    p.scores = scores(query, reference, p.offset, p.rate, 2, negative);
     let middle = query.spectra.len() as f64 / 2.;
     // A short-window retrieval vote has weak tempo resolution. Refine across
     // that uncertainty before narrowing; a ±0.8% hill climb can permanently
@@ -135,7 +174,7 @@ fn refine(
                 let next = Proposal {
                     offset,
                     rate,
-                    scores: scores(query, reference, offset, rate, 2),
+                    scores: scores(query, reference, offset, rate, 2, negative),
                     support: base.support,
                 };
                 if next.score() > p.score() {
@@ -157,6 +196,7 @@ fn result(query: &LiveFeatures, mut proposals: Vec<Proposal>) -> LiveAlignment {
         weakest_score: 0.,
         runner_up: 0.,
         retrieval_score: 0.,
+        plausible: false,
         reason: "有效音频或重叠不足".into(),
     };
     let Some(best) = proposals.first() else {
@@ -190,10 +230,39 @@ fn result(query: &LiveFeatures, mut proposals: Vec<Proposal>) -> LiveAlignment {
     .into();
     value
 }
+/// `room`: the query was heard through a microphone in a reverberant room.
+/// Acceptance always uses the full score; room mode only adds `plausible`,
+/// judged mostly on onsets, for results that miss the gates.
 pub fn verify_live_prepared(
     query: &LiveFeatures,
     reference: &LiveFeatures,
     seeds: &[LiveSeed],
+    room: bool,
+    canceled: &dyn Fn() -> bool,
+) -> Result<LiveAlignment> {
+    let full = verify(query, reference, seeds, 1., canceled)?;
+    if !room || full.matched || full.supported {
+        return Ok(full);
+    }
+    let mut onsets = verify(query, reference, seeds, ROOM_NEGATIVE, canceled)?;
+    if onsets.retrieval_score < 0.50
+        || onsets.score < 0.45
+        || onsets.weakest_score < 0.35
+        || onsets.score - onsets.runner_up < 0.10
+    {
+        return Ok(full);
+    }
+    onsets.matched = false;
+    onsets.supported = false;
+    onsets.plausible = true;
+    onsets.reason = "现场混响下待连续印证".into();
+    Ok(onsets)
+}
+fn verify(
+    query: &LiveFeatures,
+    reference: &LiveFeatures,
+    seeds: &[LiveSeed],
+    negative: f64,
     canceled: &dyn Fn() -> bool,
 ) -> Result<LiveAlignment> {
     anyhow::ensure!(query.duration_ms() <= 3000., "实时查询超过 3 秒上限");
@@ -216,7 +285,7 @@ pub fn verify_live_prepared(
             let p = Proposal {
                 offset,
                 rate: seed.rate,
-                scores: scores(query, reference, offset, seed.rate, 4),
+                scores: scores(query, reference, offset, seed.rate, 4, negative),
                 support: seed.retrieval_score,
             };
             if p.score() > best.score() {
@@ -240,7 +309,7 @@ pub fn verify_live_prepared(
         }
     }
     for p in &mut distinct {
-        refine(query, reference, p, canceled)?;
+        refine(query, reference, p, negative, canceled)?;
     }
     Ok(result(query, distinct))
 }
@@ -261,7 +330,7 @@ pub fn track_live_prepared(
             })
         })
         .collect();
-    let mut matched = verify_live_prepared(query, reference, &seeds, canceled)?;
+    let mut matched = verify(query, reference, &seeds, 1., canceled)?;
     for dt in [-3.2, -1.6, -0.8, -0.4, 0.4, 0.8, 1.6, 3.2] {
         let rival = scores(
             query,
@@ -269,6 +338,7 @@ pub fn track_live_prepared(
             (matched.offset_seconds + dt) * 100.,
             matched.rate,
             2,
+            1.,
         )
         .iter()
         .sum::<f64>()

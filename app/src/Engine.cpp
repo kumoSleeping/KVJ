@@ -200,7 +200,7 @@ void Engine::importUrls(const QString &setId, const QList<QUrl> &urls)
     });
 }
 
-void Engine::start(const QString &setId, const QString &device, int channelStart)
+void Engine::start(const QString &setId, const QString &device, int channelStart, bool room)
 {
     clearError();
     const QJsonObject request{
@@ -208,6 +208,7 @@ void Engine::start(const QString &setId, const QString &device, int channelStart
         {"set_id", setId},
         {"device", device.isEmpty() ? QStringLiteral("auto") : device},
         {"channel_start", channelStart},
+        {"room", room},
     };
     call(request, [this](const QJsonValue &ok) {
         m_view = ok.toObject().toVariantMap();
