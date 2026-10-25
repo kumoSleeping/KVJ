@@ -109,7 +109,12 @@ void VideoPlayer::run()
         const double target = m_target;
         const double oldest = m_queue.empty() ? cursor : m_queue.front().pts;
         if (!positioned || target < oldest - kBackTolerance || target > cursor + kAheadLimit) {
-            double to = std::max(0.0, target + (positioned ? lead : 0.0));
+            // A seek superseded before it showed anything took at least this long.
+            if (measuring) {
+                const double spent = std::chrono::duration<double>(std::chrono::steady_clock::now() - seekedAt).count();
+                lead = std::clamp(std::max(lead * 1.5, spent), 0.0, 1.5);
+            }
+            double to = std::max(0.0, target + lead);
             if (duration > 0)
                 to = std::min(to, std::max(0.0, duration - 0.05));
             while (!m_queue.empty()) {
@@ -168,7 +173,7 @@ void VideoPlayer::run()
         if (measuring) {
             measuring = false;
             const double took = std::chrono::duration<double>(std::chrono::steady_clock::now() - seekedAt).count();
-            lead = std::clamp(0.7 * lead + 0.3 * took, 0.0, 1.0);
+            lead = std::clamp(0.7 * lead + 0.3 * took, 0.0, 1.5);
         }
         m_queue.push_back(std::move(frame));
     }

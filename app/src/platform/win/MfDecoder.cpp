@@ -7,6 +7,7 @@
 
 #include <windows.h>
 #include <d3d11_4.h>
+#include <dxgi.h>
 #include <mfapi.h>
 #include <mferror.h>
 #include <mfidl.h>
@@ -125,6 +126,14 @@ private:
                                        levels, UINT(std::size(levels)), D3D11_SDK_VERSION,
                                        &m_device, nullptr, nullptr);
         if (FAILED(hr))
+            return false;
+        // Without a real GPU, D3D11 falls back to the Basic Render Driver, whose
+        // emulated video processing is slower than Media Foundation's software path.
+        ComPtr<IDXGIDevice> dxgi;
+        ComPtr<IDXGIAdapter> adapter;
+        DXGI_ADAPTER_DESC desc{};
+        if (SUCCEEDED(m_device.As(&dxgi)) && SUCCEEDED(dxgi->GetAdapter(&adapter))
+            && SUCCEEDED(adapter->GetDesc(&desc)) && desc.VendorId == 0x1414 && desc.DeviceId == 0x8c)
             return false;
         // Media Foundation uses the device from its own threads.
         ComPtr<ID3D11Multithread> multithread;

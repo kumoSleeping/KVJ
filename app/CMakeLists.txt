@@ -92,7 +92,7 @@ if(APPLE)
 elseif(WIN32)
     target_sources(KVJ PRIVATE src/platform/win/MfDecoder.cpp)
     target_compile_definitions(KVJ PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-    target_link_libraries(KVJ PRIVATE mfplat mfreadwrite mfuuid d3d11 ole32 propsys)
+    target_link_libraries(KVJ PRIVATE mfplat mfreadwrite mfuuid d3d11 dxgi ole32 propsys)
 endif()
 
 # Headless decoder/player check (not shipped).
@@ -109,7 +109,7 @@ if(KVJ_BUILD_CHECKS)
     elseif(WIN32)
         target_sources(kvj-player-check PRIVATE src/platform/win/MfDecoder.cpp)
         target_compile_definitions(kvj-player-check PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-        target_link_libraries(kvj-player-check PRIVATE mfplat mfreadwrite mfuuid d3d11 ole32 propsys)
+        target_link_libraries(kvj-player-check PRIVATE mfplat mfreadwrite mfuuid d3d11 dxgi ole32 propsys)
     endif()
 endif()
 
