@@ -163,3 +163,54 @@ pub unsafe extern "C" fn kvj_string_free(text: *mut c_char) {
 pub extern "C" fn kvj_clock_ms() -> f64 {
     clock_ms()
 }
+
+/// Asked now and then during `kvj_waveform`; true abandons it.
+pub type StopFn = extern "C" fn(user: *mut c_void) -> bool;
+
+/// The timeline waveform of a media file (see `waveform`): `*columns` columns at
+/// `waveform::RATE` a second, as heights then R, G and B, one byte per column
+/// each, made once and kept under `cache_dir`. Blocks for seconds the first time.
+/// Null (and 0 columns) when the file has no audio or `stop` said so; release
+/// the bytes with `kvj_bytes_free`.
+/// # Safety
+/// `path` and `cache_dir` are NUL-terminated UTF-8; `columns` is writable.
+#[no_mangle]
+pub unsafe extern "C" fn kvj_waveform(
+    path: *const c_char,
+    cache_dir: *const c_char,
+    stop: Option<StopFn>,
+    user: *mut c_void,
+    columns: *mut usize,
+) -> *mut u8 {
+    if columns.is_null() {
+        return std::ptr::null_mut();
+    }
+    *columns = 0;
+    if path.is_null() || cache_dir.is_null() {
+        return std::ptr::null_mut();
+    }
+    let path = PathBuf::from(CStr::from_ptr(path).to_string_lossy().into_owned());
+    let cache = PathBuf::from(CStr::from_ptr(cache_dir).to_string_lossy().into_owned());
+    let user = user as usize;
+    let cancelled = move || stop.is_some_and(|stop| stop(user as *mut c_void));
+    match catch_unwind(AssertUnwindSafe(|| super::waveform::load(&path, &cache, &cancelled))) {
+        Ok(Ok(Some(wave))) if wave.columns > 0 => {
+            *columns = wave.columns;
+            Box::into_raw(wave.bytes.into_boxed_slice()) as *mut u8
+        }
+        Ok(Err(error)) => {
+            tracing::debug!("波形：{}：{error:#}", path.display());
+            std::ptr::null_mut()
+        }
+        _ => std::ptr::null_mut(),
+    }
+}
+
+/// # Safety
+/// `bytes` came from `kvj_waveform` with `columns` columns (or is null).
+#[no_mangle]
+pub unsafe extern "C" fn kvj_bytes_free(bytes: *mut u8, columns: usize) {
+    if !bytes.is_null() {
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(bytes, columns * 4)));
+    }
+}

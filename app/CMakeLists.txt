@@ -85,6 +85,7 @@ qt_add_qml_module(KVJ
         src/VideoPlayer.h src/VideoPlayer.cpp
         src/PreviewSurface.h src/PreviewSurface.cpp
         src/FilmStrip.h src/FilmStrip.cpp
+        src/WaveStrip.h src/WaveStrip.cpp
         src/FrameNode.h
         src/AudioFollower.h src/AudioFollower.cpp
         src/Decoder.h

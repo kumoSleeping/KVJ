@@ -28,9 +28,7 @@ QJsonObject roundTrip(KvjEngine *engine, const QJsonObject &request)
 Engine::Engine(QObject *parent)
     : QObject(parent)
 {
-    m_dataDir = qEnvironmentVariable("KVJ_DATA_DIR");
-    if (m_dataDir.isEmpty())
-        m_dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    m_dataDir = defaultDataDir();
     QDir().mkpath(m_dataDir);
     m_engine = kvj_engine_new(QDir::toNativeSeparators(m_dataDir).toUtf8().constData(), &Engine::onEvent, this);
 
@@ -53,6 +51,12 @@ Engine::~Engine()
     // Joins the worker: no event can reach this object afterwards.
     kvj_engine_free(m_engine);
     m_engine = nullptr;
+}
+
+QString Engine::defaultDataDir()
+{
+    const QString dir = qEnvironmentVariable("KVJ_DATA_DIR");
+    return dir.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) : dir;
 }
 
 double Engine::clockMs()

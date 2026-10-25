@@ -69,6 +69,8 @@ public:
     Q_INVOKABLE static QUrl fileUrl(const QString &path) { return QUrl::fromLocalFile(path); }
     // The engine's monotonic clock; matched.clock_at_ms is on it.
     Q_INVOKABLE static double clockMs();
+    // Where the Set document and caches live: $KVJ_DATA_DIR, else the app's data folder.
+    static QString defaultDataDir();
 
 signals:
     void documentChanged();

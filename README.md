@@ -44,7 +44,12 @@ double-click on the speed goes back to 100 %) and **跳转渐变**: every jump, 
 or by smart following, dissolves from the last picture over the chosen time
 (0.1–2 s), or cuts when it is off. Under it, the seek bar of the entry on the
 screen jumps the picture. Below that the Set's entries lie end to end as strips
-of their frames, with a ruler in each entry's own time: pinch on the trackpad
+of their frames over their sound's waveform, with a ruler in each entry's own
+time. The waveform is KDJ's whole-track preview (整曲预览): its height is the
+energy, its colour how the lows (red), mids (green) and highs (blue) stand
+against the rest of the file, and the part of the entry on the screen that has
+played is dimmed. It is analysed once per file, 100 columns a second, on a
+low-priority thread, and cached on disk, so it keeps its detail zoomed in. Pinch on the trackpad
 (or ⌘/Ctrl + scroll) zooms about the pointer down to a few frames, a two-finger
 swipe moves along, **全览** shows the whole Set again. Pressing or dragging on the
 strip only sets a mark and leaves the picture alone; **跳到此处** (or a double

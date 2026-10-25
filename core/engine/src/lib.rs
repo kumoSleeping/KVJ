@@ -16,6 +16,7 @@ mod index;
 mod output_tap;
 mod qos;
 mod runtime;
+pub mod waveform;
 
 pub use audio_input::{InputDevice, Selection};
 pub use bluetooth::Device as BluetoothDevice;

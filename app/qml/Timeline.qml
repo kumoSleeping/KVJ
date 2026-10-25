@@ -7,8 +7,9 @@ import KVJ
 // editor's timeline without editing anything. On top: play and pause, what is
 // on the screen, the speed and how jumps look, and the seek bar of the entry on
 // the screen, which jumps the picture. Below it the Set's entries lie end to end
-// as strips of their frames; pinch on the trackpad (or ⌘/Ctrl + scroll) zooms
-// in about the pointer down to a few frames, a two-finger swipe moves along.
+// as strips of their frames over their sound's waveform (KDJ's whole-track
+// preview, the part played dimmed); pinch on the trackpad (or ⌘/Ctrl + scroll)
+// zooms in about the pointer down to a few frames, a two-finger swipe moves along.
 // Pressing or dragging there only sets a mark and leaves the picture alone;
 // 跳到此处 (or a double press) plays from the mark. While smart following leads
 // only the entries that are on lie there, and the keys its helpers at work own
@@ -398,7 +399,9 @@ Rectangle {
                 id: strips
                 y: ruler.height
                 width: parent.width
-                height: 64
+                height: filmHeight + 1 + waveHeight
+                readonly property int filmHeight: 64
+                readonly property int waveHeight: 42
                 Repeater {
                     model: line.clips
                     Item {
@@ -418,13 +421,52 @@ Rectangle {
                             color: Theme.inset
                         }
                         FilmStrip {
-                            anchors.fill: parent
+                            width: parent.width
+                            height: strips.filmHeight
                             visible: piece.entry.video
                             source: visible ? piece.entry.path : ""
                             duration: piece.entry.duration
                             from: (piece.x - piece.cx) / line.pps
                             pxPerSec: line.pps
                             gap: Theme.inset
+                        }
+                        WaveStrip {
+                            id: wave
+                            y: strips.filmHeight + 1
+                            width: parent.width
+                            height: strips.waveHeight
+                            source: piece.entry.path
+                            from: (piece.x - piece.cx) / line.pps
+                            pxPerSec: line.pps
+                            background: Theme.inset
+                            // What has played of the entry on the screen, dimmed as in KDJ.
+                            Rectangle {
+                                visible: piece.playing
+                                width: Math.max(0, Math.min(parent.width, (line.position - wave.from) * line.pps))
+                                height: parent.height
+                                color: Theme.dark ? "#8c000000" : "#7dffffff"
+                            }
+                            Rectangle {
+                                visible: !wave.ready
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width
+                                height: 1
+                                color: Theme.line
+                            }
+                            Text {
+                                visible: wave.analysing && piece.width > 120
+                                anchors.centerIn: parent
+                                text: "分析波形…"
+                                font.pixelSize: 11
+                                color: Theme.faint
+                            }
+                        }
+                        // Between the picture and the sound: the panel's tone.
+                        Rectangle {
+                            y: strips.filmHeight
+                            width: parent.width
+                            height: 1
+                            color: Theme.raised
                         }
                         // Entries following does not watch are dimmed.
                         Rectangle {

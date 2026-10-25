@@ -3,6 +3,9 @@
 #ifndef KVJ_H
 #define KVJ_H
 
+#include <stdbool.h>
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -29,6 +32,15 @@ char *kvj_call(KvjEngine *engine, const char *request);
 void kvj_string_free(char *text);
 /* Monotonic milliseconds; a match's clock_at_ms is on this clock. */
 double kvj_clock_ms(void);
+
+/* The timeline waveform of a media file: *columns columns, 100 a second, as
+ * heights then R, G and B (low, mid, high strengths), one byte per column each.
+ * Cached under cache_dir; the first time it decodes the file and blocks for
+ * seconds, asking stop(user) now and then (true abandons). Null without audio.
+ * Free with kvj_bytes_free(bytes, columns). */
+typedef bool (*KvjStopFn)(void *user);
+unsigned char *kvj_waveform(const char *path, const char *cache_dir, KvjStopFn stop, void *user, size_t *columns);
+void kvj_bytes_free(unsigned char *bytes, size_t columns);
 
 #ifdef __cplusplus
 }
