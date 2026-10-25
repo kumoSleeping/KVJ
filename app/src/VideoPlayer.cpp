@@ -43,12 +43,13 @@ void VideoPlayer::recycle(VideoFrame &&frame)
         m_spare.push_back(std::move(frame.image));
 }
 
-bool VideoPlayer::frameFor(double target, VideoFrame *frame)
+bool VideoPlayer::frameFor(double target, VideoFrame *frame, double rate)
 {
     bool fresh = false;
     {
         std::lock_guard lock(m_mutex);
         m_target = target;
+        m_rate = rate;
         m_targetSet = true;
         // Keep the newest frame that is due; later ones wait their turn.
         while (m_queue.size() >= 2 && m_queue[1].pts <= target) {
@@ -107,14 +108,22 @@ void VideoPlayer::run()
             continue;
         }
         const double target = m_target;
+        const double rate = std::clamp(m_rate, 0.0, 2.0);
+        // A paused target never catches up with frames ahead of it: any step
+        // back is a seek.
+        const double back = rate < 0.05 ? 0.0 : kBackTolerance;
         const double oldest = m_queue.empty() ? cursor : m_queue.front().pts;
-        if (!positioned || target < oldest - kBackTolerance || target > cursor + kAheadLimit) {
-            // A seek superseded before it showed anything took at least this long.
+        if (!positioned || target < oldest - back || target > cursor + kAheadLimit) {
+            // A seek superseded after its lead ran out took at least this long;
+            // one superseded sooner (scrubbing) tells nothing.
             if (measuring) {
                 const double spent = std::chrono::duration<double>(std::chrono::steady_clock::now() - seekedAt).count();
-                lead = std::clamp(std::max(lead * 1.5, spent), 0.0, 1.5);
+                if (spent >= lead)
+                    lead = std::clamp(std::max(lead * 1.5, spent), 0.0, 1.5);
             }
-            double to = std::max(0.0, target + lead);
+            // Paused, start a little early so the frame showing at the target
+            // itself is decoded; earlier ones are dropped below.
+            double to = std::max(0.0, rate < 0.05 ? target - 0.05 : target + lead * rate);
             if (duration > 0)
                 to = std::min(to, std::max(0.0, duration - 0.05));
             while (!m_queue.empty()) {

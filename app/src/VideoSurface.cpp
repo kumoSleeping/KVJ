@@ -1,5 +1,6 @@
 #include "VideoSurface.h"
 
+#include "FrameNode.h"
 #include "PreviewSurface.h"
 #include "VideoPlayer.h"
 #include "kvj.h"
@@ -10,6 +11,12 @@
 #include <algorithm>
 #include <cmath>
 #include <utility>
+
+namespace {
+// The time due moved this much further than the clock took it: a jump, not a
+// fine correction of the follow.
+constexpr double kJump = 0.75;
+} // namespace
 
 VideoSurface::VideoSurface(QQuickItem *parent)
     : QQuickItem(parent)
@@ -44,15 +51,16 @@ void VideoSurface::detachPreview(PreviewSurface *preview)
 }
 
 // A reduced copy for each preview that is due one. Sampled down to twice the
-// size and halved smoothly: a soft picture for a fraction of a millisecond.
-void VideoSurface::feedPreviews()
+// size and halved smoothly: a soft picture for a fraction of a millisecond. The
+// first frame after a jump goes to every preview, so each dissolves with it.
+void VideoSurface::feedPreviews(bool jump)
 {
     if (m_previews.isEmpty() || m_pending.isNull())
         return;
     const double now = kvj_clock_ms();
     QImage small;
     for (PreviewSurface *preview : std::as_const(m_previews)) {
-        if (!preview->wantsFrame(now))
+        if (!preview->wantsFrame(now, jump))
             continue;
         const int height = preview->frameHeight();
         if (small.isNull() || small.height() != height) {
@@ -61,7 +69,7 @@ void VideoSurface::feedPreviews()
                 : m_pending;
             small = sampled.scaledToHeight(height, Qt::SmoothTransformation);
         }
-        preview->setFrame(small, now);
+        preview->setFrame(small, now, jump ? m_fadeMs : 0);
     }
 }
 
@@ -89,6 +97,9 @@ void VideoSurface::restart()
     // The old picture stays up until the new player has a frame for the target.
     m_player = m_source.isEmpty() ? nullptr : std::make_unique<VideoPlayer>(m_source, m_options);
     m_lastPts = -1;
+    m_lastTickAt = -1;
+    // Another file is a jump too: its first frame dissolves from the old one.
+    m_jumped = m_hasFrame;
     if (m_source.isEmpty()) {
         m_clear = true;
         m_newFrame = false;
@@ -115,8 +126,12 @@ void VideoSurface::tick()
         return;
     const double now = kvj_clock_ms();
     const double target = m_position + (now - m_clockAtMs + m_offsetMs) / 1000.0 * m_rate;
+    if (m_lastTickAt >= 0 && std::abs(target - (m_lastTarget + (now - m_lastTickAt) / 1000.0 * m_rate)) > kJump)
+        m_jumped = true;
+    m_lastTarget = target;
+    m_lastTickAt = now;
     VideoFrame frame;
-    if (m_player->frameFor(target, &frame)) {
+    if (m_player->frameFor(target, &frame, m_rate)) {
         // A frame-rate cap skips frames that follow the shown one too closely,
         // but never holds back a frame after a jump.
         const double minimum = m_maxFps > 0 ? 0.9 / m_maxFps : 0;
@@ -125,7 +140,9 @@ void VideoSurface::tick()
             m_lastPts = frame.pts;
             m_pending = std::move(frame.image);
             m_newFrame = true;
-            feedPreviews();
+            m_fadeNext = m_jumped && m_fadeMs > 0;
+            m_jumped = false;
+            feedPreviews(m_fadeNext);
             if (!m_hasFrame) {
                 m_hasFrame = true;
                 emit hasFrameChanged();
@@ -148,30 +165,26 @@ void VideoSurface::tick()
 
 QSGNode *VideoSurface::updatePaintNode(QSGNode *old, UpdatePaintNodeData *)
 {
-    auto *node = static_cast<QSGSimpleTextureNode *>(old);
+    auto *node = static_cast<FrameNode *>(old);
     if (m_clear) {
         m_clear = false;
         delete node;
         return nullptr;
     }
+    const double now = kvj_clock_ms();
     if (m_newFrame && !m_pending.isNull()) {
         m_newFrame = false;
         QSGTexture *texture = window()->createTextureFromImage(m_pending);
         // Hand the buffer back to the player's pool as soon as it is uploaded.
         m_pending = QImage();
-        if (!node) {
-            node = new QSGSimpleTextureNode;
-            node->setOwnsTexture(true);
-            node->setFiltering(QSGTexture::Linear);
-        }
-        node->setTexture(texture);
+        if (!node)
+            node = new FrameNode;
+        node->show(texture, std::exchange(m_fadeNext, false) ? m_fadeMs : 0, now);
     }
     if (!node)
         return nullptr;
-    // Fit inside the item, keeping the video's aspect ratio.
-    const QSizeF size = node->texture()->textureSize();
-    const QRectF bounds = boundingRect();
-    const QSizeF fitted = size.scaled(bounds.size(), Qt::KeepAspectRatio);
-    node->setRect(QRectF(bounds.center() - QPointF(fitted.width() / 2, fitted.height() / 2), fitted));
+    // A dissolve draws every display frame until it is over, then rests again.
+    if (node->layout(boundingRect(), now))
+        QMetaObject::invokeMethod(this, [this] { update(); }, Qt::QueuedConnection);
     return node;
 }

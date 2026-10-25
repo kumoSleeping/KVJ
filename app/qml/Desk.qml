@@ -8,8 +8,10 @@ import KVJ
 // The live desk, in the main window: a light preview of what is projected, and
 // what goes over it. The preview doubles as the stage for the next sticker: the
 // dot is where it will go, the slider beside it how tall, and the selected
-// sticker is drawn there as it will look. Below it, words and reactions, the
-// timeline and, at the foot, the sticker gallery; beside it all, the effects.
+// sticker is drawn there as it will look. Below it, the output (where the
+// picture goes, and the key that projects it), words and reactions, the
+// player's timeline and, at the foot, the sticker gallery; beside it all, the
+// effects.
 ColumnLayout {
     id: desk
     spacing: 0
@@ -17,10 +19,17 @@ ColumnLayout {
     // The projected surface the preview copies its picture from.
     property VideoSurface source
     property var entry: null
-    // The followed Set's entries and where following is, for the timeline.
+    // The Set's entries, and the window's player, for the timeline.
     property var entries: []
     property bool running: false
     property string phase: ""
+    property var player: null
+    // The projection window the output keys open and put away.
+    property var projection: null
+    // The output's quality: frames at most this tall (0 = source) and this many
+    // a second (0 = the material's own).
+    readonly property int maxHeight: [480, 720, 1080, 0][heightBox.currentIndex] ?? 720
+    readonly property int maxFps: [24, 30, 60, 0][fpsBox.currentIndex] ?? 30
 
     // Stickers in waiting, kept between runs: { id, kind: "image" | "text", source, text, name }.
     property var gallery: []
@@ -80,6 +89,12 @@ ColumnLayout {
         property alias mode: modeBox.currentIndex
         property alias size: desk.placeSize
     }
+    Settings {
+        category: "output"
+        property alias height: heightBox.currentIndex
+        property alias fps: fpsBox.currentIndex
+        property alias fullscreen: fullscreen.checked
+    }
     Component.onCompleted: {
         try {
             gallery = JSON.parse(store.gallery)
@@ -134,13 +149,13 @@ ColumnLayout {
                                 id: preview
                                 anchors.fill: parent
                                 source: desk.source
-                                fps: 12
+                                fps: 24
                             }
                         }
                         Text {
                             anchors.centerIn: parent
                             visible: !preview.hasFrame && !desk.entry
-                            text: "投放画面会在这里预览"
+                            text: "播放的画面在这里预览"
                             font.pixelSize: Theme.sizeSm
                             color: Theme.faint
                         }
@@ -193,8 +208,13 @@ ColumnLayout {
                         }
 
                         MouseArea {
+                            id: stagePointer
                             anchors.fill: parent
+                            hoverEnabled: true
                             cursorShape: Qt.CrossCursor
+                            ToolTip.visible: containsMouse && !pressed
+                            ToolTip.delay: 1200
+                            ToolTip.text: "点按定贴图位置 · 滚轮调大小 · 双击回中心"
                             function place(mouse) {
                                 desk.placeX = Math.max(0, Math.min(1, mouse.x / width))
                                 desk.placeY = Math.max(0, Math.min(1, mouse.y / height))
@@ -269,21 +289,41 @@ ColumnLayout {
                 }
             }
 
+            // The output: which screen, how, and the key that projects. Lower
+            // quality is lighter on a machine that also runs the DJ software.
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
-                Text {
+                Select {
+                    id: screenBox
                     Layout.fillWidth: true
-                    text: desk.entry ? desk.entry.title : "未在跟随"
-                    font.pixelSize: Theme.sizeSm
-                    font.weight: Font.DemiBold
-                    color: desk.entry ? Theme.text : Theme.muted
-                    elide: Text.ElideRight
+                    Layout.minimumWidth: 90
+                    model: Qt.application.screens.map((s, i) => (s.name || ("屏幕 " + (i + 1))) + " · " + s.width + "×" + s.height)
+                    currentIndex: Qt.application.screens.length > 1 ? 1 : 0
                 }
-                Text {
-                    text: "预览 12 帧 · 点按定位置 · 滚轮调大小 · 双击回中心"
-                    font.pixelSize: Theme.sizeXs
-                    color: Theme.faint
+                Select {
+                    id: heightBox
+                    Layout.preferredWidth: 84
+                    model: ["480p", "720p", "1080p", "原始"]
+                    currentIndex: 1
+                }
+                Select {
+                    id: fpsBox
+                    Layout.preferredWidth: 84
+                    model: ["24 帧", "30 帧", "60 帧", "原帧率"]
+                    currentIndex: 1
+                }
+                Toggle {
+                    id: fullscreen
+                    text: "全屏"
+                    checked: Qt.application.screens.length > 1
+                }
+                TextButton {
+                    primary: true
+                    iconName: desk.projection && desk.projection.visible ? "square" : "monitor"
+                    text: desk.projection && desk.projection.visible ? "收起投放" : "开始投放"
+                    onClicked: desk.projection.visible ? desk.projection.closeOutput()
+                                                       : desk.projection.openOn(screenBox.currentIndex, fullscreen.checked)
                 }
             }
 
@@ -381,6 +421,7 @@ ColumnLayout {
                 entries: desk.entries
                 running: desk.running
                 phase: desk.phase
+                player: desk.player
             }
 
             // —— Stickers: what is left at the foot; the gallery scrolls inside ——

@@ -17,6 +17,18 @@
 
 namespace {
 
+// The window on screen: the player's, or the sender's while it stands in.
+QQuickWindow *shownWindow()
+{
+    for (QWindow *window : QGuiApplication::topLevelWindows()) {
+        auto *quick = qobject_cast<QQuickWindow *>(window);
+        if (quick && quick->isVisible() && quick->title().startsWith(QLatin1String("KVJ"))
+            && quick->title() != QLatin1String("KVJ 投放"))
+            return quick;
+    }
+    return nullptr;
+}
+
 QJsonObject command(KvjEngine *engine, const QJsonObject &request)
 {
     char *reply = kvj_call(engine, QJsonDocument(request).toJson(QJsonDocument::Compact).constData());
@@ -103,20 +115,22 @@ int main(int argc, char *argv[])
         [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     engine.loadFromModule("KVJ", "Main");
 
-    // Development aid: KVJ_SNAPSHOT=<file.png> saves the control window and quits.
+    // Development aid: KVJ_SNAPSHOT=<file.png> saves the window on screen (the
+    // player's, or the sender's with --send) and quits.
     const QString snapshot = qEnvironmentVariable("KVJ_SNAPSHOT");
     if (!snapshot.isEmpty() && !engine.rootObjects().isEmpty()) {
-        auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
-        QTimer::singleShot(2500, &app, [window, snapshot] {
-            if (window)
+        QTimer::singleShot(2500, &app, [snapshot] {
+            if (QQuickWindow *window = shownWindow())
                 window->grabWindow().save(snapshot);
             QCoreApplication::quit();
         });
     }
     // Development aid: KVJ_DEV_DIR=<dir> lets a shell on this computer see the
     // running app without screen access. Every second <dir>/status.json gets the
-    // engine's view, the presented match, the timeline's playhead and the latest
-    // log lines; creating <dir>/snap saves the control window to <dir>/window.png.
+    // engine's view, the presented match, the player, the timeline's playhead and
+    // the latest log lines; creating <dir>/snap saves the window on screen to
+    // <dir>/window.png, and a line written to <dir>/cmd goes to the window's
+    // devCommand (Main.qml), its answer to <dir>/cmd.out.
     const QString devDir = qEnvironmentVariable("KVJ_DEV_DIR");
     if (!devDir.isEmpty() && !engine.rootObjects().isEmpty()) {
         QDir().mkpath(devDir);
@@ -134,6 +148,19 @@ int main(int argc, char *argv[])
                 status.insert("error", kvj->error());
                 status.insert("logs", QJsonArray::fromStringList(logs.mid(qMax(0, logs.size() - 30))));
             }
+            if (window) {
+                const QVariant shown = window->property("shownEntry");
+                status.insert("player", QJsonObject{
+                    {"entry", shown.toMap().value("title").toString()},
+                    {"playhead", window->property("playhead").toDouble()},
+                    {"tempo", window->property("shownTempo").toDouble()},
+                    {"following", window->property("following").toBool()},
+                    {"paused_follow", window->property("followPaused").toBool()},
+                    {"ai_picture", window->property("aiPicture").toBool()},
+                    {"fade_ms", window->property("fadeOn").toBool() ? window->property("fadeMs").toInt() : 0},
+                    {"visible", window->isVisible()},
+                });
+            }
             if (QObject *timeline = window ? window->findChild<QObject *>("timeline") : nullptr) {
                 status.insert("timeline", QJsonObject{
                     {"position", timeline->property("position").toDouble()},
@@ -147,9 +174,22 @@ int main(int argc, char *argv[])
                 out.write(QJsonDocument(status).toJson());
                 out.commit();
             }
-            if (window && QFile::exists(dir.filePath("snap"))) {
+            QFile cmd(dir.filePath("cmd"));
+            if (window && cmd.open(QIODevice::ReadOnly)) {
+                const QString line = QString::fromUtf8(cmd.readAll()).trimmed();
+                cmd.remove();
+                QVariant answer;
+                QMetaObject::invokeMethod(window, "devCommand", Q_RETURN_ARG(QVariant, answer), Q_ARG(QVariant, line));
+                QSaveFile reply(dir.filePath("cmd.out"));
+                if (reply.open(QIODevice::WriteOnly)) {
+                    reply.write((line + QStringLiteral(" -> ") + answer.toString() + QLatin1Char('\n')).toUtf8());
+                    reply.commit();
+                }
+            }
+            if (QFile::exists(dir.filePath("snap"))) {
                 QFile::remove(dir.filePath("snap"));
-                window->grabWindow().save(dir.filePath("window.png"));
+                if (QQuickWindow *shown = shownWindow())
+                    shown->grabWindow().save(dir.filePath("window.png"));
             }
         });
         tick->start(1000);

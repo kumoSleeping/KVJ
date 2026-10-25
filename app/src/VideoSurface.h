@@ -4,8 +4,10 @@
 // due now (position + elapsed engine clock × rate + offset) and shows the frame
 // for that time. It wakes only when the next frame is due and redraws only when
 // the frame changes, so a 30 fps video costs 30 redraws a second, not the
-// display's refresh rate. Without a new frame it keeps the last one. Previews
-// (PreviewSurface) get reduced copies of the frames it shows.
+// display's refresh rate. Without a new frame it keeps the last one. A jump (a
+// new file, or a time the clock alone would not have reached) can dissolve from
+// the old picture over `fadeMs`. Previews (PreviewSurface) get reduced copies of
+// the frames it shows.
 
 #include "Decoder.h"
 
@@ -32,6 +34,8 @@ class VideoSurface : public QQuickItem
     Q_PROPERTY(int maxHeight READ maxHeight WRITE setMaxHeight NOTIFY qualityChanged)
     // Show at most this many frames a second (0 = every frame of the source).
     Q_PROPERTY(int maxFps MEMBER m_maxFps NOTIFY qualityChanged)
+    // Dissolve this long into the picture after a jump (0 = cut).
+    Q_PROPERTY(int fadeMs MEMBER m_fadeMs NOTIFY fadeChanged)
     Q_PROPERTY(bool hasFrame READ hasFrame NOTIFY hasFrameChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
 
@@ -45,6 +49,7 @@ public:
     void setMaxHeight(int height);
     bool hasFrame() const { return m_hasFrame; }
     QString error() const { return m_error; }
+    int fadeMs() const { return m_fadeMs; }
     void attachPreview(PreviewSurface *preview);
     void detachPreview(PreviewSurface *preview);
 
@@ -52,6 +57,7 @@ signals:
     void sourceChanged();
     void timingChanged();
     void qualityChanged();
+    void fadeChanged();
     void hasFrameChanged();
     void errorChanged();
 
@@ -61,7 +67,7 @@ protected:
 private:
     void restart();
     void tick();
-    void feedPreviews();
+    void feedPreviews(bool jump);
 
     QString m_source;
     DecodeOptions m_options;
@@ -70,7 +76,14 @@ private:
     double m_clockAtMs = 0;
     double m_offsetMs = 0;
     int m_maxFps = 30;
+    int m_fadeMs = 0;
     double m_lastPts = -1;
+    // Where the last tick aimed and when, to tell a jump from time passing.
+    double m_lastTarget = 0;
+    double m_lastTickAt = -1;
+    // A jump happened; the first frame after it dissolves in.
+    bool m_jumped = false;
+    bool m_fadeNext = false;
     std::unique_ptr<VideoPlayer> m_player;
     QTimer m_timer;
     QImage m_pending;

@@ -41,6 +41,9 @@ qt_add_qml_module(KVJ
         qml/Toggle.qml
         qml/Seek.qml
         qml/SendPanel.qml
+        qml/SendWindow.qml
+        qml/Transport.qml
+        qml/Assistants.qml
         qml/Live.qml
         qml/Stage.qml
         qml/Sticker.qml
@@ -52,7 +55,9 @@ qt_add_qml_module(KVJ
         qml/icons/chevron-down.svg
         qml/icons/file-plus.svg
         qml/icons/folder-plus.svg
+        qml/icons/minus.svg
         qml/icons/monitor.svg
+        qml/icons/pause.svg
         qml/icons/play.svg
         qml/icons/plus.svg
         qml/icons/refresh.svg
@@ -77,6 +82,7 @@ qt_add_qml_module(KVJ
         src/VideoSurface.h src/VideoSurface.cpp
         src/VideoPlayer.h src/VideoPlayer.cpp
         src/PreviewSurface.h src/PreviewSurface.cpp
+        src/FrameNode.h
         src/Decoder.h
 )
 # Picture effects, compiled to every shading language Qt Quick may run on.

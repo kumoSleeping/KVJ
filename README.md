@@ -1,8 +1,10 @@
 # KVJ
 
-Live VJ for DJs: KVJ listens to what the DJ is playing, recognizes which video of
-the Set it belongs to and where, and projects that video in sync, with live words
-and emoji over the picture. macOS and Windows.
+Live VJ for DJs. KVJ is a video player first: pick an entry, play, pause, jump
+anywhere and set the speed by hand. It is a smart player second: smart following
+listens to what the DJ is playing, recognizes which video of the Set it belongs
+to and where, and plays that video in sync, jumping and changing speed with the
+music. Live words and emoji go over the picture. macOS and Windows.
 
 - `core/recognize` — short-window acoustic landmark retrieval and verification.
 - `core/engine` — Set document, indexing, native audio capture (Core Audio Tap,
@@ -13,10 +15,12 @@ and emoji over the picture. macOS and Windows.
 
 ## Two computers
 
-The DJ's computer can run KVJ in **只发送** (`KVJ --send`): it captures the
-Master, turns it into recognition features and streams them over classic
-Bluetooth (RFCOMM) to the projecting computer. Nothing else runs there — no Set,
-index or video — so it stays light next to the DJ software. The projecting
+The DJ's computer runs only the sender: **只发送** at the bottom right of the
+window (or `KVJ --send`) puts the player away and opens a small window that
+captures the Master, turns it into recognition features and streams them over
+Bluetooth to the projecting computer; closing it brings the player back. Nothing
+else runs there — no Set, index or video — so it stays light next to the DJ
+software. The projecting
 computer picks **蓝牙接收** as its input and chooses the current DJ among the
 connected ones. Pair the two computers in the system's Bluetooth settings first.
 
@@ -28,15 +32,30 @@ works during the show too: at a handover between DJs the next DJ's entries are
 turned on while the last ones stay on, and the last are turned off once the next
 set is under way. Every entry is indexed either way, so switching never waits
 for indexing; turning off the entry on the screen keeps the picture until
-another entry is found. The middle is the live desk, the right side follows and
-projects, or only sends.
+another entry is found. The middle is the live desk with the player; the right
+side is smart following.
 
-The **timeline** under the desk has a lane per entry that is on: the one on the
-screen with a playhead carried on the engine's clock, the others holding where
-they were last seen. Above the lanes, the speed the music runs at against the
-recording (×1.025, +2.5 %) and whether it has settled. Below the timeline sits
-the sticker gallery; the effects have the column beside the desk. The detailed
-recognition log is no longer shown.
+Under the preview are the output (screen, resolution, frame rate, full screen)
+and **开始投放**. The **timeline** is the player's transport: a lane per entry,
+the one on the screen with a playhead, the others holding where they were last
+seen; pressing or dragging on a lane plays that entry from there, its name plays
+it from the start, and at the end of an entry the next one follows. Above the
+lanes: play and pause (Space; ← and → jump five seconds), the speed (a bar from
+−50 % to +50 % and keys a percent at a time; double-click the bar for 100 %), and
+**跳转渐变**: every jump, by hand or by smart following, dissolves from the last
+picture over the chosen time (0.1–2 s), or cuts when it is off. Seeks aim ahead
+by what passes while the decoder gets there, and a paused seek lands on the exact
+frame. Below the timeline sits the sticker gallery; the effects have the column
+beside the desk.
+
+**智能跟随音频跳转与调速** on the right takes the picture from the player while it
+is on: the player's keys grey out and the timeline shows where following is.
+**暂停** hands the picture back without stopping to listen; paused or stopped,
+the player carries on from the same frame at the same speed. At its foot two
+helpers show their work: **对速** keeps the speed with the music (its dot swings
+at the followed speed), **跳转监测** watches how far the music is from the
+picture against the jump threshold (2.5 s, or 2 s without a confirmation) and
+ripples in amber once it is passed or the music goes quiet.
 
 ## Live desk
 

@@ -27,10 +27,12 @@ public:
     void setSource(VideoSurface *source);
     bool hasFrame() const { return m_hasFrame; }
 
-    // Called by the source on the GUI thread.
-    bool wantsFrame(double nowMs) const;
+    // Called by the source on the GUI thread. The first frame after a jump is
+    // `urgent`: it is taken whenever the preview is up, and dissolves in over
+    // `fadeMs` like the source's own picture.
+    bool wantsFrame(double nowMs, bool urgent = false) const;
     int frameHeight() const;
-    void setFrame(const QImage &image, double nowMs);
+    void setFrame(const QImage &image, double nowMs, int fadeMs = 0);
     void clearFrame();
 
 signals:
@@ -47,6 +49,7 @@ private:
     double m_lastAt = -1e9;
     QImage m_pending;
     bool m_newFrame = false;
+    int m_fadeMs = 0;
     bool m_clear = false;
     bool m_hasFrame = false;
 };

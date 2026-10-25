@@ -1,9 +1,13 @@
 #include "PreviewSurface.h"
 
+#include "FrameNode.h"
+#include "kvj.h"
+
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
 
 #include <algorithm>
+#include <utility>
 
 PreviewSurface::PreviewSurface(QQuickItem *parent)
     : QQuickItem(parent)
@@ -30,11 +34,11 @@ void PreviewSurface::setSource(VideoSurface *source)
     emit sourceChanged();
 }
 
-bool PreviewSurface::wantsFrame(double nowMs) const
+bool PreviewSurface::wantsFrame(double nowMs, bool urgent) const
 {
     if (!isVisible() || width() < 1 || height() < 1 || !window() || !window()->isVisible())
         return false;
-    return m_fps > 0 && nowMs - m_lastAt >= 1000.0 / m_fps - 2.0;
+    return m_fps > 0 && (urgent || nowMs - m_lastAt >= 1000.0 / m_fps - 2.0);
 }
 
 // Tall enough for the item on this screen, never more than a small picture.
@@ -44,11 +48,14 @@ int PreviewSurface::frameHeight() const
     return std::clamp(int(height() * ratio), 72, 360);
 }
 
-void PreviewSurface::setFrame(const QImage &image, double nowMs)
+void PreviewSurface::setFrame(const QImage &image, double nowMs, int fadeMs)
 {
     m_lastAt = nowMs;
     m_pending = image;
     m_newFrame = true;
+    // Kept until drawn: two frames in one render still dissolve once.
+    if (fadeMs > 0)
+        m_fadeMs = fadeMs;
     if (!m_hasFrame) {
         m_hasFrame = true;
         emit hasFrameChanged();
@@ -71,28 +78,24 @@ void PreviewSurface::clearFrame()
 
 QSGNode *PreviewSurface::updatePaintNode(QSGNode *old, UpdatePaintNodeData *)
 {
-    auto *node = static_cast<QSGSimpleTextureNode *>(old);
+    auto *node = static_cast<FrameNode *>(old);
     if (m_clear) {
         m_clear = false;
         delete node;
         node = nullptr;
     }
+    const double now = kvj_clock_ms();
     if (m_newFrame && !m_pending.isNull()) {
         m_newFrame = false;
         QSGTexture *texture = window()->createTextureFromImage(m_pending);
         m_pending = QImage();
-        if (!node) {
-            node = new QSGSimpleTextureNode;
-            node->setOwnsTexture(true);
-            node->setFiltering(QSGTexture::Linear);
-        }
-        node->setTexture(texture);
+        if (!node)
+            node = new FrameNode;
+        node->show(texture, std::exchange(m_fadeMs, 0), now);
     }
     if (!node)
         return nullptr;
-    const QSizeF size = node->texture()->textureSize();
-    const QRectF bounds = boundingRect();
-    const QSizeF fitted = size.scaled(bounds.size(), Qt::KeepAspectRatio);
-    node->setRect(QRectF(bounds.center() - QPointF(fitted.width() / 2, fitted.height() / 2), fitted));
+    if (node->layout(boundingRect(), now))
+        QMetaObject::invokeMethod(this, [this] { update(); }, Qt::QueuedConnection);
     return node;
 }

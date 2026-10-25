@@ -2,9 +2,10 @@ import QtQuick
 import QtQuick.Window
 import KVJ
 
-// The projected output: the followed video, the title of an audio-only entry,
-// the effects, stickers and live overlay (Stage). It carries no controls or
-// status. The operator's preview copies its picture from `surface`.
+// The projected output: the player's video (its own clock, or the engine's match
+// while smart following leads), the title of an audio-only entry, the effects,
+// stickers and live overlay (Stage). It carries no controls or status. The
+// operator's monitor and preview copy their picture from `surface`.
 Window {
     id: root
     title: "KVJ 投放"
@@ -12,14 +13,20 @@ Window {
     width: 960
     height: 540
 
+    // What to show and where it is: `position` seconds at `clockAtMs` on the
+    // engine's clock, moving at `rate` (0 while paused).
+    property var entry: null
+    property real position: 0
+    property real rate: 1
+    property real clockAtMs: 0
     property real offsetMs: 0
+    // Dissolve into the picture after a jump (0 = cut).
+    property int fadeMs: 0
     property int maxHeight: 720
     property int maxFps: 30
     // The operator's preview is up: keep decoding even while this is put away.
     property bool previewing: false
     readonly property alias surface: surface
-    readonly property var match: Engine.matched && Engine.matched.entry ? Engine.matched : null
-    readonly property var entry: match ? match.entry : null
 
     function openOn(screenIndex, fullscreen) {
         const screens = Qt.application.screens
@@ -53,10 +60,11 @@ Window {
             source: (root.visible || root.previewing) && root.entry && root.entry.video ? root.entry.path : ""
             maxHeight: root.maxHeight
             maxFps: root.maxFps
-            position: root.match ? root.match.position : 0
-            rate: root.match ? root.match.rate : 1
-            clockAtMs: root.match ? root.match.clock_at_ms : 0
+            position: root.position
+            rate: root.rate
+            clockAtMs: root.clockAtMs
             offsetMs: root.offsetMs
+            fadeMs: root.fadeMs
         }
     }
     Shortcut {

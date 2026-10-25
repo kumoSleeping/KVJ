@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import QtQuick.Window
 import KVJ
 
 // Sender-only mode for the DJ's computer: pick the receiving computer, the
@@ -46,13 +47,13 @@ ColumnLayout {
         }
     }
 
-    // Bluetooth is touched only once this page is opened (the system may ask for
-    // access). Receivers come and go, so the list refreshes while it is shown.
+    // Bluetooth is touched only once the sender is opened (the system may ask
+    // for access). Receivers come and go, so the list refreshes while it is shown.
     Timer {
         interval: 8000
         repeat: true
         triggeredOnStart: true
-        running: panel.visible && !panel.running
+        running: panel.visible && !!panel.Window.window && panel.Window.window.visible && !panel.running
         onTriggered: Engine.scanBluetooth()
     }
 

@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 
-// Thin track with an ink fill and a round handle.
+// Thin track with an ink fill and a round handle; faint while disabled.
 Slider {
     id: control
     implicitHeight: Theme.control
@@ -19,7 +19,7 @@ Slider {
             width: Math.abs(control.visualPosition - zero) * parent.width
             height: parent.height
             radius: 1.5
-            color: Theme.text
+            color: control.enabled ? Theme.text : Theme.faint
         }
     }
     handle: Rectangle {
@@ -28,7 +28,7 @@ Slider {
         implicitWidth: 14
         implicitHeight: 14
         radius: 7
-        color: Theme.text
+        color: control.enabled ? Theme.text : Theme.faint
         scale: control.pressed ? 1.15 : 1
     }
 }
