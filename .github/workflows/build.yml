@@ -40,7 +40,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: ${{ matrix.qt_arch }}
-          modules: qtimageformats
+          modules: qtimageformats qtshadertools
           cache: true
 
       - uses: ilammy/msvc-dev-cmd@v1

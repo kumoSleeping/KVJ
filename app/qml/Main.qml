@@ -91,9 +91,15 @@ ApplicationWindow {
 
     Projection {
         id: projection
+        previewing: desk.visible
         offsetMs: offset.value
         maxHeight: app.heights[heightBox.currentIndex] ?? 720
         maxFps: app.rates[fpsBox.currentIndex] ?? 30
+    }
+    LiveDesk {
+        id: desk
+        source: projection.surface
+        entry: projection.entry
     }
     Settings {
         category: "output"
@@ -549,49 +555,29 @@ ApplicationWindow {
                     }
                 }
 
+                // The live desk: preview, words, reactions, stickers and effects.
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 8
-                    Caption { text: "弹幕" }
+                    Caption { text: "现场" }
                     RowLayout {
                         Layout.fillWidth: true
-                        spacing: 6
-                        Field {
-                            id: words
+                        Text {
                             Layout.fillWidth: true
-                            onAccepted: {
-                                projection.overlay.say(text)
-                                clear()
-                            }
+                            text: "预览 · 弹幕 · 表情 · 贴图 · 效果"
+                            font.pixelSize: Theme.sizeSm
+                            color: Theme.muted
+                            elide: Text.ElideRight
                         }
-                        IconButton {
-                            iconName: "send"
-                            tip: "发到画面上"
-                            enabled: words.text.trim().length > 0
-                            onClicked: words.accepted()
-                        }
-                    }
-                    Flow {
-                        Layout.fillWidth: true
-                        spacing: 2
-                        Repeater {
-                            model: ["🎉", "👏", "❤️", "🔥", "😂", "✨", "🙌", "🎶"]
-                            ToolButton {
-                                id: emoji
-                                required property string modelData
-                                implicitWidth: 36
-                                implicitHeight: 36
-                                padding: 0
-                                onClicked: projection.overlay.pop(modelData)
-                                contentItem: Text {
-                                    text: emoji.modelData
-                                    font.pixelSize: 20
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-                                background: Rectangle {
-                                    radius: Theme.radius
-                                    color: emoji.down ? Theme.line : emoji.hovered ? Theme.hover : "transparent"
+                        TextButton {
+                            iconName: "monitor"
+                            text: desk.visible ? "收起现场台" : "现场台"
+                            onClicked: {
+                                if (desk.visible) {
+                                    desk.close()
+                                } else {
+                                    desk.show()
+                                    desk.raise()
                                 }
                             }
                         }
@@ -648,5 +634,6 @@ ApplicationWindow {
         if (app.running)
             Engine.stop()
         projection.closeOutput()
+        desk.close()
     }
 }

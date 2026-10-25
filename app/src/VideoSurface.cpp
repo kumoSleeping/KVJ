@@ -1,5 +1,6 @@
 #include "VideoSurface.h"
 
+#include "PreviewSurface.h"
 #include "VideoPlayer.h"
 #include "kvj.h"
 
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 VideoSurface::VideoSurface(QQuickItem *parent)
     : QQuickItem(parent)
@@ -23,7 +25,45 @@ VideoSurface::VideoSurface(QQuickItem *parent)
     });
 }
 
-VideoSurface::~VideoSurface() = default;
+VideoSurface::~VideoSurface()
+{
+    const QList<PreviewSurface *> previews = std::exchange(m_previews, {});
+    for (PreviewSurface *preview : previews)
+        preview->setSource(nullptr);
+}
+
+void VideoSurface::attachPreview(PreviewSurface *preview)
+{
+    if (!m_previews.contains(preview))
+        m_previews.append(preview);
+}
+
+void VideoSurface::detachPreview(PreviewSurface *preview)
+{
+    m_previews.removeAll(preview);
+}
+
+// A reduced copy for each preview that is due one. Sampled down to twice the
+// size and halved smoothly: a soft picture for a fraction of a millisecond.
+void VideoSurface::feedPreviews()
+{
+    if (m_previews.isEmpty() || m_pending.isNull())
+        return;
+    const double now = kvj_clock_ms();
+    QImage small;
+    for (PreviewSurface *preview : std::as_const(m_previews)) {
+        if (!preview->wantsFrame(now))
+            continue;
+        const int height = preview->frameHeight();
+        if (small.isNull() || small.height() != height) {
+            const QImage sampled = m_pending.height() > height * 2
+                ? m_pending.scaledToHeight(height * 2, Qt::FastTransformation)
+                : m_pending;
+            small = sampled.scaledToHeight(height, Qt::SmoothTransformation);
+        }
+        preview->setFrame(small, now);
+    }
+}
 
 void VideoSurface::setSource(const QString &source)
 {
@@ -57,6 +97,8 @@ void VideoSurface::restart()
             m_hasFrame = false;
             emit hasFrameChanged();
         }
+        for (PreviewSurface *preview : std::as_const(m_previews))
+            preview->clearFrame();
         update();
     } else {
         m_timer.start(0);
@@ -83,6 +125,7 @@ void VideoSurface::tick()
             m_lastPts = frame.pts;
             m_pending = std::move(frame.image);
             m_newFrame = true;
+            feedPreviews();
             if (!m_hasFrame) {
                 m_hasFrame = true;
                 emit hasFrameChanged();

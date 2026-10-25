@@ -3,7 +3,8 @@ import QtQuick.Window
 import KVJ
 
 // The projected output: the followed video, the title of an audio-only entry,
-// and the live overlay. It carries no controls or status.
+// the effects, stickers and live overlay (Stage). It carries no controls or
+// status. The operator's preview copies its picture from `surface`.
 Window {
     id: root
     title: "KVJ 投放"
@@ -14,7 +15,9 @@ Window {
     property real offsetMs: 0
     property int maxHeight: 720
     property int maxFps: 30
-    property alias overlay: overlay
+    // The operator's preview is up: keep decoding even while this is put away.
+    property bool previewing: false
+    readonly property alias surface: surface
     readonly property var match: Engine.matched && Engine.matched.entry ? Engine.matched : null
     readonly property var entry: match ? match.entry : null
 
@@ -40,32 +43,21 @@ Window {
         hide()
     }
 
-    VideoSurface {
-        id: surface
+    Stage {
         anchors.fill: parent
-        // Nothing is decoded while the output is put away.
-        source: root.visible && root.entry && root.entry.video ? root.entry.path : ""
-        maxHeight: root.maxHeight
-        maxFps: root.maxFps
-        position: root.match ? root.match.position : 0
-        rate: root.match ? root.match.rate : 1
-        clockAtMs: root.match ? root.match.clock_at_ms : 0
-        offsetMs: root.offsetMs
-    }
-    Text {
-        anchors.centerIn: parent
-        width: parent.width * 0.8
-        horizontalAlignment: Text.AlignHCenter
-        wrapMode: Text.Wrap
-        visible: !!root.entry && !root.entry.video
-        text: root.entry ? root.entry.title : ""
-        color: "white"
-        font.pixelSize: Math.max(28, root.height / 12)
-        font.weight: Font.DemiBold
-    }
-    Overlay {
-        id: overlay
-        anchors.fill: parent
+        entry: root.entry
+        VideoSurface {
+            id: surface
+            anchors.fill: parent
+            // Nothing is decoded while neither the output nor the preview is up.
+            source: (root.visible || root.previewing) && root.entry && root.entry.video ? root.entry.path : ""
+            maxHeight: root.maxHeight
+            maxFps: root.maxFps
+            position: root.match ? root.match.position : 0
+            rate: root.match ? root.match.rate : 1
+            clockAtMs: root.match ? root.match.clock_at_ms : 0
+            offsetMs: root.offsetMs
+        }
     }
     Shortcut {
         sequence: "Esc"

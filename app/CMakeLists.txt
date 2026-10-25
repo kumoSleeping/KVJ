@@ -7,7 +7,7 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2 Svg)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Quick QuickControls2 Svg ShaderTools)
 qt_standard_project_setup(REQUIRES 6.8)
 
 # The Rust engine (../core/engine) is built by Cargo and linked as a static library.
@@ -24,7 +24,7 @@ corrosion_import_crate(
 qt_add_executable(KVJ MACOSX_BUNDLE WIN32
     src/main.cpp
 )
-set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/Theme.qml qml/Live.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(KVJ
     URI KVJ
     VERSION 1.0
@@ -41,6 +41,10 @@ qt_add_qml_module(KVJ
         qml/Toggle.qml
         qml/Seek.qml
         qml/SendPanel.qml
+        qml/Live.qml
+        qml/Stage.qml
+        qml/Sticker.qml
+        qml/LiveDesk.qml
     RESOURCES
         qml/icons/check.svg
         qml/icons/chevron-down.svg
@@ -54,12 +58,29 @@ qt_add_qml_module(KVJ
         qml/icons/square.svg
         qml/icons/trash.svg
         qml/icons/x.svg
+        qml/emoji/1f389.webp
+        qml/emoji/1f44f.webp
+        qml/emoji/1f496.webp
+        qml/emoji/1f525.webp
+        qml/emoji/1f602.webp
+        qml/emoji/1f62e.webp
+        qml/emoji/1f64c.webp
+        qml/emoji/1f973.webp
+        qml/emoji/1f60d.webp
+        qml/emoji/1f918.webp
+        qml/emoji/2728.webp
+        qml/emoji/1faa9.webp
     SOURCES
         src/Engine.h src/Engine.cpp
         src/VideoSurface.h src/VideoSurface.cpp
         src/VideoPlayer.h src/VideoPlayer.cpp
+        src/PreviewSurface.h src/PreviewSurface.cpp
         src/Decoder.h
 )
+# Picture effects, compiled to every shading language Qt Quick may run on.
+qt_add_shaders(KVJ "shaders"
+    PREFIX "/qt/qml/KVJ"
+    FILES shaders/effects.frag)
 target_include_directories(KVJ PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/engine/include)

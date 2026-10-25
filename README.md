@@ -20,17 +20,34 @@ index or video — so it stays light next to the DJ software. The projecting
 computer picks **蓝牙接收** as its input and chooses the current DJ among the
 connected ones. Pair the two computers in the system's Bluetooth settings first.
 
+## Live desk
+
+**现场台** opens a second window for the show itself: a light preview of the
+projection, danmaku (Enter sends; scrolling or large in the middle), Google
+Meet–style reactions (Noto's animated emoji rising up the sides; hold to send a
+stream), stickers and picture effects. Stickers are kept in a gallery of images
+and words; the preview doubles as the stage, where a dot marks where the
+selected one goes and a slider sets its size, and it is drawn there as it will
+look before it is posted. Each effect (mosaic, RGB split, video wall, lens, zoom
+blur, wave, glitch, scanlines, halftone, posterize, hue, black and white,
+vignette) is on and at 0 until its slider moves; effects touch only the video,
+never the words or stickers. Danmaku from elsewhere can come in through
+`Live.say(text, from)` (`app/qml/Live.qml`).
+
 ## Load
 
 Video is decoded and scaled by the system (VideoToolbox / Media Foundation with
 D3D11), capped by the chosen resolution (default 720p) and frame rate (default
 30). Three frames are held ahead and their buffers reused, the picture redraws
-only when a new frame is due, and nothing is decoded while the output is put
-away.
+only when a new frame is due, and nothing is decoded while neither the output nor
+the preview is up. The preview decodes nothing of its own: it takes a reduced
+copy of the projected frame about 12 times a second, and its overlay moves on a
+12 Hz clock. With every effect at 0 the picture is drawn without the effect pass.
 
 ## Build
 
-Needs Rust (stable), CMake ≥ 3.22, Ninja and Qt 6.8.
+Needs Rust (stable), CMake ≥ 3.22, Ninja and Qt 6.8 with Qt Shader Tools and Qt
+Image Formats.
 
 ```sh
 cargo test -p kvj-recognize -p kvj-engine

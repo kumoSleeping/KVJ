@@ -4,15 +4,18 @@
 // due now (position + elapsed engine clock × rate + offset) and shows the frame
 // for that time. It wakes only when the next frame is due and redraws only when
 // the frame changes, so a 30 fps video costs 30 redraws a second, not the
-// display's refresh rate. Without a new frame it keeps the last one.
+// display's refresh rate. Without a new frame it keeps the last one. Previews
+// (PreviewSurface) get reduced copies of the frames it shows.
 
 #include "Decoder.h"
 
 #include <QImage>
 #include <QQuickItem>
+#include <QList>
 #include <QTimer>
 #include <memory>
 
+class PreviewSurface;
 class VideoPlayer;
 
 class VideoSurface : public QQuickItem
@@ -42,6 +45,8 @@ public:
     void setMaxHeight(int height);
     bool hasFrame() const { return m_hasFrame; }
     QString error() const { return m_error; }
+    void attachPreview(PreviewSurface *preview);
+    void detachPreview(PreviewSurface *preview);
 
 signals:
     void sourceChanged();
@@ -56,6 +61,7 @@ protected:
 private:
     void restart();
     void tick();
+    void feedPreviews();
 
     QString m_source;
     DecodeOptions m_options;
@@ -72,4 +78,5 @@ private:
     bool m_clear = false;
     bool m_hasFrame = false;
     QString m_error;
+    QList<PreviewSurface *> m_previews;
 };
