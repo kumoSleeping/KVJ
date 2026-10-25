@@ -786,7 +786,8 @@ Item {
                                 }
                                 // Pressed, it switches; dragged on over the other
                                 // keys, it switches them the same way. Dragged back,
-                                // the keys it leaves go back to how they were.
+                                // the keys it leaves go back to how they were, the
+                                // pressed one too once the drag has left it and returns.
                                 MouseArea {
                                     id: switchTap
                                     anchors.fill: parent
@@ -794,9 +795,11 @@ Item {
                                     preventStealing: true
                                     cursorShape: Qt.PointingHandCursor
                                     property bool turning: false
+                                    property bool swept: false
                                     property var before: ({})
                                     onPressed: {
                                         before = Live.level
+                                        swept = false
                                         turning = !effect.on
                                         Live.switchEffect(effect.key, turning)
                                     }
@@ -806,11 +809,14 @@ Item {
                                         const p = mapToItem(effectList.contentItem, mouse.x, mouse.y)
                                         const step = effectList.rowHeight + effectList.spacing
                                         const to = Math.max(0, Math.min(effectList.count - 1, Math.floor(p.y / step)))
+                                        if (to !== effect.index)
+                                            swept = true
+                                        const back = swept && to === effect.index
                                         const lo = Math.min(effect.index, to)
                                         const hi = Math.max(effect.index, to)
                                         for (let i = 0; i < effectList.count; ++i) {
                                             const k = Live.chain.get(i).key
-                                            if (i >= lo && i <= hi)
+                                            if (!back && i >= lo && i <= hi)
                                                 Live.switchEffect(k, turning)
                                             else if (Live.amount(k) !== (before[k] || 0))
                                                 Live.setLevel(k, before[k] || 0)
