@@ -60,8 +60,11 @@ energy, its colour how the lows (red), mids (green) and highs (blue) stand
 against the rest of the file, and the part of the entry on the screen that has
 played is dimmed. It is analysed once per file, 100 columns a second, on a
 low-priority thread, and cached on disk, so it keeps its detail zoomed in. Pinch on the trackpad
-(or ⌘/Ctrl + scroll) zooms about the pointer down to a few frames, a two-finger
-swipe moves along, **全览** shows the whole Set again. Pressing or dragging on the
+(or ⌘/Ctrl + scroll) zooms about the pointer down to a few frames; a two-finger
+swipe moves the strip with the fingers, along the axis it started on and on
+through its momentum, and a mouse wheel (or a Windows touchpad) moves a tenth of
+the view a notch, tilted or with Shift as well; scrolling over the bar above
+does the same. **全览** shows the whole Set again. Pressing or dragging on the
 strip only sets the cursor and leaves the picture alone; **跳至光标处** (or
 Enter) plays from it. While playing, the strip follows the playhead unless
 it was touched in the last few seconds. Frames for the strip are decoded small

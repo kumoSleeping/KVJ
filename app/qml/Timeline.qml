@@ -101,6 +101,33 @@ Rectangle {
         zoom = 0
         viewStart = 0
     }
+    // Scrolling over the strip or the bar. A trackpad (a gesture with phases,
+    // as macOS sends) moves the strip with the fingers, one for one, along the
+    // axis the gesture started on, its momentum included: a swipe across that
+    // drifts up or down does not jitter. A wheel (any mouse; Windows sends
+    // touchpads as fine wheel steps too) moves a tenth of the view a notch,
+    // tilted or with Shift across as well. ⌘/Ctrl zooms about the pointer, as
+    // a pinch does (Windows sends a touchpad's pinch as Ctrl + wheel).
+    property int swipeAxis: 0
+    function scroll(wheel, x) {
+        const p = wheel.pixelDelta
+        const a = wheel.angleDelta
+        if (wheel.modifiers & (Qt.ControlModifier | Qt.MetaModifier)) {
+            const delta = p.y !== 0 ? p.y * 4 : a.y !== 0 ? a.y : a.x
+            zoomAt(x, Math.pow(1.0015, delta))
+            return
+        }
+        if (wheel.phase !== Qt.NoScrollPhase && (p.x !== 0 || p.y !== 0)) {
+            if (wheel.phase === Qt.ScrollBegin)
+                swipeAxis = 0
+            if (swipeAxis === 0)
+                swipeAxis = Math.abs(p.x) >= Math.abs(p.y) ? 1 : 2
+            pan(-(swipeAxis === 1 ? p.x : p.y))
+            return
+        }
+        const notches = (Math.abs(a.x) > Math.abs(a.y) ? a.x : a.y) / 120
+        pan(-notches * span * 0.1 * pps)
+    }
     function setMark(x) {
         const t = Math.max(0, Math.min(total - 0.001, viewLeft + x / pps))
         for (const c of clips) {
@@ -451,6 +478,8 @@ Rectangle {
                 onPositionChanged: mouse => seek(mouse)
                 onReleased: line.player.scrubbing = false
                 onCanceled: line.player.scrubbing = false
+                // Scrolling here moves the strip's view as scrolling on it does.
+                onWheel: wheel => line.scroll(wheel, track.width / 2)
             }
         }
 
@@ -678,19 +707,7 @@ Rectangle {
                     if (pressed)
                         line.setMark(Math.max(0, Math.min(width, mouse.x)))
                 }
-                // ⌘/Ctrl + scroll zooms about the pointer; scrolling either way moves along.
-                onWheel: wheel => {
-                    if (wheel.modifiers & (Qt.ControlModifier | Qt.MetaModifier)) {
-                        const delta = wheel.pixelDelta.y !== 0 ? wheel.pixelDelta.y * 4 : wheel.angleDelta.y
-                        line.zoomAt(wheel.x, Math.pow(1.0015, delta))
-                        return
-                    }
-                    const p = wheel.pixelDelta
-                    const a = wheel.angleDelta
-                    const pixels = p.x !== 0 || p.y !== 0 ? -(Math.abs(p.x) > Math.abs(p.y) ? p.x : p.y)
-                                                          : -(Math.abs(a.x) > Math.abs(a.y) ? a.x : a.y) / 2
-                    line.pan(pixels)
-                }
+                onWheel: wheel => line.scroll(wheel, wheel.x)
             }
             // Trackpad pinch.
             PinchHandler {
