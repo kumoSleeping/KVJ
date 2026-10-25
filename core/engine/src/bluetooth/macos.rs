@@ -8,6 +8,7 @@ use std::{
 unsafe extern "C" {
     fn kvj_bt_scan(inquiry: i32, error: *mut c_char, cap: usize) -> *mut c_char;
     fn kvj_bt_free_string(text: *mut c_char);
+    fn kvj_bt_offers(addresses: *const c_char, timeout_ms: i32, error: *mut c_char, cap: usize) -> *mut c_char;
     fn kvj_bt_listen(error: *mut c_char, cap: usize) -> *mut c_void;
     fn kvj_bt_connect(address: *const c_char, error: *mut c_char, cap: usize) -> *mut c_void;
     fn kvj_bt_connect_poll(handle: *mut c_void, error: *mut c_char, cap: usize) -> i32;
@@ -31,6 +32,18 @@ pub fn scan(inquiry: bool) -> Result<Vec<Device>> {
     // Returned string is owned by this call; copy/parse then free even on failure.
     unsafe {
         let text = kvj_bt_scan(i32::from(inquiry), error.as_mut_ptr(), error.len());
+        anyhow::ensure!(!text.is_null(), "{}", message(&error));
+        let result = serde_json::from_slice(CStr::from_ptr(text).to_bytes());
+        kvj_bt_free_string(text);
+        Ok(result?)
+    }
+}
+pub fn offers(ids: &[String], timeout: Duration) -> Result<Vec<String>> {
+    let addresses = CString::new(serde_json::to_string(ids)?)?;
+    let mut error = [0; 512];
+    // Same ownership as scan: copy/parse, then free.
+    unsafe {
+        let text = kvj_bt_offers(addresses.as_ptr(), timeout.as_millis() as i32, error.as_mut_ptr(), error.len());
         anyhow::ensure!(!text.is_null(), "{}", message(&error));
         let result = serde_json::from_slice(CStr::from_ptr(text).to_bytes());
         kvj_bt_free_string(text);

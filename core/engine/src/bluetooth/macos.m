@@ -41,7 +41,11 @@ static void failure(char *out, size_t cap, NSString *message) {
 }
 - (void)remember:(IOBluetoothDevice *)device {
     NSString *address = device.addressString;
-    if (address) self.devices[address] = @{@"id": address, @"name": device.name ?: address, @"paired": @([device isPaired])};
+    if (!address) return;
+    // Class of Device is known without touching the radio; an unknown class is kept.
+    BluetoothDeviceClassMajor major = device.deviceClassMajor;
+    BOOL computer = major == kBluetoothDeviceClassMajorComputer || major == kBluetoothDeviceClassMajorUnclassified;
+    self.devices[address] = @{@"id": address, @"name": device.name ?: address, @"paired": @([device isPaired]), @"computer": @(computer)};
 }
 - (void)deviceInquiryDeviceFound:(IOBluetoothDeviceInquiry *)sender device:(IOBluetoothDevice *)device { [self remember:device]; }
 - (void)deviceInquiryComplete:(IOBluetoothDeviceInquiry *)sender error:(IOReturn)error aborted:(BOOL)aborted { self.result = error; self.done = YES; }
@@ -79,11 +83,11 @@ char *kvj_bt_scan(int activeInquiry, char *error, size_t capacity) {
         }
         KVJRFCOMM *sink = [KVJRFCOMM new];
         for (IOBluetoothDevice *device in [IOBluetoothDevice pairedDevices]) [sink remember:device];
-        IOBluetoothDeviceInquiry *inquiry = [IOBluetoothDeviceInquiry inquiryWithDelegate:sink];
         if (!activeInquiry) {
             NSData *json = [NSJSONSerialization dataWithJSONObject:sink.devices.allValues options:0 error:nil];
             return strdup([[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);
         }
+        IOBluetoothDeviceInquiry *inquiry = [IOBluetoothDeviceInquiry inquiryWithDelegate:sink];
         inquiry.inquiryLength = 6; inquiry.updateNewDeviceNames = YES;
         IOReturn result = [inquiry start];
         if (result != kIOReturnSuccess) { failure(error, capacity, @"蓝牙扫描失败，请检查蓝牙权限"); return NULL; }
@@ -121,6 +125,36 @@ void *kvj_bt_listen(char *error, size_t capacity) {
     }
 }
 // Connect is advanced asynchronously from the Rust owner so Stop stays bounded.
+// Which of the given addresses (a JSON array) currently publish the KVJ service:
+// one fresh SDP query each, all in flight together, bounded by `timeoutMs`. A
+// computer that is off, out of range or not listening in KVJ is left out.
+char *kvj_bt_offers(const char *addresses, int timeoutMs, char *error, size_t capacity) {
+    @autoreleasepool {
+        NSData *input = [NSData dataWithBytes:addresses length:strlen(addresses)];
+        NSArray *list = [NSJSONSerialization JSONObjectWithData:input options:0 error:nil];
+        if (![list isKindOfClass:[NSArray class]]) { failure(error, capacity, @"蓝牙设备列表无效"); return NULL; }
+        NSDate *started = [NSDate date];
+        NSMutableArray<IOBluetoothDevice *> *pending = [NSMutableArray array];
+        for (id address in list) {
+            if (![address isKindOfClass:[NSString class]]) continue;
+            IOBluetoothDevice *device = [IOBluetoothDevice deviceWithAddressString:address];
+            if (device && [device performSDPQuery:nil uuids:@[serviceUUID()]] == kIOReturnSuccess) [pending addObject:device];
+        }
+        NSMutableArray<NSString *> *offers = [NSMutableArray array];
+        NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:timeoutMs / 1000.0];
+        while (pending.count && deadline.timeIntervalSinceNow > 0) {
+            pump();
+            for (IOBluetoothDevice *device in [pending copy]) {
+                NSDate *updated = [device getLastServicesUpdate];
+                if (!updated || [updated compare:started] == NSOrderedAscending) continue;
+                [pending removeObject:device];
+                if ([device getServiceRecordForUUID:serviceUUID()]) [offers addObject:device.addressString];
+            }
+        }
+        NSData *json = [NSJSONSerialization dataWithJSONObject:offers options:0 error:nil];
+        return strdup([[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);
+    }
+}
 void *kvj_bt_connect(const char *address, char *error, size_t capacity) {
     @autoreleasepool {
         IOBluetoothDevice *device = [IOBluetoothDevice deviceWithAddressString:[NSString stringWithUTF8String:address]];

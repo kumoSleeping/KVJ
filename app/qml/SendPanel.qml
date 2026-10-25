@@ -53,9 +53,17 @@ ColumnLayout {
         RowLayout {
             Layout.fillWidth: true
             Caption { text: "接收电脑"; Layout.fillWidth: true }
+            // Only paired computers running a KVJ receiver are listed; finding
+            // them asks each one over Bluetooth and takes a few seconds.
+            BusyIndicator {
+                running: Engine.busy
+                visible: running
+                implicitWidth: 18
+                implicitHeight: 18
+            }
             IconButton {
                 iconName: "refresh"
-                tip: "刷新已配对设备"
+                tip: "查找正在接收的 KVJ"
                 enabled: !Engine.busy
                 onClicked: Engine.scanBluetooth(false)
             }

@@ -339,6 +339,7 @@ fn run(engine: &Weak<Engine>, shared: &Mutex<Inbox>, cancel: &AtomicBool) -> Res
                         id: id.clone(),
                         name: id.clone(),
                         paired: true,
+                        computer: true,
                     });
                 let mut inbox = shared.lock().unwrap();
                 if inbox.peers.len() >= 32 {

@@ -153,7 +153,7 @@ impl Engine {
         let _scan = SCAN_GATE
             .try_lock()
             .map_err(|_| anyhow::anyhow!("蓝牙扫描正在进行"))?;
-        transport::scan(inquiry)
+        transport::receivers(inquiry)
     }
     /// Prepares a standby connection to a receiving computer (at most eight).
     pub fn bluetooth_connect(self: &Arc<Self>, device: Device) -> Result<()> {

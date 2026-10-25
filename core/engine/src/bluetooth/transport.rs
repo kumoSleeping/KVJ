@@ -9,6 +9,12 @@ pub struct Device {
     pub id: String,
     pub name: String,
     pub paired: bool,
+    /// Class of Device says computer (or does not say): worth an SDP query.
+    #[serde(default = "computer")]
+    pub computer: bool,
+}
+fn computer() -> bool {
+    true
 }
 
 #[cfg(target_os = "macos")]
@@ -21,6 +27,9 @@ mod platform;
 mod platform {
     use super::*;
     pub fn scan(_: bool) -> Result<Vec<Device>> {
+        bail!("蓝牙音频特征传输目前支持 macOS 和 Windows")
+    }
+    pub fn offers(_: &[String], _: Duration) -> Result<Vec<String>> {
         bail!("蓝牙音频特征传输目前支持 macOS 和 Windows")
     }
     pub struct Native;
@@ -42,7 +51,27 @@ mod platform {
         }
     }
 }
-pub use platform::{scan, Native};
+pub use platform::{offers, scan, Native};
+
+/// Paired computers that are running a KVJ receiver right now: candidates come
+/// from the Class of Device (no radio traffic), then one fresh SDP query each
+/// for the KVJ service, all together and bounded in time.
+pub fn receivers(inquiry: bool) -> Result<Vec<Device>> {
+    let candidates: Vec<Device> = scan(inquiry)?
+        .into_iter()
+        .filter(|d| d.paired && d.computer)
+        .collect();
+    if candidates.is_empty() {
+        return Ok(candidates);
+    }
+    let ids: Vec<String> = candidates.iter().map(|d| d.id.clone()).collect();
+    let offering = offers(&ids, Duration::from_secs(8))?;
+    let key = |id: &str| id.replace([':', '-'], "").to_ascii_uppercase();
+    Ok(candidates
+        .into_iter()
+        .filter(|d| offering.iter().any(|o| key(o) == key(&d.id)))
+        .collect())
+}
 
 pub const MAX_FRAME: usize = 16 * 1024;
 pub struct Connection {

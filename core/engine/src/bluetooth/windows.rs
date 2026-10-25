@@ -9,7 +9,7 @@ use windows_sys::{
     core::GUID,
     Win32::{
         Devices::Bluetooth::*,
-        Foundation::{CloseHandle, GetLastError, ERROR_NO_MORE_ITEMS},
+        Foundation::{CloseHandle, GetLastError, ERROR_NO_MORE_ITEMS, HANDLE},
         Networking::WinSock::*,
     },
 };
@@ -88,10 +88,13 @@ pub fn scan(inquiry: bool) -> Result<Vec<Device>> {
                 .position(|c| *c == 0)
                 .unwrap_or(info.szName.len());
             let name = String::from_utf16_lossy(&info.szName[..end]);
+            // Major device class 1 is Computer; 0 (miscellaneous) is kept too.
+            let major = (info.ulClassofDevice >> 8) & 0x1f;
             devices.push(Device {
                 name: if name.is_empty() { id.clone() } else { name },
                 id,
                 paired: info.fAuthenticated != 0,
+                computer: major == 1 || major == 0,
             });
             if BluetoothFindNextDevice(find, &mut info) == 0 {
                 break;
@@ -105,6 +108,50 @@ pub fn scan(inquiry: bool) -> Result<Vec<Device>> {
         );
         Ok(devices)
     }
+}
+/// Whether a device publishes the KVJ service, from a fresh (uncached) SDP query.
+fn offers_one(id: &str) -> bool {
+    let mut context: Vec<u16> = format!("({id})").encode_utf16().chain(Some(0)).collect();
+    unsafe {
+        let mut query: WSAQUERYSETW = zeroed();
+        query.dwSize = size_of::<WSAQUERYSETW>() as u32;
+        query.lpServiceClassId = &SERVICE as *const GUID as *mut GUID;
+        query.dwNameSpace = NS_BTH;
+        query.lpszContext = context.as_mut_ptr();
+        let mut lookup: HANDLE = null_mut();
+        if WSALookupServiceBeginW(&query, LUP_FLUSHCACHE | LUP_RETURN_ADDR, &mut lookup) != 0 {
+            return false;
+        }
+        // The result set holds variable-length data after the fixed header.
+        let mut buffer = vec![0u64; 512];
+        let mut length = (buffer.len() * 8) as u32;
+        let found = WSALookupServiceNextW(lookup, LUP_RETURN_ADDR, &mut length, buffer.as_mut_ptr().cast()) == 0;
+        WSALookupServiceEnd(lookup);
+        found
+    }
+}
+pub fn offers(ids: &[String], timeout: Duration) -> Result<Vec<String>> {
+    initialize()?;
+    // Each lookup blocks for up to a page timeout; run them side by side and keep
+    // whatever has answered by the deadline (late threads finish on their own).
+    let (tx, rx) = std::sync::mpsc::channel();
+    for id in ids {
+        let (tx, id) = (tx.clone(), id.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send((offers_one(&id), id));
+        });
+    }
+    drop(tx);
+    let deadline = Instant::now() + timeout;
+    let mut found = Vec::new();
+    while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+        match rx.recv_timeout(left) {
+            Ok((true, id)) => found.push(id),
+            Ok((false, _)) => {}
+            Err(_) => break,
+        }
+    }
+    Ok(found)
 }
 pub struct Native {
     socket: SOCKET,
