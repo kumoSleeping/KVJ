@@ -32,8 +32,12 @@ public:
             m_current = new QSGSimpleTextureNode;
             m_current->setOwnsTexture(true);
             m_current->setFiltering(QSGTexture::Linear);
+            // With its texture before it joins the tree: the software
+            // renderer draws a node as soon as it is added.
+            m_current->setTexture(texture);
             // Under the picture that is fading out.
             prependChildNode(m_current);
+            return;
         }
         m_current->setTexture(texture);
     }
