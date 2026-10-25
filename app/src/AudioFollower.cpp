@@ -204,6 +204,8 @@ private:
         const double gap = m_mediaOut - queued - target;
         if (m_log)
             report(now, gap, double(queuedFrames) / m_outRate);
+        if (!m_io && now < m_retryAt)
+            return;
         if (m_needSync || !m_io || jumped || std::abs(gap) > kLostBeyond) {
             m_speed = timing.rate;
             applyRatio();
@@ -265,6 +267,10 @@ private:
     {
         m_sink->stop();
         m_io = m_sink->start();
+        if (!m_io) {
+            m_retryAt = kvj_clock_ms() + 1000;
+            return;
+        }
         kvj_sound_seek(m_sound, at);
         m_stretcher->reset();
         std::fill(m_inLeft.begin(), m_inLeft.end(), 0.0f);
@@ -356,6 +362,9 @@ private:
     double m_volume = 1;
     std::unique_ptr<QAudioSink> m_sink;
     QIODevice *m_io = nullptr;
+    // An output that would not start is tried again from then on, not on
+    // every tick.
+    double m_retryAt = 0;
     std::unique_ptr<RubberBand::RubberBandStretcher> m_stretcher;
     double m_ratio = 1;
     double m_speed = 1;
