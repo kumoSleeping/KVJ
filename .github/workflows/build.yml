@@ -78,7 +78,7 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          cmake --install build --prefix dist
+          cmake --install build --prefix "$PWD/dist"
           if [ "$RUNNER_OS" = "macOS" ]; then
             codesign --force --deep --sign - dist/KVJ.app
             hdiutil create -volname KVJ -srcfolder dist/KVJ.app -ov -format UDZO KVJ-${{ matrix.name }}.dmg
