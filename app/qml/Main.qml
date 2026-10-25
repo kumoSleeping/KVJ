@@ -99,8 +99,9 @@ ApplicationWindow {
     // The player's keys (keysOn, switched on the timeline): ←/→, A/D or 4/6 on
     // the number pad, held, play the picture at 0.7 or 1.5 of its speed until
     // let go (never a jump; paused, a press steps a second); ↑/↓, W/S or 8/2
-    // change the speed by 1%; Enter plays from the timeline's cursor. None
-    // while words are typed.
+    // change the speed by 1%; Enter plays from the timeline's cursor; − and =
+    // zoom the timeline out and in, \ shows the whole Set, as in Premiere.
+    // None while words are typed.
     // Space does nothing: one touch of it during a show is too easy.
     property bool keysOn: true
     readonly property bool typing: !!activeFocusItem && typeof activeFocusItem.selectedText === "string"
@@ -117,11 +118,9 @@ ApplicationWindow {
     // What it plays at this moment: the tempo, bent while a nudge key is held.
     readonly property real shownSpeed: aiPicture ? match.rate : transport.speed
     property real playhead: 0
-    // Every jump, by hand or by following, can dissolve; dragging on a lane is
-    // many small jumps and cuts until it is let go.
+    // Every jump, by hand or by following, can dissolve.
     property bool fadeOn: false
     property int fadeMs: 400
-    property bool scrubbing: false
 
     onMatchChanged: {
         if (match)
@@ -426,7 +425,7 @@ ApplicationWindow {
         rate: app.aiPicture ? app.match.rate : transport.rate
         clockAtMs: app.aiPicture ? app.match.clock_at_ms : transport.clockAtMs
         offsetMs: app.aiPicture ? offset.value : 0
-        fadeMs: app.fadeOn && !app.scrubbing ? app.fadeMs : 0
+        fadeMs: app.fadeOn ? app.fadeMs : 0
         maxHeight: desk.maxHeight
         maxFps: desk.maxFps
     }
@@ -490,6 +489,24 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: app.keysLive && app.manualSeek && !!timeline.markClip
         onActivated: timeline.jump()
+    }
+    Shortcut {
+        sequences: ["-", "Num+-"]
+        context: Qt.ApplicationShortcut
+        enabled: app.keysLive
+        onActivated: timeline.zoomStep(1 / 1.3)
+    }
+    Shortcut {
+        sequences: ["=", "+", "Num++"]
+        context: Qt.ApplicationShortcut
+        enabled: app.keysLive
+        onActivated: timeline.zoomStep(1.3)
+    }
+    Shortcut {
+        sequence: "\\"
+        context: Qt.ApplicationShortcut
+        enabled: app.keysLive
+        onActivated: timeline.fit()
     }
 
     // Light or dark for what the system draws too (dialogs, menus, the

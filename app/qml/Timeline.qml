@@ -7,12 +7,14 @@ import KVJ
 // editor's timeline without editing anything. On top: the play key in the
 // middle, the Set and what is on the screen to its left with the cursor's keys,
 // the speed and how jumps look to its right; under them the whole Set's bar,
-// which jumps the picture and frames the part the strip shows. Below it the Set's entries that
-// are on lie end to end (one turned off leaves at once; the picture and sound
-// go on) as strips of the middle of their frames over their sound's waveform
-// (KDJ's whole-track preview, the part played dimmed); pinch on the trackpad
-// (or ⌘/Ctrl + scroll) zooms in about the pointer down to a few frames, a
-// two-finger swipe moves along. Pressing or dragging there only sets the cursor
+// where the picture and the cursor are, with a frame round the part the strip
+// shows that drags along and, by its ends, wider or narrower. Pressing the bar
+// well away from the frame only sets the cursor there, never the picture.
+// Below it the Set's entries that are on lie end to end (one turned off leaves
+// at once; the picture and sound go on) as strips of the middle of their frames
+// over their sound's waveform (KDJ's whole-track preview, the part played
+// dimmed); pinch on the trackpad (or ⌘/Ctrl/Alt + scroll, or − / +) zooms in
+// about the pointer down to a few frames, a two-finger swipe moves along. Pressing or dragging there only sets the cursor
 // and leaves the picture alone; 跳至光标处 (or Enter) plays from it. While smart
 // following leads the keys its helpers at work own rest: the speed's while 对速
 // works, play and seeking while 跳转 does.
@@ -104,20 +106,49 @@ Rectangle {
         zoom = 0
         viewStart = 0
     }
+    // The − / + keys: a step about the playhead, or the cursor, if the strip
+    // shows it, as an editor's zoom keys do; else about the middle.
+    function zoomStep(factor) {
+        const shows = t => t >= viewLeft && t <= viewLeft + span
+        const t = shows(playT) ? playT : shows(markT) ? markT : viewLeft + span / 2
+        zoomAt((t - viewLeft) * pps, factor)
+    }
+    // Show seconds `a` to `b` (the frame's ends dragged on the bar).
+    function setView(a, b) {
+        a = Math.max(0, a)
+        zoom = track.width / Math.max(track.width / maxScale, Math.min(total, b) - a)
+        viewStart = a
+        touch()
+    }
+    function moveView(a) {
+        viewStart = Math.max(0, Math.min(a, total - span))
+        touch()
+    }
     // Scrolling over the strip or the bar. A trackpad (a gesture with phases,
     // as macOS sends) moves the strip with the fingers, one for one, along the
     // axis the gesture started on, its momentum included: a swipe across that
     // drifts up or down does not jitter. A wheel (any mouse; Windows sends
     // touchpads as fine wheel steps too) moves a tenth of the view a notch,
-    // tilted or with Shift across as well. ⌘/Ctrl zooms about the pointer, as
-    // a pinch does (Windows sends a touchpad's pinch as Ctrl + wheel).
+    // tilted or with Shift across as well. ⌘/Ctrl, or Alt as in After Effects
+    // and Premiere, zooms about the pointer, as a pinch does (Windows sends a
+    // touchpad's pinch as Ctrl + wheel): a wheel's notch is one fine step
+    // (macOS hands every notch over on its own, however fast the wheel turns),
+    // a fraction of one on a fine wheel; a trackpad follows the fingers and
+    // stops when they lift, its glide left out.
     property int swipeAxis: 0
+    readonly property real notchZoom: 1.15
     function scroll(wheel, x) {
         const p = wheel.pixelDelta
         const a = wheel.angleDelta
-        if (wheel.modifiers & (Qt.ControlModifier | Qt.MetaModifier)) {
-            const delta = p.y !== 0 ? p.y * 4 : a.y !== 0 ? a.y : a.x
-            zoomAt(x, Math.pow(1.0015, delta))
+        if (wheel.modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.AltModifier)) {
+            if (wheel.phase === Qt.ScrollMomentum)
+                return
+            if (p.x !== 0 || p.y !== 0) {
+                zoomAt(x, Math.pow(1.005, Math.max(-60, Math.min(60, p.y !== 0 ? p.y : p.x))))
+            } else {
+                const notches = (a.y !== 0 ? a.y : a.x) / 120
+                zoomAt(x, Math.pow(notchZoom, Math.max(-2, Math.min(2, notches))))
+            }
             return
         }
         if (wheel.phase !== Qt.NoScrollPhase) {
@@ -136,7 +167,10 @@ Rectangle {
         pan(-notches * span * 0.1 * pps)
     }
     function setMark(x) {
-        const t = Math.max(0, Math.min(total - 0.001, viewLeft + x / pps))
+        markTime(viewLeft + x / pps)
+    }
+    function markTime(seconds) {
+        const t = Math.max(0, Math.min(total - 0.001, seconds))
         for (const c of clips) {
             if (t < c.start + c.length) {
                 markId = c.entry.id
@@ -255,16 +289,35 @@ Rectangle {
                     onClicked: line.jump()
                     ToolTip.visible: hovered
                     ToolTip.delay: 600
-                    ToolTip.text: "从下面时间轴上的光标处播放（快捷键开着时也可按回车）"
+                    ToolTip.text: "从光标处播放（快捷键开着时也可按回车）；点时间轴或上面的总览条只放光标，不动画面"
                 }
-                TextButton {
-                    flat: true
-                    text: "全览"
-                    enabled: line.pps > line.fitScale + 1e-6
-                    onClicked: line.fit()
-                    ToolTip.visible: hovered
-                    ToolTip.delay: 600
-                    ToolTip.text: "缩回整个 Set（触控板双指捏合或 ⌘ + 滚动缩放）"
+                RowLayout {
+                    spacing: 0
+                    IconButton {
+                        iconName: "minus"
+                        tip: "缩小时间轴（快捷键 −）"
+                        autoRepeat: true
+                        enabled: line.pps > line.fitScale + 1e-6
+                        onClicked: line.zoomStep(1 / 1.3)
+                    }
+                    TextButton {
+                        flat: true
+                        leftPadding: 6
+                        rightPadding: 6
+                        text: "全览"
+                        enabled: line.pps > line.fitScale + 1e-6
+                        onClicked: line.fit()
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 600
+                        ToolTip.text: "缩回整个 Set（快捷键 \\）\n也可触控板双指捏合，或按住 ⌘ / Ctrl / Alt 滚动，在指针处缩放"
+                    }
+                    IconButton {
+                        iconName: "plus"
+                        tip: "放大时间轴（快捷键 =）"
+                        autoRepeat: true
+                        enabled: line.total > 0 && line.pps < line.maxScale - 1e-6
+                        onClicked: line.zoomStep(1.3)
+                    }
                 }
                 Toggle {
                     text: "快捷键"
@@ -274,6 +327,7 @@ Rectangle {
                     ToolTip.delay: 600
                     ToolTip.text: "← / →、A / D 或小键盘 4 / 6：按住时画面以 0.7 / 1.5 倍速播放，松开即恢复；暂停时按一下退后 / 前进 1 秒\n"
                                   + "↑ / ↓、W / S 或小键盘 8 / 2：速度 +1% / −1%\n回车：跳至光标处\n"
+                                  + "− / =：缩小 / 放大时间轴，\\：全览\n"
                                   + "空格不再暂停播放"
                 }
             }
@@ -422,15 +476,50 @@ Rectangle {
         }
 
         // The whole Set's bar, as long as the strip below at full view: where
-        // the picture is, a notch where one entry meets the next, and, zoomed
-        // in, a frame round the part the strip shows. Pressing or dragging on
-        // it moves the picture there, into whichever entry that is.
+        // the picture is, a notch where one entry meets the next, the cursor
+        // as a hollow ball and, zoomed in, a frame round the part the strip
+        // shows. The frame drags along, and its ends make it wider or
+        // narrower; a band round it does nothing, so a press that just misses
+        // it changes nothing. Further off a press or drag sets the cursor (the
+        // strip's follows it, shown or not), never the picture: 跳至光标处 or
+        // Enter plays from it.
         Item {
             id: seekBar
             Layout.fillWidth: true
             Layout.topMargin: 6
-            Layout.preferredHeight: 18
+            Layout.preferredHeight: 22
             readonly property real share: line.total > 0 && line.playT >= 0 ? Math.max(0, Math.min(1, line.playT / line.total)) : 0
+            readonly property bool framed: line.total > 0 && line.pps > line.fitScale + 1e-6
+            // The frame in the bar's pixels, never too thin to take hold of.
+            readonly property real frameW: Math.min(width, Math.max(12, width * line.span / Math.max(1, line.total)))
+            readonly property real frameX: Math.max(0, Math.min(width - frameW, width * (line.viewLeft + line.span / 2) / Math.max(1, line.total) - frameW / 2))
+            function timeAt(x) {
+                return Math.max(0, Math.min(1, x / width)) * line.total
+            }
+            // What a press at `x` takes hold of: the frame ("move"), one of
+            // its ends ("left", "right"), nothing ("near") or the cursor ("mark").
+            function zoneAt(x) {
+                if (!framed)
+                    return "mark"
+                const a = frameX
+                const b = frameX + frameW
+                const grip = Math.min(6, frameW / 4)
+                if (x >= a + grip && x <= b - grip)
+                    return "move"
+                if (x >= a - 8 && x < a + grip)
+                    return "left"
+                if (x > b - grip && x <= b + 8)
+                    return "right"
+                if (x >= a - 28 && x <= b + 28)
+                    return "near"
+                return "mark"
+            }
+            // Zooming here keeps the second under the pointer where the strip
+            // shows it, if it does; else the strip's middle.
+            function anchor(x) {
+                const t = timeAt(x)
+                return t >= line.viewLeft && t <= line.viewLeft + line.span ? (t - line.viewLeft) * line.pps : track.width / 2
+            }
             Rectangle {
                 id: groove
                 anchors.verticalCenter: parent.verticalCenter
@@ -455,25 +544,53 @@ Rectangle {
                     }
                 }
             }
-            // The part of the Set the strip shows.
+            // The part of the Set the strip shows, with a grip at each end.
             Item {
-                visible: line.total > 0 && line.pps > line.fitScale + 1e-6
-                x: seekBar.width * line.viewLeft / Math.max(1, line.total)
-                width: Math.max(8, seekBar.width * line.span / Math.max(1, line.total))
+                id: frame
+                visible: seekBar.framed
+                readonly property string held: barArea.zone
+                x: seekBar.frameX
+                width: seekBar.frameW
                 height: seekBar.height
                 Rectangle {
                     anchors.fill: parent
                     radius: 4
                     color: Theme.text
-                    opacity: 0.12
+                    opacity: frame.held === "move" ? 0.2 : 0.12
                 }
                 Rectangle {
                     anchors.fill: parent
                     radius: 4
                     color: "transparent"
-                    border.width: 1.5
-                    border.color: Theme.muted
+                    border.width: frame.held === "move" || frame.held === "left" || frame.held === "right" ? 2 : 1.5
+                    border.color: frame.held === "move" ? Theme.text : Theme.muted
                 }
+                Repeater {
+                    model: ["left", "right"]
+                    Rectangle {
+                        required property string modelData
+                        visible: frame.width >= 24
+                        x: modelData === "left" ? 3 : frame.width - 3 - width
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 2
+                        height: 10
+                        radius: 1
+                        color: frame.held === modelData ? Theme.text : Theme.muted
+                    }
+                }
+            }
+            // The cursor: a hollow ball, the playhead's shadow.
+            Rectangle {
+                visible: line.markT >= 0
+                x: seekBar.width * line.markT / Math.max(1, line.total) - width / 2
+                anchors.verticalCenter: parent.verticalCenter
+                width: 11
+                height: 11
+                radius: 5.5
+                color: Theme.raised
+                border.width: 2
+                border.color: Theme.muted
+                scale: barArea.zone === "mark" && barArea.pressed ? 1.2 : 1
             }
             Rectangle {
                 visible: line.playT >= 0
@@ -483,30 +600,61 @@ Rectangle {
                 height: 12
                 radius: 6
                 color: line.manualSeek ? Theme.text : Theme.muted
-                scale: seekArea.pressed ? 1.2 : 1
+            }
+            // Where a press would put the cursor.
+            Rectangle {
+                visible: barArea.hoverZone === "mark" && !barArea.pressed
+                x: barArea.mouseX - width / 2
+                anchors.verticalCenter: parent.verticalCenter
+                width: 11
+                height: 11
+                radius: 5.5
+                color: "transparent"
+                border.width: 1.5
+                border.color: Theme.faint
             }
             MouseArea {
-                id: seekArea
+                id: barArea
                 anchors.fill: parent
-                // Scrolling works while following too; only pressing is held back.
-                readonly property bool seeks: line.manualSeek && line.clips.length > 0
-                acceptedButtons: seeks ? Qt.LeftButton : Qt.NoButton
-                cursorShape: seeks ? Qt.PointingHandCursor : Qt.ArrowCursor
+                enabled: line.clips.length > 0
+                hoverEnabled: true
                 preventStealing: true
-                function seek(mouse) {
-                    const t = Math.max(0, Math.min(1, mouse.x / width)) * line.total
-                    const clip = line.clips.find(c => t < c.start + c.length) || line.clips[line.clips.length - 1]
-                    line.player.play(clip.entry, Math.max(0, Math.min(clip.entry.duration, t - clip.start)))
-                }
+                // What the press took hold of, and where the frame was then.
+                property string held: ""
+                property real grabX: 0
+                property real grabLeft: 0
+                property real grabRight: 0
+                readonly property string hoverZone: containsMouse ? seekBar.zoneAt(mouseX) : ""
+                readonly property string zone: pressed ? held : hoverZone
+                cursorShape: zone === "move" ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor)
+                             : zone === "left" || zone === "right" ? Qt.SizeHorCursor
+                             : zone === "mark" ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onPressed: mouse => {
-                    line.player.scrubbing = true
-                    seek(mouse)
+                    held = seekBar.zoneAt(mouse.x)
+                    grabX = mouse.x
+                    grabLeft = line.viewLeft
+                    grabRight = line.viewLeft + line.span
+                    if (held === "mark")
+                        line.markTime(seekBar.timeAt(mouse.x))
                 }
-                onPositionChanged: mouse => seek(mouse)
-                onReleased: line.player.scrubbing = false
-                onCanceled: line.player.scrubbing = false
+                onPositionChanged: mouse => {
+                    if (!pressed)
+                        return
+                    const d = (mouse.x - grabX) / width * line.total
+                    const least = track.width / line.maxScale
+                    if (held === "mark")
+                        line.markTime(seekBar.timeAt(mouse.x))
+                    else if (held === "move")
+                        line.moveView(grabLeft + d)
+                    else if (held === "left")
+                        line.setView(Math.min(grabLeft + d, grabRight - least), grabRight)
+                    else if (held === "right")
+                        line.setView(grabLeft, Math.max(grabRight + d, grabLeft + least))
+                }
+                onReleased: held = ""
+                onCanceled: held = ""
                 // Scrolling here moves the strip's view as scrolling on it does.
-                onWheel: wheel => line.scroll(wheel, track.width / 2)
+                onWheel: wheel => line.scroll(wheel, seekBar.anchor(wheel.x))
             }
         }
 
