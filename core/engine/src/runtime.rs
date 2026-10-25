@@ -142,12 +142,14 @@ impl ClockEstimate {
         if !(0.80..=1.25).contains(&slope) || residual > 0.04 {
             return (found.position, self.rate, 0.);
         }
+        // Within 1% the slope is mostly the fit's own noise; the position,
+        // re-anchored on every observation, takes up a real difference that small.
         if found
             .at
             .saturating_duration_since(self.updated)
             .as_secs_f64()
             >= 0.5
-            && (slope - self.rate).abs() >= 0.003
+            && (slope - self.rate).abs() >= 0.01
         {
             self.rate = (slope * 500.).round() / 500.;
             self.updated = found.at;
