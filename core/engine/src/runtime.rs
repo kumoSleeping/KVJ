@@ -298,7 +298,10 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
         }
         super::qos::prefer_live_audio();
         publish(engine, session, |v| v.phase = "permission".into());
-        let mut source = super::feature_input::Input::start(engine, input)?;
+        // Opened once here (a refusal ends the session); lost later, it is
+        // reopened while the session goes on.
+        let mut source = Some(super::feature_input::Input::start(engine, input)?);
+        let mut reopen_at = Instant::now();
         publish(engine, session, |v| v.phase = "listening".into());
         log(
             engine,
@@ -342,9 +345,54 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
         let mut source_checked = Instant::now();
         let mut last_rejection: Option<Instant> = None;
         let (mut last_notice, mut notices): (Option<Instant>, u32) = (None, 0);
+        // Recordings left out of the search for now: their file is gone or
+        // changed (back once it is as it was), or their features are unreadable.
+        let mut unavailable = vec![false; set.recordings.len()];
+        let mut unreadable = vec![false; set.recordings.len()];
         while !cancel.load(Ordering::Relaxed) {
             let tick = Instant::now();
-            let polled = source.poll(cancel)?;
+            let polled = match source.as_mut().map(|s| s.poll(cancel)) {
+                Some(Ok(polled)) => polled,
+                failed => {
+                    if cancel.load(Ordering::Relaxed) {
+                        return Ok(());
+                    }
+                    // An unplugged interface, a driver hiccup or a changed output
+                    // format must not end following during a show.
+                    if let Some(Err(error)) = failed {
+                        source = None;
+                        reopen_at = Instant::now() + Duration::from_secs(2);
+                        log(engine, session, Level::Warn, Stage::Input, format!("声音输入中断：{error:#}；正在重新打开"));
+                        if current.is_some() {
+                            publish(engine, session, |v| v.phase = "searching".into());
+                        }
+                        current = None; estimate = None; lost = false;
+                        generation = 0; search_cursor = 0; corroboration.clear();
+                    } else if Instant::now() >= reopen_at {
+                        match super::feature_input::Input::start(engine, input) {
+                            Ok(reopened) => {
+                                source = Some(reopened);
+                                log(engine, session, Level::Info, Stage::Input, "声音输入已恢复".into());
+                                continue;
+                            }
+                            Err(error) => {
+                                reopen_at = Instant::now() + Duration::from_secs(2);
+                                tracing::debug!("reopening input failed: {error:#}");
+                            }
+                        }
+                    }
+                    publish(engine, session, |v| {
+                        if let Some(input) = &mut v.input {
+                            input.state = InputState::Stalled;
+                        }
+                    });
+                    let until = tick + Duration::from_millis(250);
+                    while Instant::now() < until && !cancel.load(Ordering::Relaxed) {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    continue;
+                }
+            };
             let epoch = polled.epoch;
             if input_epoch != epoch {
                 input_epoch = epoch; current = None; estimate = None; lost = false;
@@ -403,15 +451,38 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                 v.rescue = Some(rescue_status.clone());
                 v.tracking = Some(tracking_status.clone());
             });
+            // A file gone (a drive asleep or unplugged) or changed leaves only
+            // that entry out until it is back as it was indexed; following goes on.
+            if source_checked.elapsed().as_secs() >= 5 {
+                for (i, r) in set.recordings.iter().enumerate() {
+                    let ok = index::signature(Path::new(&r.entry.path)).is_ok_and(|s| s == r.signature);
+                    if ok == unavailable[i] {
+                        unavailable[i] = !ok;
+                        if ok {
+                            log(engine, session, Level::Info, Stage::Input, format!("素材已恢复：{}", r.entry.title));
+                        } else {
+                            log(engine, session, Level::Warn, Stage::Input, format!(
+                                "素材不可用或已变化，暂不跟随它（重新开始监听会重新预处理）：{}",
+                                r.entry.title
+                            ));
+                        }
+                    }
+                }
+                source_checked = Instant::now();
+            }
             // What the DJ has on right now. Turning off the entry being followed
             // lets it go: the picture stays until another entry is found.
             let on: Vec<bool> = {
                 let off = engine.off.lock().unwrap();
-                set.recordings.iter().map(|r| !off.contains(&r.entry.id)).collect()
+                set.recordings
+                    .iter()
+                    .enumerate()
+                    .map(|(i, r)| !off.contains(&r.entry.id) && !unavailable[i] && !unreadable[i])
+                    .collect()
             };
             if current.is_some_and(|c| !on[c.recording]) {
                 log(engine, session, Level::Info, Stage::Decision, format!(
-                    "{} 已停用，改在启用的素材中检索",
+                    "{} 已停用或不可用，改在其余素材中检索",
                     set.recordings[current.unwrap().recording].entry.title
                 ));
                 current = None;
@@ -424,14 +495,8 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                 lost = true;
                 publish(engine, session, |v| v.phase = "searching".into());
             }
-            if source_checked.elapsed().as_secs() >= 5 {
-                for r in &set.recordings {
-                    if index::signature(Path::new(&r.entry.path))? != r.signature {
-                        bail!("素材已变化，请重新预处理：{}", r.entry.title)
-                    }
-                }
-                source_checked = Instant::now();
-            }
+            // A query of the wrong length (a bad packet from a sender) is skipped.
+            let packet = packet.filter(|o| (350. ..=3000.).contains(&o.query.duration_ms()));
             if let Some(observation) = packet {
                 let next_generation = observation.generation;
                 if next_generation != generation {
@@ -461,7 +526,18 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         let predicted = old.position
                             + at.saturating_duration_since(old.at).as_secs_f64() * old.rate;
                         let started = Instant::now();
-                        let reference = features.get(&block.path)?;
+                        // Unreadable features leave that entry out, not the session.
+                        let reference = match features.get(&block.path) {
+                            Ok(reference) => reference,
+                            Err(error) => {
+                                unreadable[old.recording] = true;
+                                log(engine, session, Level::Warn, Stage::Scan, format!(
+                                    "特征缓存读取失败，暂不跟随它：{}：{error:#}",
+                                    set.recordings[old.recording].entry.title
+                                ));
+                                continue;
+                            }
+                        };
                         let result = kvj_recognize::track_live_prepared(
                             &query,
                             &reference,
@@ -530,7 +606,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         // 0.80–1.25×. Verify after EACH bin and stop on the first
                         // accepted result. Yield between bins after 125 ms so
                         // the next attempt uses fresh audio, not an old query.
-                        let preferred = current.map_or(1., |c| c.rate);
+                        let preferred = current.map_or(1., |c| c.rate.clamp(0.80, 1.25));
                         let mut rates: [f64; 19] = std::array::from_fn(|i| 0.80 + i as f64 * 0.025);
                         rates.sort_by(|a, b| {
                             (a - preferred).abs().total_cmp(&(b - preferred).abs())
@@ -582,7 +658,18 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                                     .copied()
                                     .collect();
                                 let started = Instant::now();
-                                let reference = features.get(&set.targets[target].path)?;
+                                let recording = set.targets[target].recording;
+                                let reference = match features.get(&set.targets[target].path) {
+                                    Ok(reference) => reference,
+                                    Err(error) => {
+                                        unreadable[recording] = true;
+                                        log(engine, session, Level::Warn, Stage::Scan, format!(
+                                            "特征缓存读取失败，暂不跟随它：{}：{error:#}",
+                                            set.recordings[recording].entry.title
+                                        ));
+                                        continue;
+                                    }
+                                };
                                 let result = kvj_recognize::verify_live_prepared(
                                     &query,
                                     &reference,
