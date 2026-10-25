@@ -13,9 +13,9 @@ import KVJ
 // move the picture.
 Rectangle {
     id: root
-    implicitHeight: column.implicitHeight + 24
-    radius: Theme.radius + 2
-    color: Theme.bg
+    implicitHeight: column.implicitHeight + 20
+    radius: Theme.radiusLg
+    color: Theme.inset
 
     // Smart following is on, and which helpers have handed their part back.
     property bool active: false
@@ -95,8 +95,8 @@ Rectangle {
     ColumnLayout {
         id: column
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 12
+        anchors.margins: 10
+        spacing: 6
 
         // —— Tempo ——
         RowLayout {

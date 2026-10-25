@@ -254,6 +254,7 @@ Rectangle {
                     ToolTip.text: "从下面时间轴上的光标处播放（快捷键开着时也可按回车）"
                 }
                 TextButton {
+                    flat: true
                     text: "全览"
                     enabled: line.pps > line.fitScale + 1e-6
                     onClicked: line.fit()
@@ -341,6 +342,7 @@ Rectangle {
                     onClicked: line.player.nudgeTempo(0.01)
                 }
                 TextButton {
+                    flat: true
                     text: "复原"
                     ToolTip.visible: hovered
                     ToolTip.delay: 600
@@ -350,7 +352,7 @@ Rectangle {
                 }
                 Text {
                     text: "×" + line.speed.toFixed(3)
-                    font.pixelSize: 18
+                    font.pixelSize: 17
                     font.weight: Font.DemiBold
                     font.features: { "tnum": 1 }
                     color: line.bending ? Theme.warn : line.shown ? Theme.text : Theme.faint
@@ -376,8 +378,14 @@ Rectangle {
                     }
                 }
 
+                Rectangle {
+                    Layout.leftMargin: 6
+                    Layout.rightMargin: 6
+                    implicitWidth: 1
+                    implicitHeight: 18
+                    color: Theme.line
+                }
                 Toggle {
-                    Layout.leftMargin: 10
                     text: "跳转渐变"
                     checked: !!line.player && line.player.fadeOn
                     onToggled: line.player.fadeOn = checked

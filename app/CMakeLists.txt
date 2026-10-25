@@ -52,10 +52,22 @@ qt_add_qml_module(KVJ
         qml/Desk.qml
         qml/Sidebar.qml
         qml/Timeline.qml
+        qml/Card.qml
+        qml/Heading.qml
+        qml/PopMenu.qml
+        qml/PopAction.qml
+        qml/TopBar.qml
     RESOURCES
-        qml/icons/bluetooth.svg
         qml/icons/check.svg
         qml/icons/chevron-down.svg
+        qml/icons/chevron-right.svg
+        qml/icons/ellipsis.svg
+        qml/icons/folder.svg
+        qml/icons/folder-open.svg
+        qml/icons/info.svg
+        qml/icons/moon.svg
+        qml/icons/music.svg
+        qml/icons/sun.svg
         qml/icons/file-plus.svg
         qml/icons/folder-plus.svg
         qml/icons/grip-vertical.svg
@@ -130,10 +142,10 @@ elseif(WIN32)
 endif()
 
 if(APPLE)
-    target_sources(KVJ PRIVATE src/platform/mac/AvfDecoder.mm)
-    set_source_files_properties(src/platform/mac/AvfDecoder.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_sources(KVJ PRIVATE src/platform/mac/AvfDecoder.mm src/platform/mac/TitleBar.mm)
+    set_source_files_properties(src/platform/mac/AvfDecoder.mm src/platform/mac/TitleBar.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_link_libraries(KVJ PRIVATE
-        "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework Foundation")
+        "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework Foundation" "-framework AppKit")
     set_target_properties(KVJ PROPERTIES
         OUTPUT_NAME KVJ
         MACOSX_BUNDLE_GUI_IDENTIFIER com.kumo.kvj
@@ -142,7 +154,7 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in)
 elseif(WIN32)
-    target_sources(KVJ PRIVATE src/platform/win/MfDecoder.cpp)
+    target_sources(KVJ PRIVATE src/platform/win/MfDecoder.cpp src/platform/win/TitleBar.cpp)
     target_compile_definitions(KVJ PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_link_libraries(KVJ PRIVATE mfplat mfreadwrite mfuuid d3d11 dxgi ole32 propsys)
 endif()

@@ -12,7 +12,7 @@ import KVJ
 // not found the music yet.
 ColumnLayout {
     id: root
-    spacing: 6
+    spacing: 4
 
     property bool active: false
     // Following draws the picture: copy it instead of decoding it again.

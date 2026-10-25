@@ -1,30 +1,56 @@
 pragma Singleton
+import QtCore
 import QtQuick
 
-// KDJ's design tokens (src/design.css): neutral ink on the panel colour, dark by
-// default for the DJ booth, light when the system asks for it. Red only for
+// KDJ's design tokens (src/design.css): neutral ink on quiet surfaces, dark or
+// light as the operator chooses with the key at the top right (the system's
+// until then). The window is a canvas of cards: the canvas (`bg`), the cards
+// and side bars on it (`raised`), the controls in them (`inset`). Red only for
 // what is about to cut the projected picture.
 QtObject {
-    readonly property bool dark: Qt.styleHints.colorScheme !== Qt.ColorScheme.Light
+    id: theme
 
-    readonly property color bg: dark ? "#0d1117" : "#ffffff"
-    readonly property color raised: dark ? "#151b23" : "#f7f7f8"
-    readonly property color inset: dark ? "#010409" : "#ffffff"
-    readonly property color text: dark ? "#d1d7e0" : "#1c1c1e"
-    readonly property color body: dark ? "#c9d1d9" : "#3a3a3c"
-    readonly property color muted: dark ? "#9198a1" : "#6e6e73"
-    readonly property color faint: dark ? "#656c76" : "#8e8e93"
-    readonly property color line: dark ? "#30363d" : "#e5e7eb"
-    readonly property color hover: dark ? "#1a212b" : "#efeff1"
+    // "dark", "light", or "" to follow the system.
+    property string scheme: ""
+    // `--look light|dark` at start shows that look without keeping it (for
+    // snapshots).
+    readonly property string forced: {
+        const args = Qt.application.arguments
+        const at = args.indexOf("--look")
+        return at >= 0 && at + 1 < args.length ? args[at + 1] : ""
+    }
+    readonly property bool systemDark: Qt.styleHints.colorScheme !== Qt.ColorScheme.Light
+    readonly property bool dark: forced ? forced === "dark" : scheme === "dark" || (scheme === "" && systemDark)
+    function toggle() {
+        scheme = dark ? "light" : "dark"
+    }
+    property Settings store: Settings {
+        category: "look"
+        property alias scheme: theme.scheme
+    }
+
+    readonly property color bg: dark ? "#0b0d11" : "#f2f2f4"
+    readonly property color raised: dark ? "#14171d" : "#ffffff"
+    readonly property color inset: dark ? "#1c2027" : "#f0f0f3"
+    readonly property color text: dark ? "#e4e7ec" : "#1c1c1e"
+    readonly property color body: dark ? "#c3c8d0" : "#3a3a3c"
+    readonly property color muted: dark ? "#8b929c" : "#6e6e73"
+    readonly property color faint: dark ? "#5c636d" : "#a1a1a6"
+    readonly property color line: dark ? "#262b33" : "#e3e3e8"
+    readonly property color hover: dark ? "#20252d" : "#ebebef"
+    // A chosen row: a touch deeper than hover.
+    readonly property color selected: dark ? "#262c35" : "#e6e6eb"
     readonly property color warn: "#f59e0b"
     readonly property color danger: "#e5484d"
 
     readonly property int size: 14
     readonly property int sizeSm: 13
     readonly property int sizeXs: 12
-    readonly property int sizeLg: 16
-    readonly property int row: 36
+    readonly property int sizeLg: 15
+    readonly property int row: 34
     readonly property int control: 30
     readonly property int radius: 6
-    readonly property int gap: 16
+    readonly property int radiusLg: 8
+    readonly property int gap: 12
+    readonly property int pad: 14
 }

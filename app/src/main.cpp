@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "TitleBar.h"
 #include "kvj.h"
 
 #include <QDateTime>
@@ -214,6 +215,13 @@ int main(int argc, char *argv[])
         &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
         [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     engine.loadFromModule("KVJ", "Main");
+    // The player's own top bar in the title bar's row, where the system allows it.
+    if (auto *window = engine.rootObjects().isEmpty() ? nullptr : qobject_cast<QWindow *>(engine.rootObjects().first())) {
+        const TitleBarInset inset = unifyTitleBar(window);
+        window->setProperty("titleInset", inset.left);
+        window->setProperty("titleHeight", inset.height);
+        window->setProperty("titleReachesContent", inset.reachesContent);
+    }
     app.installEventFilter(new LeaveTyping(&app));
     app.installEventFilter(new QuietSpace(&app));
     if (!engine.rootObjects().isEmpty())
@@ -263,6 +271,10 @@ int main(int argc, char *argv[])
                     {"ai_picture", window->property("aiPicture").toBool()},
                     {"fade_ms", window->property("fadeOn").toBool() ? window->property("fadeMs").toInt() : 0},
                     {"visible", window->isVisible()},
+                });
+                status.insert("title_bar", QJsonObject{
+                    {"height", window->property("titleHeight").toDouble()},
+                    {"reaches_content", window->property("titleReachesContent").toBool()},
                 });
             }
             if (QObject *timeline = window ? window->findChild<QObject *>("timeline") : nullptr) {

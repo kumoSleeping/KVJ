@@ -1,7 +1,8 @@
 import QtQuick
 import QtQuick.Controls.Basic
 
-// Single-line input on the inset tone; its outline shows only while focused.
+// Single-line input on the control tone; an edge while hovered, an ink edge
+// while typing.
 TextField {
     id: control
     implicitHeight: Theme.control
@@ -10,12 +11,12 @@ TextField {
     font.pixelSize: Theme.sizeSm
     color: Theme.text
     placeholderTextColor: Theme.faint
-    selectionColor: Theme.line
+    selectionColor: Theme.selected
     selectedTextColor: Theme.text
     background: Rectangle {
         radius: Theme.radius
         color: Theme.inset
-        border.width: control.activeFocus ? 1 : 0
-        border.color: Theme.muted
+        border.width: 1
+        border.color: control.activeFocus ? Theme.muted : control.hovered ? Theme.line : Theme.inset
     }
 }

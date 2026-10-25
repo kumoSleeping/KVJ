@@ -15,21 +15,24 @@ music. Live words and emoji go over the picture. macOS and Windows.
 
 ## Two computers
 
-The DJ's computer runs only the sender: **发送** at the top left of the
+The DJ's computer runs only the sender: **发送端** at the top right of the
 window (or `KVJ --send`) puts the player away and opens a small window that
 captures the Master, turns it into recognition features and streams them over
 Bluetooth to the projecting computer; closing it brings the player back. Nothing
 else runs there — no Set, index or video — so it stays light next to the DJ
 software. The projecting
-computer presses **蓝牙** beside it (or picks **蓝牙接收** as its input) and
+computer picks **蓝牙接收** as its input and
 chooses the current DJ among the connected ones. Pair the two computers in the system's Bluetooth settings first.
 
 ## One window
 
 Everything is in one window, and nothing in it appears or moves when following
-starts. The sidebar holds **发送** and **蓝牙** at the top, the Sets and the
-selected Set's entries (videos only: mp4, m4v, mkv, mov, webm; a folder adds
-the videos in it); each entry has a switch that takes effect at once, also
+starts. The top bar (the title bar itself on macOS) holds **发送端** and the
+light / dark switch at the right. The sidebar is one tree of the Sets: each Set
+opens onto its entries (videos only: mp4, m4v, mkv, mov, webm; a folder adds
+the videos in it and its subfolders), grouped by the folders they came from;
+the chosen Set is the one played and followed, and files dropped on a Set go
+into it. Each entry has a switch that takes effect at once, also
 during the show: an entry that is off leaves the timeline and is not followed,
 while the picture and its sound go on. At a handover between DJs the next DJ's
 entries are turned on while the last ones stay on, and the last are turned off
