@@ -116,9 +116,9 @@ off for captured or received audio.
 
 The live desk is a light preview of the
 projection, danmaku (Enter sends; scrolling or large in the middle), Google
-Meet–style reactions (Noto's animated emoji rising up the sides; hold to send a
-stream, and sweep along the bar while holding to change the emoji and spray it
-from that side of the screen), stickers and picture effects. Stickers are kept in a gallery of images (GIFs play), and words; one is posted
+Meet–style reactions (Noto's animated emoji rising from anywhere along the foot
+of the screen; hold to send a stream, and sweep along the bar while holding to
+change the emoji), stickers and picture effects. Stickers are kept in a gallery of images (GIFs play), and words; one is posted
 by dragging it onto the preview and letting go where it should be (double-click
 posts it in the middle; images from the Finder dropped on the preview are added
 and posted there). Posted stickers are changed on the preview and the

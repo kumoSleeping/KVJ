@@ -376,9 +376,8 @@ Item {
             }
 
             // Reactions, as in Google Meet: hover plays one, holding sends a
-            // stream. Held and swept across the bar, the stream changes to the
-            // emoji under the pointer and sprays from that side of the screen:
-            // the bar's left end is the screen's left edge.
+            // stream from anywhere along the foot of the screen. Held and swept
+            // across the bar, the stream changes to the emoji under the pointer.
             Rectangle {
                 id: reactionBar
                 // Keys narrow a little before the bar outgrows the column.
@@ -440,7 +439,7 @@ Item {
                     }
                     function send() {
                         if (hot >= 0)
-                            Live.react(Live.emoji[hot].glyph, Math.max(0, Math.min(1, mouseX / width)))
+                            Live.react(Live.emoji[hot].glyph)
                     }
                     onPressed: send()
                     onHotChanged: if (pressed) send()
@@ -452,7 +451,7 @@ Item {
                     }
                     ToolTip.visible: containsMouse && !pressed
                     ToolTip.delay: 900
-                    ToolTip.text: "按住连发 · 按住左右拖动换表情、换喷射的位置"
+                    ToolTip.text: "按住连发 · 按住左右拖动换表情"
                 }
             }
             // —— Stickers, in a row under the reactions: drag one onto the picture ——

@@ -49,16 +49,13 @@ QtObject {
         lane = (lane + 1) % 9
         bullet({ text: words, from: from || "", lane: lane, born: Date.now() })
     }
-    // Reactions rise up the sides, clear of whoever stands in the middle, or
-    // from `at` (a share of the screen's width) when the operator aims them.
-    // The fourth of one emoji within a second and a half, and every one after,
-    // bursts.
-    function react(glyph, at) {
+    // Reactions rise from anywhere along the foot of the screen. The fourth of
+    // one emoji within a second and a half, and every one after, bursts.
+    function react(glyph) {
         const now = Date.now()
         recent = recent.filter(r => now - r.born < 1500).concat([{ emoji: glyph, born: now }])
         const burst = recent.filter(r => r.emoji === glyph).length >= 4
-        const x = at !== undefined ? Math.max(0.03, Math.min(0.97, at + (Math.random() - 0.5) * 0.04))
-                : Math.random() < 0.5 ? 0.05 + Math.random() * 0.25 : 0.70 + Math.random() * 0.25
+        const x = 0.04 + Math.random() * 0.92
         reaction({ emoji: glyph, x: x, seed: Math.random(), burst: burst, born: now })
     }
     function showCaption(text) {
