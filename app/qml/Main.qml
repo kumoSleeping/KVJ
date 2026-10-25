@@ -1,6 +1,7 @@
 import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Dialogs
 import QtQuick.Window
 import QtQuick.Layouts
 import KVJ
@@ -417,6 +418,7 @@ ApplicationWindow {
     }
     Projection {
         id: projection
+        guarded: !app.quitting
         // The desk's preview is up whenever this window is.
         previewing: app.visible && app.visibility !== Window.Minimized
         entry: app.shownEntry
@@ -863,7 +865,40 @@ ApplicationWindow {
         app.applyScheme()
     }
 
-    onClosing: {
+    // Closing the window (its key, Cmd+W, Alt+F4, quitting) during a show is
+    // asked first: it would stop following and take the picture away.
+    property bool quitting: false
+    MessageDialog {
+        id: quitDialog
+        title: "退出 KVJ？"
+        text: projection.visible ? "投放正在进行，退出会收起投放画面" + (app.running ? "并停止跟随。" : "。")
+                                 : "跟随正在进行，退出会停止它。"
+        buttons: MessageDialog.Ok | MessageDialog.Cancel
+        onAccepted: {
+            app.quitting = true
+            Qt.quit()
+        }
+    }
+    // The projection's own close (its key, Alt+F4 while it has the focus) is
+    // asked here, on the operator's screen, never on the audience's.
+    MessageDialog {
+        id: hideDialog
+        title: "收起投放？"
+        text: "投放画面会从屏幕上收起。"
+        buttons: MessageDialog.Ok | MessageDialog.Cancel
+        onAccepted: projection.closeOutput()
+    }
+    Connections {
+        target: projection
+        function onCloseAsked() { hideDialog.open() }
+    }
+    onClosing: close => {
+        if (!app.quitting && app.visible && (app.running || projection.visible)) {
+            close.accepted = false
+            quitDialog.open()
+            return
+        }
+        app.quitting = true
         if (app.running)
             Engine.stop()
         projection.closeOutput()

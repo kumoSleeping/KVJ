@@ -27,6 +27,16 @@ Window {
     // The operator's preview is up: keep decoding even while this is put away.
     property bool previewing: false
     readonly property alias surface: surface
+    // Closed by the system (its key, Alt+F4): it stays up and asks (Main.qml);
+    // closeOutput() puts it away.
+    signal closeAsked()
+    property bool guarded: true
+    onClosing: close => {
+        if (root.guarded && root.visible) {
+            close.accepted = false
+            root.closeAsked()
+        }
+    }
 
     function openOn(screenIndex, fullscreen) {
         const screens = Qt.application.screens
