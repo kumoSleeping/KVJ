@@ -33,9 +33,10 @@ projects, or only sends.
 
 The **timeline** under the desk has a lane per entry that is on: the one on the
 screen with a playhead carried on the engine's clock, the others holding where
-they were last seen. Beside it the speed the music runs at against the recording
-(×1.025, +2.5 %), whether that speed has settled, and its trace over the last
-minute.
+they were last seen. Above the lanes, the speed the music runs at against the
+recording (×1.025, +2.5 %) and whether it has settled. Below the timeline sits
+the sticker gallery; the effects have the column beside the desk. The detailed
+recognition log is no longer shown.
 
 ## Live desk
 

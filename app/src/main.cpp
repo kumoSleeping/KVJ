@@ -139,7 +139,6 @@ int main(int argc, char *argv[])
                     {"position", timeline->property("position").toDouble()},
                     {"playing", timeline->property("playingId").toString()},
                     {"lanes", timeline->property("lanes").toList().size()},
-                    {"rates", timeline->property("rates").toList().size()},
                     {"running", timeline->property("running").toBool()},
                 });
             }

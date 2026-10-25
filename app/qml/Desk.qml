@@ -8,8 +8,8 @@ import KVJ
 // The live desk, in the main window: a light preview of what is projected, and
 // what goes over it. The preview doubles as the stage for the next sticker: the
 // dot is where it will go, the slider beside it how tall, and the selected
-// sticker is drawn there as it will look. Below it, words and reactions and the
-// timeline; beside it all, the gallery of stickers and the effects.
+// sticker is drawn there as it will look. Below it, words and reactions, the
+// timeline and, at the foot, the sticker gallery; beside it all, the effects.
 ColumnLayout {
     id: desk
     spacing: 0
@@ -30,7 +30,6 @@ ColumnLayout {
     property real placeY: 0.5
     property real placeSize: 0.3
     readonly property var draft: selected ? Object.assign({}, selected, { x: placeX, y: placeY, size: placeSize }) : null
-    property int page: 0
 
     function setGallery(items) {
         gallery = items
@@ -375,23 +374,215 @@ ColumnLayout {
                     }
                 }
             }
-            // What is left under the preview goes to the timeline.
             Timeline {
                 objectName: "timeline"
                 Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.minimumHeight: 150
-                Layout.verticalStretchFactor: 1
                 Layout.topMargin: 4
                 entries: desk.entries
                 running: desk.running
                 phase: desk.phase
             }
+
+            // —— Stickers: what is left at the foot; the gallery scrolls inside ——
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumHeight: 180
+                Layout.verticalStretchFactor: 1
+                radius: 8
+                color: Theme.raised
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 8
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Caption { text: "贴图"; Layout.rightMargin: 4 }
+                        Field {
+                            id: wordsSticker
+                            Layout.preferredWidth: 180
+                            placeholderText: "文字贴图，回车加入"
+                            onAccepted: {
+                                desk.addWords(text)
+                                clear()
+                            }
+                        }
+                        IconButton {
+                            iconName: "plus"
+                            tip: "文字加入图库"
+                            enabled: wordsSticker.text.trim().length > 0
+                            onClicked: wordsSticker.accepted()
+                        }
+                        IconButton { iconName: "file-plus"; tip: "添加图片（可多选）"; onClicked: imageDialog.open() }
+                        Text {
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 6
+                            text: desk.selected ? desk.selected.name : "未选中"
+                            font.pixelSize: Theme.sizeXs
+                            color: desk.selected ? Theme.body : Theme.faint
+                            elide: Text.ElideMiddle
+                        }
+                        TextButton {
+                            primary: true
+                            text: "贴出"
+                            enabled: !!desk.selected
+                            onClicked: desk.postSelected()
+                        }
+                        TextButton {
+                            text: "全部撤下"
+                            enabled: Live.stickers.length > 0
+                            onClicked: Live.clearStickers()
+                        }
+                    }
+
+                    GridView {
+                        id: grid
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        cellWidth: Math.floor(width / Math.max(1, Math.round(width / 100)))
+                        cellHeight: Math.floor(cellWidth * 0.75)
+                        model: desk.gallery
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        delegate: Item {
+                            id: tile
+                            required property var modelData
+                            readonly property bool current: desk.selectedId === modelData.id
+                            width: grid.cellWidth
+                            height: grid.cellHeight
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: 3
+                                radius: Theme.radius
+                                color: Theme.inset
+                                border.width: tile.current ? 2 : 0
+                                border.color: Theme.text
+                                Image {
+                                    id: thumb
+                                    anchors.fill: parent
+                                    anchors.margins: 6
+                                    visible: tile.modelData.kind === "image"
+                                    source: visible ? tile.modelData.source : ""
+                                    sourceSize.width: 192
+                                    sourceSize.height: 192
+                                    fillMode: Image.PreserveAspectFit
+                                    asynchronous: true
+                                }
+                                Text {
+                                    anchors.fill: parent
+                                    anchors.margins: 6
+                                    visible: tile.modelData.kind === "text" || thumb.status === Image.Error
+                                    text: tile.modelData.kind === "text" ? tile.modelData.text : "无法读取"
+                                    font.pixelSize: tile.modelData.kind === "text" ? Theme.size : Theme.sizeXs
+                                    font.weight: Font.DemiBold
+                                    color: tile.modelData.kind === "text" ? Theme.text : Theme.faint
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    wrapMode: Text.Wrap
+                                    elide: Text.ElideRight
+                                }
+                            }
+                            MouseArea {
+                                id: pick
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: desk.selectedId = tile.modelData.id
+                                onDoubleClicked: {
+                                    desk.selectedId = tile.modelData.id
+                                    desk.postSelected()
+                                }
+                            }
+                            IconButton {
+                                anchors.top: parent.top
+                                anchors.right: parent.right
+                                implicitWidth: 22
+                                implicitHeight: 22
+                                iconName: "x"
+                                tip: "移出图库"
+                                opacity: pick.containsMouse || hovered ? 1 : 0
+                                enabled: opacity > 0
+                                onClicked: desk.forget(tile.modelData.id)
+                            }
+                        }
+                        Text {
+                            anchors.centerIn: parent
+                            width: parent.width * 0.8
+                            visible: grid.count === 0
+                            text: "把图片拖进来，或点上面的按钮一次选多张"
+                            font.pixelSize: Theme.sizeSm
+                            color: Theme.faint
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.Wrap
+                        }
+                        DropArea {
+                            anchors.fill: parent
+                            onDropped: drop => {
+                                if (drop.hasUrls)
+                                    desk.addImages(drop.urls)
+                            }
+                        }
+                    }
+
+                    // What is up now; each comes down on its own.
+                    Flow {
+                        Layout.fillWidth: true
+                        Layout.maximumHeight: 56
+                        clip: true
+                        spacing: 4
+                        visible: Live.stickers.length > 0
+                        Text {
+                            height: 26
+                            text: "画面上 " + Live.stickers.length
+                            font.pixelSize: Theme.sizeXs
+                            font.weight: Font.DemiBold
+                            color: Theme.muted
+                            verticalAlignment: Text.AlignVCenter
+                            rightPadding: 6
+                        }
+                        Repeater {
+                            model: Live.stickers
+                            Rectangle {
+                                id: chip
+                                required property var modelData
+                                width: Math.min(150, chipText.implicitWidth + 34)
+                                height: 26
+                                radius: 13
+                                color: Theme.inset
+                                Text {
+                                    id: chipText
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 10
+                                    anchors.right: chipClose.left
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: chip.modelData.name
+                                    font.pixelSize: Theme.sizeXs
+                                    color: Theme.body
+                                    elide: Text.ElideRight
+                                }
+                                IconButton {
+                                    id: chipClose
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    implicitWidth: 24
+                                    implicitHeight: 24
+                                    iconName: "x"
+                                    tip: "撤下"
+                                    onClicked: Live.unpost(chip.modelData.id)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        // —— Stickers and effects ——
+        // —— Effects: each on and at 0; its slider brings it in ——
         Rectangle {
-            Layout.preferredWidth: 300
+            Layout.preferredWidth: 280
             Layout.fillWidth: false
             Layout.fillHeight: true
             radius: 8
@@ -400,294 +591,80 @@ ColumnLayout {
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 14
-                spacing: 12
+                spacing: 8
 
                 RowLayout {
-                    spacing: 18
-                    Repeater {
-                        model: ["贴图", "效果"]
+                    Layout.fillWidth: true
+                    Text {
+                        Layout.fillWidth: true
+                        text: "效果"
+                        font.pixelSize: Theme.sizeLg
+                        font.weight: Font.DemiBold
+                        color: Theme.text
+                    }
+                    TextButton {
+                        text: "全部归零"
+                        enabled: Live.effectsOn
+                        onClicked: Live.resetEffects()
+                    }
+                }
+                ListView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    spacing: 2
+                    model: Live.effects
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    delegate: RowLayout {
+                        id: effect
+                        required property var modelData
+                        readonly property real level: Live.level[modelData.key] || 0
+                        readonly property bool on: !Live.off[modelData.key]
+                        width: ListView.view.width
+                        height: 34
+                        spacing: 6
+                        Toggle {
+                            Layout.preferredWidth: 100
+                            text: effect.modelData.name
+                            checked: effect.on
+                            onToggled: Live.setOn(effect.modelData.key, checked)
+                        }
+                        Seek {
+                            Layout.fillWidth: true
+                            from: 0
+                            to: 100
+                            stepSize: 1
+                            value: effect.level * 100
+                            enabled: effect.on
+                            opacity: effect.on ? 1 : 0.5
+                            onMoved: Live.setLevel(effect.modelData.key, value / 100)
+                        }
                         Text {
-                            id: tab
-                            required property int index
-                            required property string modelData
-                            readonly property bool current: desk.page === index
-                            text: modelData
-                            font.pixelSize: Theme.sizeLg
-                            font.weight: current ? Font.DemiBold : Font.Normal
-                            color: current ? Theme.text : Theme.muted
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: desk.page = tab.index
-                            }
+                            Layout.preferredWidth: 28
+                            horizontalAlignment: Text.AlignRight
+                            text: Math.round(effect.level * 100)
+                            font.pixelSize: Theme.sizeSm
+                            font.features: { "tnum": 1 }
+                            color: effect.level > 0 && effect.on ? Theme.text : Theme.faint
+                            MouseArea { anchors.fill: parent; onDoubleClicked: Live.setLevel(effect.modelData.key, 0) }
                         }
                     }
                 }
-
-                StackLayout {
+                Text {
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    currentIndex: desk.page
-
-                    // Stickers: the gallery, the selected one, what is up.
-                    ColumnLayout {
-                        spacing: 10
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-                            Caption { text: "图库"; Layout.fillWidth: true }
-                            IconButton { iconName: "file-plus"; tip: "添加图片（可多选）"; onClicked: imageDialog.open() }
-                        }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 6
-                            Field {
-                                id: wordsSticker
-                                Layout.fillWidth: true
-                                placeholderText: "文字贴图，回车加入图库"
-                                onAccepted: {
-                                    desk.addWords(text)
-                                    clear()
-                                }
-                            }
-                            IconButton {
-                                iconName: "plus"
-                                tip: "加入图库"
-                                enabled: wordsSticker.text.trim().length > 0
-                                onClicked: wordsSticker.accepted()
-                            }
-                        }
-
-                        GridView {
-                            id: grid
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            clip: true
-                            cellWidth: Math.floor(width / 3)
-                            cellHeight: Math.floor(cellWidth * 0.8)
-                            model: desk.gallery
-                            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-                            delegate: Item {
-                                id: tile
-                                required property var modelData
-                                readonly property bool current: desk.selectedId === modelData.id
-                                width: grid.cellWidth
-                                height: grid.cellHeight
-                                Rectangle {
-                                    anchors.fill: parent
-                                    anchors.margins: 3
-                                    radius: Theme.radius
-                                    color: Theme.inset
-                                    border.width: tile.current ? 2 : 0
-                                    border.color: Theme.text
-                                    Image {
-                                        id: thumb
-                                        anchors.fill: parent
-                                        anchors.margins: 6
-                                        visible: tile.modelData.kind === "image"
-                                        source: visible ? tile.modelData.source : ""
-                                        sourceSize.width: 192
-                                        sourceSize.height: 192
-                                        fillMode: Image.PreserveAspectFit
-                                        asynchronous: true
-                                    }
-                                    Text {
-                                        anchors.fill: parent
-                                        anchors.margins: 6
-                                        visible: tile.modelData.kind === "text" || thumb.status === Image.Error
-                                        text: tile.modelData.kind === "text" ? tile.modelData.text : "无法读取"
-                                        font.pixelSize: tile.modelData.kind === "text" ? Theme.size : Theme.sizeXs
-                                        font.weight: Font.DemiBold
-                                        color: tile.modelData.kind === "text" ? Theme.text : Theme.faint
-                                        horizontalAlignment: Text.AlignHCenter
-                                        verticalAlignment: Text.AlignVCenter
-                                        wrapMode: Text.Wrap
-                                        elide: Text.ElideRight
-                                    }
-                                }
-                                MouseArea {
-                                    id: pick
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onClicked: desk.selectedId = tile.modelData.id
-                                    onDoubleClicked: {
-                                        desk.selectedId = tile.modelData.id
-                                        desk.postSelected()
-                                    }
-                                }
-                                IconButton {
-                                    anchors.top: parent.top
-                                    anchors.right: parent.right
-                                    implicitWidth: 22
-                                    implicitHeight: 22
-                                    iconName: "x"
-                                    tip: "移出图库"
-                                    opacity: pick.containsMouse || hovered ? 1 : 0
-                                    enabled: opacity > 0
-                                    onClicked: desk.forget(tile.modelData.id)
-                                }
-                            }
-                            Text {
-                                anchors.centerIn: parent
-                                width: parent.width * 0.8
-                                visible: grid.count === 0
-                                text: "把图片拖进来，或点上面的按钮一次选多张"
-                                font.pixelSize: Theme.sizeSm
-                                color: Theme.faint
-                                horizontalAlignment: Text.AlignHCenter
-                                wrapMode: Text.Wrap
-                            }
-                            DropArea {
-                                anchors.fill: parent
-                                onDropped: drop => {
-                                    if (drop.hasUrls)
-                                        desk.addImages(drop.urls)
-                                }
-                            }
-                        }
-
-                        Text {
-                            Layout.fillWidth: true
-                            text: desk.selected ? desk.selected.name : "选一张，左边预览它贴出去的样子"
-                            font.pixelSize: Theme.sizeSm
-                            color: desk.selected ? Theme.text : Theme.faint
-                            elide: Text.ElideMiddle
-                        }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 6
-                            TextButton {
-                                Layout.fillWidth: true
-                                primary: true
-                                text: "贴出"
-                                enabled: !!desk.selected
-                                onClicked: desk.postSelected()
-                            }
-                            TextButton {
-                                text: "全部撤下"
-                                enabled: Live.stickers.length > 0
-                                onClicked: Live.clearStickers()
-                            }
-                        }
-
-                        // What is up now; each comes down on its own.
-                        Caption {
-                            visible: Live.stickers.length > 0
-                            text: "画面上 " + Live.stickers.length
-                        }
-                        Flow {
-                            Layout.fillWidth: true
-                            Layout.maximumHeight: 96
-                            clip: true
-                            spacing: 4
-                            visible: Live.stickers.length > 0
-                            Repeater {
-                                model: Live.stickers
-                                Rectangle {
-                                    id: chip
-                                    required property var modelData
-                                    width: Math.min(150, chipText.implicitWidth + 34)
-                                    height: 26
-                                    radius: 13
-                                    color: Theme.inset
-                                    Text {
-                                        id: chipText
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 10
-                                        anchors.right: chipClose.left
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        text: chip.modelData.name
-                                        font.pixelSize: Theme.sizeXs
-                                        color: Theme.body
-                                        elide: Text.ElideRight
-                                    }
-                                    IconButton {
-                                        id: chipClose
-                                        anchors.right: parent.right
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        implicitWidth: 24
-                                        implicitHeight: 24
-                                        iconName: "x"
-                                        tip: "撤下"
-                                        onClicked: Live.unpost(chip.modelData.id)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Effects: each on and at 0; its slider brings it in.
-                    ColumnLayout {
-                        spacing: 8
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Caption { text: "画面效果"; Layout.fillWidth: true }
-                            TextButton {
-                                text: "全部归零"
-                                enabled: Live.effectsOn
-                                onClicked: Live.resetEffects()
-                            }
-                        }
-                        ListView {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            clip: true
-                            spacing: 2
-                            model: Live.effects
-                            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-                            delegate: RowLayout {
-                                id: effect
-                                required property var modelData
-                                readonly property real level: Live.level[modelData.key] || 0
-                                readonly property bool on: !Live.off[modelData.key]
-                                width: ListView.view.width
-                                height: 34
-                                spacing: 6
-                                Toggle {
-                                    Layout.preferredWidth: 100
-                                    text: effect.modelData.name
-                                    checked: effect.on
-                                    onToggled: Live.setOn(effect.modelData.key, checked)
-                                }
-                                Seek {
-                                    Layout.fillWidth: true
-                                    from: 0
-                                    to: 100
-                                    stepSize: 1
-                                    value: effect.level * 100
-                                    enabled: effect.on
-                                    opacity: effect.on ? 1 : 0.5
-                                    onMoved: Live.setLevel(effect.modelData.key, value / 100)
-                                }
-                                Text {
-                                    Layout.preferredWidth: 28
-                                    horizontalAlignment: Text.AlignRight
-                                    text: Math.round(effect.level * 100)
-                                    font.pixelSize: Theme.sizeSm
-                                    font.features: { "tnum": 1 }
-                                    color: effect.level > 0 && effect.on ? Theme.text : Theme.faint
-                                    MouseArea { anchors.fill: parent; onDoubleClicked: Live.setLevel(effect.modelData.key, 0) }
-                                }
-                            }
-                        }
-                        Text {
-                            Layout.fillWidth: true
-                            visible: GraphicsInfo.api === GraphicsInfo.Software
-                            text: "这台电脑以软件方式绘制画面，效果和表情不会出现。"
-                            font.pixelSize: Theme.sizeXs
-                            color: Theme.warn
-                            wrapMode: Text.Wrap
-                        }
-                        Text {
-                            Layout.fillWidth: true
-                            text: "拉动滑块出效果，双击数值归零；关掉开关会保留数值。效果只作用在视频上，弹幕和贴图不受影响。"
-                            font.pixelSize: Theme.sizeXs
-                            color: Theme.faint
-                            wrapMode: Text.Wrap
-                        }
-                    }
+                    visible: GraphicsInfo.api === GraphicsInfo.Software
+                    text: "这台电脑以软件方式绘制画面，效果和表情不会出现。"
+                    font.pixelSize: Theme.sizeXs
+                    color: Theme.warn
+                    wrapMode: Text.Wrap
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: "拉动滑块出效果，双击数值归零；关掉开关会保留数值。效果只作用在视频上，弹幕和贴图不受影响。"
+                    font.pixelSize: Theme.sizeXs
+                    color: Theme.faint
+                    wrapMode: Text.Wrap
                 }
             }
         }

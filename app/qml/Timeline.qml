@@ -6,11 +6,12 @@ import KVJ
 // Where following is: one lane per entry that is on, the one on the screen with
 // a moving playhead, the others holding where they were last seen. At a handover
 // both DJs' entries are on and both lanes show. Above the lanes, the speed the
-// music runs at against the recording; below them, that speed over the last minute.
+// music runs at against the recording. As tall as its lanes, up to four.
 Rectangle {
     id: line
     radius: 8
     color: Theme.raised
+    implicitHeight: 12 + header.implicitHeight + 6 + laneList.Layout.preferredHeight + 12
 
     property var entries: []
     property bool running: false
@@ -23,10 +24,6 @@ Rectangle {
     property real position: 0
     // Where each entry was when it was last on the screen: { id: seconds }.
     property var seen: ({})
-    // Rate every quarter second over the last minute; NaN while nothing is followed.
-    readonly property int span: 240
-    property var rates: []
-    property int jumps: 0
 
     function clock(seconds, tenths) {
         const s = Math.max(0, seconds)
@@ -47,7 +44,6 @@ Rectangle {
     }
 
     property string lastId: ""
-    property int lastLock: -1
     onMatchChanged: {
         if (lastId.length && lastId !== playingId) {
             const next = Object.assign({}, seen)
@@ -55,9 +51,6 @@ Rectangle {
             seen = next
         }
         if (match) {
-            if (lastLock >= 0 && match.lock_revision !== lastLock)
-                jumps += 1
-            lastLock = match.lock_revision
             lastId = playingId
             position = now()
             const i = (lanes || []).findIndex(e => e.id === playingId)
@@ -70,9 +63,6 @@ Rectangle {
     onRunningChanged: {
         if (running) {
             seen = {}
-            rates = []
-            jumps = 0
-            lastLock = -1
             lastId = ""
         }
     }
@@ -83,16 +73,6 @@ Rectangle {
         running: !!line.match && line.visible
         onTriggered: line.position = line.now()
     }
-    Timer {
-        interval: 250
-        repeat: true
-        running: line.running && line.visible
-        onTriggered: {
-            const next = line.rates.concat([line.match ? line.match.rate : NaN])
-            line.rates = next.length > line.span ? next.slice(next.length - line.span) : next
-            trace.requestPaint()
-        }
-    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -101,6 +81,7 @@ Rectangle {
 
         // What is on the screen, where in it, and how fast.
         RowLayout {
+            id: header
             Layout.fillWidth: true
             spacing: 8
             Caption { text: "时间线" }
@@ -155,6 +136,7 @@ Rectangle {
             id: laneList
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.preferredHeight: Math.max(1, Math.min(4, count)) * 28 - 2
             clip: true
             spacing: 2
             model: line.lanes
@@ -205,12 +187,14 @@ Rectangle {
                             opacity: lane.playing ? 0.9 : 0.6
                         }
                     }
-                    // A tick every minute.
+                    // A tick every minute, every five on a long entry.
                     Repeater {
-                        model: Math.floor(lane.duration / 60)
+                        id: ticks
+                        readonly property int step: lane.duration > 600 ? 300 : 60
+                        model: Math.floor(lane.duration / step)
                         Rectangle {
                             required property int index
-                            x: track.width * (index + 1) * 60 / lane.duration
+                            x: track.width * (index + 1) * ticks.step / lane.duration
                             anchors.verticalCenter: parent.verticalCenter
                             width: 1
                             height: 10
@@ -247,69 +231,6 @@ Rectangle {
                 font.pixelSize: Theme.sizeSm
                 color: Theme.faint
             }
-        }
-
-        // The last minute of speed, around ×1.000.
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 1
-            color: Theme.line
-        }
-        Canvas {
-            id: trace
-            Layout.fillWidth: true
-            Layout.preferredHeight: 40
-            onWidthChanged: requestPaint()
-            onHeightChanged: requestPaint()
-            onPaint: {
-                const ctx = getContext("2d")
-                ctx.reset()
-                const w = width, h = height
-                const values = line.rates
-                let reach = 0.02
-                for (const r of values)
-                    if (!isNaN(r))
-                        reach = Math.max(reach, Math.abs(r - 1) * 1.2)
-                const y = r => h / 2 - (r - 1) / reach * (h / 2 - 2)
-                ctx.strokeStyle = Theme.line
-                ctx.lineWidth = 1
-                ctx.setLineDash([3, 3])
-                ctx.beginPath()
-                ctx.moveTo(0, h / 2)
-                ctx.lineTo(w, h / 2)
-                ctx.stroke()
-                ctx.setLineDash([])
-                ctx.strokeStyle = Theme.text
-                ctx.lineWidth = 1.5
-                ctx.beginPath()
-                let open = false
-                for (let i = 0; i < values.length; ++i) {
-                    const r = values[i]
-                    const x = w - (values.length - 1 - i) / (line.span - 1) * w
-                    if (isNaN(r)) {
-                        open = false
-                        continue
-                    }
-                    if (open)
-                        ctx.lineTo(x, y(r))
-                    else
-                        ctx.moveTo(x, y(r))
-                    open = true
-                }
-                ctx.stroke()
-            }
-        }
-        RowLayout {
-            Layout.fillWidth: true
-            Text { text: "速度 · 1 分钟前"; font.pixelSize: 10; color: Theme.faint; Layout.fillWidth: true }
-            Text {
-                visible: line.running && line.jumps > 0
-                text: "跳转 " + line.jumps + " 次"
-                font.pixelSize: 10
-                font.features: { "tnum": 1 }
-                color: Theme.faint
-            }
-            Text { text: "现在"; font.pixelSize: 10; color: Theme.faint; Layout.leftMargin: 8 }
         }
     }
 }

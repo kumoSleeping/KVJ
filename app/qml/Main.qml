@@ -398,23 +398,7 @@ ApplicationWindow {
                     MouseArea { anchors.fill: parent; onClicked: Engine.clearError() }
                 }
 
-                ListView {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    model: Engine.logs
-                    onCountChanged: positionViewAtEnd()
-                    delegate: Text {
-                        required property string modelData
-                        width: ListView.view.width
-                        text: modelData
-                        font.pixelSize: 11
-                        color: Theme.faint
-                        elide: Text.ElideRight
-                        topPadding: 1
-                        bottomPadding: 1
-                    }
-                }
+                Item { Layout.fillHeight: true }
             }
 
                 SendPanel {
