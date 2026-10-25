@@ -49,7 +49,17 @@ ApplicationWindow {
     readonly property var match: Engine.matched && Engine.matched.entry ? Engine.matched : null
     readonly property var devices: Engine.devices
     readonly property var device: devices.length ? devices[Math.min(deviceBox.currentIndex, devices.length - 1)] : null
-    readonly property bool editable: !!currentSet && !running && !Engine.busy
+    // Adding never waits for a Set: the first files make "Set 1".
+    readonly property bool editable: !running && !Engine.importing
+
+    function addUrls(urls) {
+        if (!urls || urls.length === 0 || !app.editable)
+            return
+        if (!app.currentSet)
+            Engine.createSet("Set " + (app.sets.length + 1))
+        if (app.currentSet)
+            Engine.importUrls(app.currentSet.id, urls)
+    }
 
     function clock(seconds, tenths) {
         const s = Math.max(0, seconds)
@@ -92,11 +102,11 @@ ApplicationWindow {
         id: fileDialog
         fileMode: FileDialog.OpenFiles
         nameFilters: ["音视频 (*.mp4 *.m4v *.mkv *.mov *.webm *.mp3 *.m4a *.flac *.wav *.aac *.ogg *.opus)"]
-        onAccepted: if (app.currentSet) Engine.importUrls(app.currentSet.id, selectedFiles)
+        onAccepted: app.addUrls(selectedFiles)
     }
     FolderDialog {
         id: folderDialog
-        onAccepted: if (app.currentSet) Engine.importUrls(app.currentSet.id, [selectedFolder])
+        onAccepted: app.addUrls([selectedFolder])
     }
 
     RowLayout {
@@ -182,7 +192,7 @@ ApplicationWindow {
                 IconButton {
                     iconName: "trash"
                     tip: "删除这个 Set"
-                    enabled: app.editable
+                    enabled: app.editable && !!app.currentSet
                     onClicked: Engine.deleteSet(app.currentSet.id)
                 }
             }
@@ -255,7 +265,7 @@ ApplicationWindow {
                     enabled: app.editable
                     onDropped: drop => {
                         if (drop.hasUrls)
-                            Engine.importUrls(app.currentSet.id, drop.urls)
+                            app.addUrls(drop.urls)
                     }
                 }
             }
@@ -283,7 +293,7 @@ ApplicationWindow {
                         color: Theme.muted
                     }
                     BusyIndicator {
-                        running: Engine.busy
+                        running: Engine.importing
                         visible: running
                         implicitWidth: 18
                         implicitHeight: 18
@@ -383,7 +393,7 @@ ApplicationWindow {
                     primary: true
                     iconName: app.running ? "square" : "play"
                     text: app.running ? "停止" : "开始跟随"
-                    enabled: app.running || (!!app.currentSet && app.entries.length > 0 && !Engine.busy)
+                    enabled: app.running || (!!app.currentSet && app.entries.length > 0 && !Engine.importing)
                     onClicked: {
                         if (app.running) {
                             Engine.stop()
@@ -620,6 +630,14 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    // `--add <file or folder>` adds it at start, the same way the add keys do.
+    Component.onCompleted: {
+        const args = Qt.application.arguments
+        for (let i = 0; i + 1 < args.length; ++i)
+            if (args[i] === "--add")
+                app.addUrls([Engine.fileUrl(args[i + 1])])
     }
 
     onClosing: {

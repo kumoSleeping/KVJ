@@ -69,7 +69,7 @@ void Engine::onEvent(void *user, const char *json)
     }, Qt::QueuedConnection);
 }
 
-void Engine::call(const QJsonObject &request, Done done, bool background)
+void Engine::call(const QJsonObject &request, Done done, bool background, std::function<void()> finally)
 {
     if (!m_engine)
         return;
@@ -79,15 +79,17 @@ void Engine::call(const QJsonObject &request, Done done, bool background)
             setError(reply.value("error").toString());
         else if (done)
             done(reply.value("ok"));
+        if (finally)
+            finally();
         return;
     }
     ++m_busy;
     emit busyChanged();
     QPointer<Engine> guard(this);
     KvjEngine *engine = m_engine;
-    QThreadPool::globalInstance()->start([guard, engine, request, done] {
+    QThreadPool::globalInstance()->start([guard, engine, request, done, finally] {
         const QJsonObject reply = roundTrip(engine, request);
-        QMetaObject::invokeMethod(guard, [guard, reply, done] {
+        QMetaObject::invokeMethod(guard, [guard, reply, done, finally] {
             if (!guard)
                 return;
             --guard->m_busy;
@@ -96,6 +98,8 @@ void Engine::call(const QJsonObject &request, Done done, bool background)
                 guard->setError(reply.value("error").toString());
             else if (done)
                 done(reply.value("ok"));
+            if (finally)
+                finally();
         }, Qt::QueuedConnection);
     });
 }
@@ -164,10 +168,16 @@ void Engine::importUrls(const QString &setId, const QList<QUrl> &urls)
         {"revision", m_document.value("revision").toLongLong()},
         {"paths", paths},
     };
+    clearError();
+    m_importing = true;
+    emit importingChanged();
     call(request, [this](const QJsonValue &ok) {
         m_document = ok.toObject().toVariantMap();
         emit documentChanged();
-    }, true);
+    }, true, [this] {
+        m_importing = false;
+        emit importingChanged();
+    });
 }
 
 void Engine::start(const QString &setId, const QString &device, int channelStart)

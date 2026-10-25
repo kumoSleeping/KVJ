@@ -29,6 +29,8 @@ class Engine : public QObject
     Q_PROPERTY(QStringList logs READ logs NOTIFY logsChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
+    // Files being probed into a Set; only this holds back further adding.
+    Q_PROPERTY(bool importing READ importing NOTIFY importingChanged)
     Q_PROPERTY(QString dataDir READ dataDir CONSTANT)
 
 public:
@@ -43,6 +45,7 @@ public:
     QStringList logs() const { return m_logs; }
     QString error() const { return m_error; }
     bool busy() const { return m_busy > 0; }
+    bool importing() const { return m_importing; }
     QString dataDir() const { return m_dataDir; }
 
     Q_INVOKABLE void refreshDevices();
@@ -61,6 +64,7 @@ public:
     Q_INVOKABLE void pairBluetooth();
     Q_INVOKABLE void startSending(const QString &peer, const QString &device, int channelStart);
     Q_INVOKABLE void clearError();
+    Q_INVOKABLE static QUrl fileUrl(const QString &path) { return QUrl::fromLocalFile(path); }
     // The engine's monotonic clock; matched.clock_at_ms is on it.
     Q_INVOKABLE static double clockMs();
 
@@ -73,10 +77,12 @@ signals:
     void logsChanged();
     void errorChanged();
     void busyChanged();
+    void importingChanged();
 
 private:
     using Done = std::function<void(const QJsonValue &ok)>;
-    void call(const QJsonObject &request, Done done, bool background);
+    // `finally` runs after the reply, whether it succeeded or not.
+    void call(const QJsonObject &request, Done done, bool background, std::function<void()> finally = {});
     void edit(const QJsonObject &edit);
     void setError(const QString &error);
     void applyPresented(const QJsonObject &view);
@@ -93,6 +99,7 @@ private:
     QStringList m_logs;
     QString m_error;
     int m_busy = 0;
+    bool m_importing = false;
     qint64 m_logCursor = 0;
     QString m_session;
     QTimer m_poll;
