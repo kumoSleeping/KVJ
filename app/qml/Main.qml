@@ -68,6 +68,7 @@ ApplicationWindow {
     // play and seeking while 跳转 is.
     readonly property bool manualTempo: manual || tempoPaused
     readonly property bool manualSeek: manual || jumpPaused
+    readonly property bool canStart: !running && !!currentSet && entries.some(e => e.enabled !== false) && !Engine.importing
     // The engine's rule (core/engine/src/runtime.rs): further than this from the
     // followed position is a jump, closer is followed by speed.
     readonly property real jumpSeconds: 2.5
@@ -149,6 +150,18 @@ ApplicationWindow {
             app.musicAway = true
         }
     }
+    // 开始监听 listens with both helpers paused: following judges where the
+    // music is (its panel shows it) and the player keeps the picture. 开始跟随
+    // sets both to work, listening first if it was not.
+    function listen() {
+        app.tempoPaused = app.jumpPaused = true
+        Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2)
+    }
+    function follow() {
+        app.tempoPaused = app.jumpPaused = false
+        if (!app.following)
+            Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2)
+    }
     function resetTempo() {
         if (app.manualTempo)
             transport.setTempo(1)
@@ -225,7 +238,7 @@ ApplicationWindow {
     }
     // Development aid, through KVJ_DEV_DIR/cmd (main.cpp): drive the player
     // from a shell. "play <entry no.> <seconds>", "pause", "resume", "tempo
-    // <rate>", "fade <ms>" (0 = off), "follow", "stop", "hold [tempo|jump]",
+    // <rate>", "fade <ms>" (0 = off), "listen", "follow", "stop", "hold [tempo|jump]",
     // "send", "back"; on the timeline "zoom <factor> <x>", "mark <x>" (x in px
     // along the strip), "jump"; "post <px> <py> <words>" posts a sticker of
     // words and chooses it.
@@ -237,7 +250,8 @@ ApplicationWindow {
         case "resume": transport.setPlaying(true); break
         case "tempo": transport.setTempo(Number(w[1])); break
         case "fade": app.fadeOn = Number(w[1]) > 0; if (app.fadeOn) app.fadeMs = Number(w[1]); break
-        case "follow": Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", 0); break
+        case "listen": app.listen(); break
+        case "follow": app.follow(); break
         case "stop": Engine.stop(); break
         case "hold":
             if (w[1] === "tempo")
@@ -443,7 +457,7 @@ ApplicationWindow {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: "开启后按 Master 音频找位置、跳转和调速，播放器的手动按键变灰。下方两个助手可以各自暂停，播放器接管暂停的那一项；停止后，播放器从当前画面接着放。"
+                            text: "监听只听 Master 音频，在下面小窗显示判断的位置，画面仍归播放器。跟随后按判断跳转和调速，播放器的手动按键变灰；下方两个助手可以各自暂停，播放器接管暂停的那一项；停止后，播放器从当前画面接着放。"
                             font.pixelSize: Theme.sizeXs
                             color: Theme.muted
                             wrapMode: Text.Wrap
@@ -471,7 +485,7 @@ ApplicationWindow {
                         Text {
                             Layout.fillWidth: true
                             visible: text.length > 0
-                            text: app.followPaused ? "已暂停跟随" : app.match ? app.match.entry.title : app.phaseText(app.phase)
+                            text: app.match ? app.match.entry.title : app.phaseText(app.phase)
                             font.pixelSize: 18
                             font.weight: Font.DemiBold
                             color: app.match && !app.followPaused ? Theme.text : Theme.muted
@@ -480,9 +494,8 @@ ApplicationWindow {
                         Text {
                             Layout.fillWidth: true
                             visible: !!app.match || app.followPaused
-                            text: app.followPaused ? "播放器在放，智能跟随仍在听"
-                                                   : app.match ? app.phaseText(app.phase) + " · " + app.clock(app.match.position, true)
-                                                                 + " · ×" + app.match.rate.toFixed(3) : ""
+                            text: (app.followPaused ? "只监听，播放器在放" : app.match ? app.phaseText(app.phase) : "")
+                                  + (app.match ? " · " + app.clock(app.match.position, true) + " · ×" + app.match.rate.toFixed(3) : "")
                             font.pixelSize: Theme.sizeSm
                             font.features: { "tnum": 1 }
                             color: Theme.muted
@@ -508,16 +521,30 @@ ApplicationWindow {
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 8
+                        // Listening: the engine hears the music and judges where it is.
+                        TextButton {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 34
+                            iconName: app.following ? "square" : "play"
+                            text: app.following ? "停止监听" : "开始监听"
+                            // At least one entry on; more can be turned on while listening.
+                            enabled: app.following || app.canStart
+                            onClicked: app.following ? Engine.stop() : app.listen()
+                        }
+                        // Following: that judgement moves the picture. Stopping
+                        // it keeps listening.
                         TextButton {
                             Layout.fillWidth: true
                             primary: true
-                            iconName: app.following ? "square" : "play"
-                            text: app.following ? "停止智能跟随" : "开启智能跟随"
-                            // At least one entry on; more can be turned on while following.
-                            enabled: app.following || (!app.running && !!app.currentSet
-                                                       && app.entries.some(e => e.enabled !== false) && !Engine.importing)
-                            onClicked: app.following ? Engine.stop()
-                                                     : Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2)
+                            iconName: app.aiLeads ? "pause" : "play"
+                            text: app.aiLeads ? "停止跟随" : "开始跟随"
+                            enabled: app.following || app.canStart
+                            onClicked: {
+                                if (app.aiLeads)
+                                    app.tempoPaused = app.jumpPaused = true
+                                else
+                                    app.follow()
+                            }
                         }
                     }
 
