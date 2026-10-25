@@ -16,9 +16,13 @@ QtObject {
     property bool playing: false
     // A nudge, as a DJ nudges a jog wheel: for a moment this much faster (or,
     // negative, slower) than `tempo`, until the picture has gained (or lost)
-    // the `owed` seconds; then back to `tempo`.
+    // the `owed` seconds; then back to `tempo`. Ahead is quick, four times
+    // the speed (a second in a third of one); back cannot be quicker than the
+    // second itself without playing backwards, so it is a tenth of the speed
+    // for a little over a second. Presses meanwhile add up.
     property real bend: 0
-    readonly property real bendBy: 0.5
+    readonly property real bendUp: 3
+    readonly property real bendDown: -0.9
     property real owed: 0
     property real bentAt: 0
     readonly property real speed: tempo * (1 + bend)
@@ -83,13 +87,13 @@ QtObject {
             owed -= (Engine.clockMs() - bentAt) / 1000 * tempo * bend
     }
     function bendFrom(at) {
-        bend = Math.abs(owed) < 0.005 ? 0 : owed > 0 ? bendBy : -bendBy
+        bend = Math.abs(owed) < 0.005 ? 0 : owed > 0 ? bendUp : bendDown
         if (bend === 0)
             owed = 0
         anchor(at)
         bentAt = clockAtMs
         if (bend !== 0) {
-            bendTimer.interval = Math.max(1, Math.abs(owed) / (tempo * bendBy) * 1000)
+            bendTimer.interval = Math.max(1, Math.abs(owed / (tempo * bend)) * 1000)
             bendTimer.restart()
         } else {
             bendTimer.stop()

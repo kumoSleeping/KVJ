@@ -87,11 +87,11 @@ ApplicationWindow {
     // The input chosen before Bluetooth was, to go back to.
     property int localInput: 0
 
-    // The player's keys (keysOn, switched on the timeline): A/D or 4/6 on the
-    // number pad nudge the picture a second back or ahead (slower or faster
-    // for a moment), W/S or 8/2 change the speed by 1%, Enter plays from the
-    // timeline's cursor, ←/→ seek 5 seconds. None while words are typed. Space
-    // does nothing: one touch of it during a show is too easy.
+    // The player's keys (keysOn, switched on the timeline): ←/→, A/D or 4/6 on
+    // the number pad nudge the picture a second back or ahead (much slower or
+    // faster for a moment, never a jump); ↑/↓, W/S or 8/2 change the speed by
+    // 1%; Enter plays from the timeline's cursor. None while words are typed.
+    // Space does nothing: one touch of it during a show is too easy.
     property bool keysOn: true
     readonly property bool typing: !!activeFocusItem && typeof activeFocusItem.selectedText === "string"
     readonly property bool keysLive: keysOn && !typing
@@ -431,34 +431,24 @@ ApplicationWindow {
         property alias keys: app.keysOn
     }
     Shortcut {
-        sequence: "Left"
-        enabled: app.keysLive && app.manualSeek && !!transport.entry
-        onActivated: app.seekBy(-5)
-    }
-    Shortcut {
-        sequence: "Right"
-        enabled: app.keysLive && app.manualSeek && !!transport.entry
-        onActivated: app.seekBy(5)
-    }
-    Shortcut {
-        sequences: ["A", "Num+4"]
+        sequences: ["Left", "A", "Num+4"]
         autoRepeat: false
         enabled: app.keysLive && app.manualSeek && app.manualTempo && !!transport.entry
         onActivated: app.nudge(-1)
     }
     Shortcut {
-        sequences: ["D", "Num+6"]
+        sequences: ["Right", "D", "Num+6"]
         autoRepeat: false
         enabled: app.keysLive && app.manualSeek && app.manualTempo && !!transport.entry
         onActivated: app.nudge(1)
     }
     Shortcut {
-        sequences: ["W", "Num+8"]
+        sequences: ["Up", "W", "Num+8"]
         enabled: app.keysLive && app.manualTempo
         onActivated: app.nudgeTempo(0.01)
     }
     Shortcut {
-        sequences: ["S", "Num+2"]
+        sequences: ["Down", "S", "Num+2"]
         enabled: app.keysLive && app.manualTempo
         onActivated: app.nudgeTempo(-0.01)
     }
