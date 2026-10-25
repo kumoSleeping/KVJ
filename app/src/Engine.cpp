@@ -3,8 +3,11 @@
 #include "Awake.h"
 #include "kvj.h"
 
+#include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QJsonArray>
+#include <QLockFile>
 #include <QJsonDocument>
 #include <QPointer>
 #include <QStandardPaths>
@@ -32,6 +35,13 @@ Engine::Engine(QObject *parent)
     m_edits.setMaxThreadCount(1);
     m_dataDir = defaultDataDir();
     QDir().mkpath(m_dataDir);
+    m_lock = std::make_unique<QLockFile>(QDir(m_dataDir).filePath(QStringLiteral("kvj.lock")));
+    const bool alone = m_lock->tryLock(0);
+    // Logs older than two weeks go.
+    const QDir logs(QDir(m_dataDir).filePath(QStringLiteral("logs")));
+    const QStringList old = logs.entryList({QStringLiteral("kvj-*.log")}, QDir::Files, QDir::Name | QDir::Reversed);
+    for (int i = 14; i < old.size(); ++i)
+        QFile::remove(logs.filePath(old.at(i)));
     m_engine = kvj_engine_new(QDir::toNativeSeparators(m_dataDir).toUtf8().constData(), &Engine::onEvent, this);
 
     call({{"cmd", "document"}}, [this](const QJsonValue &ok) {
@@ -43,6 +53,22 @@ Engine::Engine(QObject *parent)
     m_poll.setInterval(250);
     connect(&m_poll, &QTimer::timeout, this, &Engine::poll);
     m_poll.start();
+    if (!alone)
+        setError(QStringLiteral("另一个 KVJ 正在使用同一份 Set 数据：请只开一个，两个会互相干扰蓝牙和改动"));
+}
+
+void Engine::writeLog(const QStringList &lines)
+{
+    const QDir dir(QDir(m_dataDir).filePath(QStringLiteral("logs")));
+    if (!dir.exists() && !QDir().mkpath(dir.path()))
+        return;
+    const QDateTime now = QDateTime::currentDateTime();
+    QFile file(dir.filePath(QStringLiteral("kvj-%1.log").arg(now.toString(QStringLiteral("yyyy-MM-dd")))));
+    if (!file.open(QIODevice::Append | QIODevice::Text))
+        return;
+    const QString at = now.toString(QStringLiteral("HH:mm:ss.zzz "));
+    for (const QString &line : lines)
+        file.write((at + line + QLatin1Char('\n')).toUtf8());
 }
 
 Engine::~Engine()
@@ -125,6 +151,8 @@ void Engine::setError(const QString &error)
 {
     if (m_error == error)
         return;
+    if (!error.isEmpty())
+        writeLog({QStringLiteral("[error] ") + error});
     m_error = error;
     emit errorChanged();
 }
@@ -318,11 +346,15 @@ void Engine::poll()
         const QJsonObject status = ok.toObject();
         const QJsonArray logs = status.value("logs").toArray();
         if (!logs.isEmpty()) {
+            QStringList lines;
             for (const QJsonValue &entry : logs) {
                 const QJsonObject log = entry.toObject();
-                m_logs.append(log.value("message").toString());
+                const QString message = log.value("message").toString();
+                m_logs.append(message);
+                lines.append(QStringLiteral("[%1] %2").arg(log.value("level").toString(), message));
                 m_logCursor = log.value("id").toInteger();
             }
+            writeLog(lines);
             while (m_logs.size() > 200)
                 m_logs.removeFirst();
             emit logsChanged();

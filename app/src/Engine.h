@@ -14,7 +14,9 @@
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
 #include <functional>
+#include <memory>
 
+class QLockFile;
 struct KvjEngine;
 
 class Engine : public QObject
@@ -101,6 +103,9 @@ private:
     void setError(const QString &error);
     void applyPresented(const QJsonObject &view);
     void poll();
+    // The session's log lines also go to <dataDir>/logs, a file a day, so a
+    // show can be looked into afterwards.
+    void writeLog(const QStringList &lines);
     static void onEvent(void *user, const char *json);
 
     KvjEngine *m_engine = nullptr;
@@ -122,4 +127,6 @@ private:
     // engine writes the document to disk (synced) and may wait for an import,
     // which the GUI thread drawing the projection must never do.
     QThreadPool m_edits;
+    // Held while this KVJ uses the data folder: a second one is told.
+    std::unique_ptr<QLockFile> m_lock;
 };
