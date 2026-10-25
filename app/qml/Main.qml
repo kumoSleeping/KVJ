@@ -457,7 +457,7 @@ ApplicationWindow {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: "监听只听 Master 音频，在下面小窗显示判断的位置，画面仍归播放器。跟随后按判断跳转和调速，播放器的手动按键变灰；下方两个助手可以各自暂停，播放器接管暂停的那一项；停止后，播放器从当前画面接着放。"
+                            text: "监听：听 Master 音频，小窗显示判断的位置，画面仍归播放器。跟随：按判断跳转和调速；下方两个助手可各自暂停，交回播放器。"
                             font.pixelSize: Theme.sizeXs
                             color: Theme.muted
                             wrapMode: Text.Wrap
@@ -493,9 +493,9 @@ ApplicationWindow {
                         }
                         Text {
                             Layout.fillWidth: true
-                            visible: !!app.match || app.followPaused
-                            text: (app.followPaused ? "只监听，播放器在放" : app.match ? app.phaseText(app.phase) : "")
-                                  + (app.match ? " · " + app.clock(app.match.position, true) + " · ×" + app.match.rate.toFixed(3) : "")
+                            visible: !!app.match
+                            text: app.match ? (app.followPaused ? "只监听" : app.phaseText(app.phase)) + " · " + app.clock(app.match.position, true)
+                                              + " · ×" + app.match.rate.toFixed(3) : ""
                             font.pixelSize: Theme.sizeSm
                             font.features: { "tnum": 1 }
                             color: Theme.muted

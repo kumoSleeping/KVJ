@@ -8,7 +8,9 @@ import KVJ
 // whether the picture is still where the music is: its dot circles while all is
 // well, it hops on a jump, and once the threshold is passed (the music went
 // somewhere else, or went quiet) the ring ripples in amber until it is found.
-// Each pauses on its own; the player then has that part of the picture.
+// Each pauses on its own; the player then has that part of the picture, and
+// the helper only listens: it stays lit and goes on judging, it just does not
+// move the picture.
 Rectangle {
     id: root
     implicitHeight: column.implicitHeight + 24
@@ -37,9 +39,9 @@ Rectangle {
     readonly property real jumpMs: 2500
     readonly property real lostMs: 2000
 
+    // Listening: both helpers judge. Working: that judgement moves the picture.
     readonly property bool working: active
     readonly property bool tempoWorking: active && !tempoPaused
-    readonly property bool jumpWorking: active && !jumpPaused
     readonly property bool shown: Window.window ? Window.window.visible : false
     readonly property var tracking: view.tracking || null
     readonly property string inputState: view.input ? view.input.state : ""
@@ -51,9 +53,11 @@ Rectangle {
                                       ? Math.abs(tracking.error_ms) : 0
     // How near the watcher is to calling a jump: 1 is the threshold.
     readonly property real pressure: match ? Math.max(deviation / jumpMs, age / lostMs) : 0
-    readonly property bool alert: jumpWorking && (quiet || lost || (!!match && pressure >= 1))
-    readonly property bool keeping: tempoWorking && !!match && !quiet && !lost && !musicAway
+    readonly property bool alert: working && (quiet || lost || (!!match && pressure >= 1))
+    readonly property bool keeping: working && !!match && !quiet && !lost && !(tempoWorking && musicAway)
     readonly property real rate: tempo
+    // The speed the music is heard at, for the swing.
+    readonly property real heard: match ? match.rate : tempo
     readonly property int lock: match ? match.lock_revision : 0
     property bool jumped: false
 
@@ -69,7 +73,7 @@ Rectangle {
     }
 
     onLockChanged: {
-        if (jumpWorking && lock > 0) {
+        if (working && lock > 0) {
             jumped = true
             jumpNote.restart()
             hop.restart()
@@ -122,8 +126,8 @@ Rectangle {
                     SequentialAnimation on x {
                         running: root.keeping && root.shown
                         loops: Animation.Infinite
-                        NumberAnimation { from: 2; to: 18; duration: 500 / root.rate; easing.type: Easing.InOutSine }
-                        NumberAnimation { from: 18; to: 2; duration: 500 / root.rate; easing.type: Easing.InOutSine }
+                        NumberAnimation { from: 2; to: 18; duration: 500 / root.heard; easing.type: Easing.InOutSine }
+                        NumberAnimation { from: 18; to: 2; duration: 500 / root.heard; easing.type: Easing.InOutSine }
                     }
                 }
             }
@@ -137,7 +141,7 @@ Rectangle {
                         text: "对速"
                         font.pixelSize: Theme.sizeSm
                         font.weight: Font.DemiBold
-                        color: root.tempoWorking ? Theme.text : Theme.muted
+                        color: root.working ? Theme.text : Theme.muted
                     }
                     Text {
                         visible: root.active && (!!root.match || root.tempoPaused)
@@ -153,12 +157,13 @@ Rectangle {
                     text: {
                         if (!root.active)
                             return "未开启"
-                        if (root.tempoPaused)
-                            return "已暂停，速度交给播放器 · 双击百分比复原"
                         if (root.quiet)
                             return "等声音"
                         if (!root.match)
                             return "等找到位置"
+                        if (root.tempoPaused)
+                            return "只监听 · " + (root.lost ? "等重新对上" : root.match.rate_confidence < 0.3 ? "按音频估速中"
+                                                  : "听到 " + root.percent(root.match.rate) + " · 把握 " + Math.round(root.match.rate_confidence * 100) + "%")
                         if (root.musicAway)
                             return "音乐不在画面这里，速度保持不动"
                         if (root.lost)
@@ -190,7 +195,7 @@ Rectangle {
                 id: watch
                 implicitWidth: 28
                 implicitHeight: 28
-                readonly property color tone: root.alert ? Theme.warn : root.jumpWorking ? Theme.text : Theme.faint
+                readonly property color tone: root.alert ? Theme.warn : root.working ? Theme.text : Theme.faint
 
                 SequentialAnimation {
                     id: hop
@@ -204,12 +209,12 @@ Rectangle {
                     radius: 9
                     color: "transparent"
                     border.width: 1.5
-                    border.color: root.alert ? Theme.warn : root.jumpWorking ? Theme.muted : Theme.line
+                    border.color: root.alert ? Theme.warn : root.working ? Theme.muted : Theme.line
                 }
                 // Watching: a dot going round the ring.
                 Item {
                     anchors.fill: parent
-                    visible: root.jumpWorking && !root.alert
+                    visible: root.working && !root.alert
                     Rectangle {
                         x: parent.width / 2 - 2.5
                         y: parent.height / 2 - 9 - 2.5
@@ -219,7 +224,7 @@ Rectangle {
                         color: Theme.text
                     }
                     NumberAnimation on rotation {
-                        running: root.jumpWorking && !root.alert && root.shown
+                        running: root.working && !root.alert && root.shown
                         from: 0
                         to: 360
                         duration: 2400
@@ -262,7 +267,7 @@ Rectangle {
                         text: "跳转监测"
                         font.pixelSize: Theme.sizeSm
                         font.weight: Font.DemiBold
-                        color: root.jumpWorking ? Theme.text : Theme.muted
+                        color: root.working ? Theme.text : Theme.muted
                     }
                     Text {
                         text: "阈值 " + (root.jumpMs / 1000).toFixed(1) + " s"
@@ -276,8 +281,6 @@ Rectangle {
                     text: {
                         if (!root.active)
                             return "未开启"
-                        if (root.jumpPaused)
-                            return root.tempoPaused ? "已暂停，仍在听" : "已暂停，不跳转，只跟速度"
                         if (root.inputState === "stalled")
                             return "音频中断"
                         if (root.inputState === "quiet")
@@ -286,12 +289,13 @@ Rectangle {
                             return "等待音频"
                         if (!root.match)
                             return "听音频，在 Set 里找位置"
+                        const only = root.jumpPaused ? "只监听 · " : ""
                         if (root.lost || root.pressure >= 1)
-                            return "超出阈值 · 正在重新找位置"
+                            return only + "超出阈值 · 正在重新找位置"
                         if (root.jumped)
-                            return (root.lock > 1 ? "已跳转到 " : "找到了 ") + root.match.entry.title
-                                   + " " + root.clock(root.match.position)
-                        return "偏差 " + root.deviation.toFixed(0) + " ms"
+                            return only + (root.jumpPaused ? "听到在 " : root.lock > 1 ? "已跳转到 " : "找到了 ")
+                                   + root.match.entry.title + " " + root.clock(root.match.position)
+                        return only + "偏差 " + root.deviation.toFixed(0) + " ms"
                     }
                     font.pixelSize: Theme.sizeXs
                     font.features: { "tnum": 1 }
@@ -305,9 +309,9 @@ Rectangle {
                     implicitHeight: 3
                     radius: 1.5
                     color: Theme.line
-                    opacity: root.jumpWorking && !!root.match ? 1 : 0.4
+                    opacity: root.working && !!root.match ? 1 : 0.4
                     Rectangle {
-                        width: parent.width * Math.min(1, root.jumpWorking ? root.pressure : 0)
+                        width: parent.width * Math.min(1, root.working ? root.pressure : 0)
                         height: parent.height
                         radius: 1.5
                         color: root.alert ? Theme.warn : Theme.text
