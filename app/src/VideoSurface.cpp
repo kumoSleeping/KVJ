@@ -16,6 +16,8 @@ namespace {
 // The time due moved this much further than the clock took it: a jump, not a
 // fine correction of the follow.
 constexpr double kJump = 0.75;
+// The old picture plays on at most this long waiting for the new one's frame.
+constexpr double kHoldMs = 3000;
 } // namespace
 
 VideoSurface::VideoSurface(QQuickItem *parent)
@@ -52,25 +54,86 @@ void VideoSurface::detachPreview(PreviewSurface *preview)
 
 // A reduced copy for each preview that is due one. Sampled down to twice the
 // size and halved smoothly: a soft picture for a fraction of a millisecond. The
-// first frame after a jump goes to every preview, so each dissolves with it.
-void VideoSurface::feedPreviews(bool jump)
+// first frame after a jump goes to every preview, so each dissolves with it,
+// and the old picture's frames keep the dissolving one moving there too.
+void VideoSurface::feedPreviews(const QImage &image, Layer layer)
 {
-    if (m_previews.isEmpty() || m_pending.isNull())
+    if (m_previews.isEmpty() || image.isNull())
         return;
     const double now = kvj_clock_ms();
+    const bool jump = layer == Layer::Jump;
     QImage small;
     for (PreviewSurface *preview : std::as_const(m_previews)) {
-        if (!preview->wantsFrame(now, jump))
+        if (layer == Layer::Previous ? !preview->wantsPrevious(now) : !preview->wantsFrame(now, jump))
             continue;
         const int height = preview->frameHeight();
         if (small.isNull() || small.height() != height) {
-            const QImage sampled = m_pending.height() > height * 2
-                ? m_pending.scaledToHeight(height * 2, Qt::FastTransformation)
-                : m_pending;
+            const QImage sampled = image.height() > height * 2
+                ? image.scaledToHeight(height * 2, Qt::FastTransformation)
+                : image;
             small = sampled.scaledToHeight(height, Qt::SmoothTransformation);
         }
-        preview->setFrame(small, now, jump ? m_fadeMs : 0);
+        if (layer == Layer::Previous)
+            preview->setPreviousFrame(small, now);
+        else
+            preview->setFrame(small, now, jump ? m_fadeMs : 0);
     }
+}
+
+bool VideoSurface::fadeable() const
+{
+    return m_fadeMs > 0 && m_hasFrame && m_player && m_lastTickAt >= 0;
+}
+
+// A jump that dissolves: the player that drew the picture so far plays on
+// from where it was. False while the one before is still the picture (the new
+// player has shown nothing yet): that one goes on, and the new player only
+// has to look elsewhere.
+bool VideoSurface::keepPlaying(double nowMs)
+{
+    if (m_outgoing && m_outHolding)
+        return false;
+    m_outgoing = std::move(m_player);
+    m_outBase = m_lastTarget + (nowMs - m_lastTickAt) / 1000.0 * m_lastRate;
+    m_outAt = nowMs;
+    m_outRate = m_lastRate;
+    m_outLastPts = std::exchange(m_lastPts, -1);
+    m_outHolding = true;
+    return true;
+}
+
+void VideoSurface::dropOutgoing()
+{
+    m_outgoing.reset();
+    m_outHolding = false;
+    m_outPending = QImage();
+    m_outNew = false;
+}
+
+void VideoSurface::tickOutgoing(double nowMs, int *wait)
+{
+    if (m_outHolding ? nowMs - m_outAt > kHoldMs : nowMs - m_fadeFrom >= m_fadeMs) {
+        dropOutgoing();
+        return;
+    }
+    const double target = m_outBase + (nowMs - m_outAt) / 1000.0 * m_outRate;
+    VideoFrame frame;
+    if (m_outgoing->frameFor(target, &frame, m_outRate)) {
+        const double minimum = m_maxFps > 0 ? 0.9 / m_maxFps : 0;
+        const double since = frame.pts - m_outLastPts;
+        if (m_outLastPts < 0 || since < 0 || since >= minimum || since > 0.5) {
+            m_outLastPts = frame.pts;
+            m_outPending = std::move(frame.image);
+            m_outNew = true;
+            // Still the picture until the new player has its first frame.
+            m_outShown = m_outHolding;
+            feedPreviews(m_outPending, m_outHolding ? Layer::Shown : Layer::Previous);
+            update();
+        }
+    }
+    const double ahead = m_outgoing->untilNext(target);
+    const double rate = std::max(0.1, m_outRate);
+    *wait = std::min(*wait, ahead > 0 ? int(std::clamp(ahead / rate * 1000.0 - 1.0, 1.0, 50.0)) : 8);
 }
 
 void VideoSurface::setSource(const QString &source)
@@ -94,7 +157,12 @@ void VideoSurface::setMaxHeight(int height)
 void VideoSurface::restart()
 {
     m_timer.stop();
-    // The old picture stays up until the new player has a frame for the target.
+    // The old picture stays up until the new player has a frame for the target;
+    // with a dissolve it plays on meanwhile.
+    if (!m_source.isEmpty() && fadeable())
+        keepPlaying(kvj_clock_ms());
+    else
+        dropOutgoing();
     m_player = m_source.isEmpty() ? nullptr : std::make_unique<VideoPlayer>(m_source, m_options);
     m_lastPts = -1;
     m_lastTickAt = -1;
@@ -126,10 +194,14 @@ void VideoSurface::tick()
         return;
     const double now = kvj_clock_ms();
     const double target = m_position + (now - m_clockAtMs + m_offsetMs) / 1000.0 * m_rate;
-    if (m_lastTickAt >= 0 && std::abs(target - (m_lastTarget + (now - m_lastTickAt) / 1000.0 * m_rate)) > kJump)
+    if (m_lastTickAt >= 0 && std::abs(target - (m_lastTarget + (now - m_lastTickAt) / 1000.0 * m_rate)) > kJump) {
         m_jumped = true;
+        if (fadeable() && keepPlaying(now))
+            m_player = std::make_unique<VideoPlayer>(m_source, m_options);
+    }
     m_lastTarget = target;
     m_lastTickAt = now;
+    m_lastRate = m_rate;
     VideoFrame frame;
     if (m_player->frameFor(target, &frame, m_rate)) {
         // A frame-rate cap skips frames that follow the shown one too closely,
@@ -142,7 +214,12 @@ void VideoSurface::tick()
             m_newFrame = true;
             m_fadeNext = m_jumped && m_fadeMs > 0;
             m_jumped = false;
-            feedPreviews(m_fadeNext);
+            // The new picture is here: the old one dissolves out from now on.
+            if (m_fadeNext && m_outgoing && m_outHolding) {
+                m_outHolding = false;
+                m_fadeFrom = now;
+            }
+            feedPreviews(m_pending, m_fadeNext ? Layer::Jump : Layer::Shown);
             if (!m_hasFrame) {
                 m_hasFrame = true;
                 emit hasFrameChanged();
@@ -159,7 +236,9 @@ void VideoSurface::tick()
     // while the decoder catches up.
     const double ahead = m_player->untilNext(target);
     const double rate = std::max(0.1, m_rate);
-    const int wait = ahead > 0 ? int(std::clamp(ahead / rate * 1000.0 - 1.0, 1.0, 50.0)) : 8;
+    int wait = ahead > 0 ? int(std::clamp(ahead / rate * 1000.0 - 1.0, 1.0, 50.0)) : 8;
+    if (m_outgoing)
+        tickOutgoing(now, &wait);
     m_timer.start(wait);
 }
 
@@ -172,6 +251,19 @@ QSGNode *VideoSurface::updatePaintNode(QSGNode *old, UpdatePaintNodeData *)
         return nullptr;
     }
     const double now = kvj_clock_ms();
+    // The old picture's frame: still the picture (before the new one's first
+    // frame dissolves over it), or the picture dissolving out.
+    auto outTexture = [this] {
+        m_outNew = false;
+        QSGTexture *texture = window()->createTextureFromImage(m_outPending);
+        m_outPending = QImage();
+        return texture;
+    };
+    if (m_outNew && m_outShown && !m_outPending.isNull()) {
+        if (!node)
+            node = new FrameNode;
+        node->show(outTexture(), 0, now);
+    }
     if (m_newFrame && !m_pending.isNull()) {
         m_newFrame = false;
         QSGTexture *texture = window()->createTextureFromImage(m_pending);
@@ -180,6 +272,13 @@ QSGNode *VideoSurface::updatePaintNode(QSGNode *old, UpdatePaintNodeData *)
         if (!node)
             node = new FrameNode;
         node->show(texture, std::exchange(m_fadeNext, false) ? m_fadeMs : 0, now);
+    }
+    if (m_outNew && !m_outPending.isNull()) {
+        QSGTexture *texture = outTexture();
+        if (node)
+            node->showPrevious(texture);
+        else
+            delete texture;
     }
     if (!node)
         return nullptr;

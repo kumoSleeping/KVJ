@@ -1,8 +1,9 @@
 #pragma once
 
-// The picture in the scene graph, able to dissolve from the frame it showed into
-// the next one: the new frame is drawn whole and the old one over it, fading
-// out. A jump with no fade simply replaces the picture.
+// The picture in the scene graph, able to dissolve from the picture it showed
+// into the next one: the new frame is drawn whole and the old picture over it,
+// fading out. The old picture can go on moving meanwhile (showPrevious), so
+// both play through the dissolve. A jump with no fade simply replaces it.
 
 #include <QSGOpacityNode>
 #include <QSGSimpleTextureNode>
@@ -40,6 +41,17 @@ public:
             return;
         }
         m_current->setTexture(texture);
+    }
+
+    // The picture dissolving out moves on: `texture`, which the node takes
+    // over, replaces its frame. Dropped when no dissolve is under way.
+    void showPrevious(QSGTexture *texture)
+    {
+        if (!m_previous) {
+            delete texture;
+            return;
+        }
+        m_previous->setTexture(texture);
     }
 
     // Fits the pictures into `bounds`, keeping their aspect ratios. True while

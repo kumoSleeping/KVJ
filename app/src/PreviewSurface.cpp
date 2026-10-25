@@ -34,11 +34,27 @@ void PreviewSurface::setSource(VideoSurface *source)
     emit sourceChanged();
 }
 
+bool PreviewSurface::onScreen() const
+{
+    return isVisible() && width() >= 1 && height() >= 1 && window() && window()->isVisible();
+}
+
 bool PreviewSurface::wantsFrame(double nowMs, bool urgent) const
 {
-    if (!isVisible() || width() < 1 || height() < 1 || !window() || !window()->isVisible())
-        return false;
-    return m_fps > 0 && (urgent || nowMs - m_lastAt >= 1000.0 / m_fps - 2.0);
+    return onScreen() && m_fps > 0 && (urgent || nowMs - m_lastAt >= 1000.0 / m_fps - 2.0);
+}
+
+bool PreviewSurface::wantsPrevious(double nowMs) const
+{
+    return onScreen() && m_hasFrame && m_fps > 0 && nowMs - m_previousAt >= 1000.0 / m_fps - 2.0;
+}
+
+void PreviewSurface::setPreviousFrame(const QImage &image, double nowMs)
+{
+    m_previousAt = nowMs;
+    m_previous = image;
+    m_newPrevious = true;
+    update();
 }
 
 // Tall enough for the item on this screen, never more than a small picture.
@@ -67,6 +83,8 @@ void PreviewSurface::clearFrame()
 {
     m_pending = QImage();
     m_newFrame = false;
+    m_previous = QImage();
+    m_newPrevious = false;
     m_clear = true;
     m_lastAt = -1e9;
     if (m_hasFrame) {
@@ -92,6 +110,15 @@ QSGNode *PreviewSurface::updatePaintNode(QSGNode *old, UpdatePaintNodeData *)
         if (!node)
             node = new FrameNode;
         node->show(texture, std::exchange(m_fadeMs, 0), now);
+    }
+    if (m_newPrevious && !m_previous.isNull()) {
+        m_newPrevious = false;
+        QSGTexture *texture = window()->createTextureFromImage(m_previous);
+        m_previous = QImage();
+        if (node)
+            node->showPrevious(texture);
+        else
+            delete texture;
     }
     if (!node)
         return nullptr;

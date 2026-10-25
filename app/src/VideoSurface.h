@@ -6,8 +6,10 @@
 // the frame changes, so a 30 fps video costs 30 redraws a second, not the
 // display's refresh rate. Without a new frame it keeps the last one. A jump (a
 // new file, or a time the clock alone would not have reached) can dissolve from
-// the old picture over `fadeMs`. Previews (PreviewSurface) get reduced copies of
-// the frames it shows.
+// the old picture over `fadeMs`: the old one does not stop but plays on, on a
+// player of its own from where it was at its speed, until the new one has a
+// frame and through the dissolve, so both move while they cross. Previews
+// (PreviewSurface) get reduced copies of the frames it shows.
 
 #include "Decoder.h"
 
@@ -65,9 +67,14 @@ protected:
     QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override;
 
 private:
+    enum class Layer { Shown, Jump, Previous };
     void restart();
     void tick();
-    void feedPreviews(bool jump);
+    bool fadeable() const;
+    bool keepPlaying(double nowMs);
+    void dropOutgoing();
+    void tickOutgoing(double nowMs, int *wait);
+    void feedPreviews(const QImage &image, Layer layer);
 
     QString m_source;
     DecodeOptions m_options;
@@ -81,6 +88,7 @@ private:
     // Where the last tick aimed and when, to tell a jump from time passing.
     double m_lastTarget = 0;
     double m_lastTickAt = -1;
+    double m_lastRate = 1;
     // A jump happened; the first frame after it dissolves in.
     bool m_jumped = false;
     bool m_fadeNext = false;
@@ -92,4 +100,18 @@ private:
     bool m_hasFrame = false;
     QString m_error;
     QList<PreviewSurface *> m_previews;
+    // The picture before the last jump, playing on from `m_outBase` seconds at
+    // `m_outAt` (engine clock) at `m_outRate`. Holding: the new player has no
+    // frame yet, so this one is still the picture; then it dissolves out from
+    // `m_fadeFrom`.
+    std::unique_ptr<VideoPlayer> m_outgoing;
+    double m_outBase = 0;
+    double m_outAt = 0;
+    double m_outRate = 0;
+    double m_outLastPts = -1;
+    bool m_outHolding = false;
+    double m_fadeFrom = 0;
+    QImage m_outPending;
+    bool m_outNew = false;
+    bool m_outShown = false;
 };

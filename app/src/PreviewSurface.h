@@ -33,6 +33,9 @@ public:
     bool wantsFrame(double nowMs, bool urgent = false) const;
     int frameHeight() const;
     void setFrame(const QImage &image, double nowMs, int fadeMs = 0);
+    // The picture dissolving out after a jump goes on playing too.
+    bool wantsPrevious(double nowMs) const;
+    void setPreviousFrame(const QImage &image, double nowMs);
     void clearFrame();
 
 signals:
@@ -44,11 +47,16 @@ protected:
     QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override;
 
 private:
+    bool onScreen() const;
+
     QPointer<VideoSurface> m_source;
     int m_fps = 12;
     double m_lastAt = -1e9;
     QImage m_pending;
     bool m_newFrame = false;
+    QImage m_previous;
+    bool m_newPrevious = false;
+    double m_previousAt = -1e9;
     int m_fadeMs = 0;
     bool m_clear = false;
     bool m_hasFrame = false;

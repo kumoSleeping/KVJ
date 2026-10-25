@@ -162,6 +162,14 @@ ApplicationWindow {
         if (!app.following)
             Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2)
     }
+    // 跳至此处: the player goes once to where following hears the music.
+    function jumpToMatch() {
+        const m = app.match
+        if (!m || !app.manualSeek)
+            return
+        transport.load(m.entry, m.position + (Engine.clockMs() - m.clock_at_ms + offset.value) / 1000 * m.rate, true)
+        app.tick()
+    }
     function resetTempo() {
         if (app.manualTempo)
             transport.setTempo(1)
@@ -238,7 +246,7 @@ ApplicationWindow {
     }
     // Development aid, through KVJ_DEV_DIR/cmd (main.cpp): drive the player
     // from a shell. "play <entry no.> <seconds>", "pause", "resume", "tempo
-    // <rate>", "fade <ms>" (0 = off), "listen", "follow", "stop", "hold [tempo|jump]",
+    // <rate>", "fade <ms>" (0 = off), "listen", "follow", "here", "stop", "hold [tempo|jump]",
     // "send", "back"; on the timeline "zoom <factor> <x>", "mark <x>" (x in px
     // along the strip), "jump"; "post <px> <py> <words>" posts a sticker of
     // words and chooses it.
@@ -252,6 +260,7 @@ ApplicationWindow {
         case "fade": app.fadeOn = Number(w[1]) > 0; if (app.fadeOn) app.fadeMs = Number(w[1]); break
         case "listen": app.listen(); break
         case "follow": app.follow(); break
+        case "here": app.jumpToMatch(); break
         case "stop": Engine.stop(); break
         case "hold":
             if (w[1] === "tempo")
@@ -525,6 +534,8 @@ ApplicationWindow {
                         TextButton {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 34
+                            leftPadding: 8
+                            rightPadding: 8
                             iconName: app.following ? "square" : "play"
                             text: app.following ? "停止监听" : "开始监听"
                             // At least one entry on; more can be turned on while listening.
@@ -536,6 +547,8 @@ ApplicationWindow {
                         TextButton {
                             Layout.fillWidth: true
                             primary: true
+                            leftPadding: 8
+                            rightPadding: 8
                             iconName: app.aiLeads ? "pause" : "play"
                             text: app.aiLeads ? "停止跟随" : "开始跟随"
                             enabled: app.following || app.canStart
@@ -545,6 +558,19 @@ ApplicationWindow {
                                 else
                                     app.follow()
                             }
+                        }
+                        // Once, by hand: the player to where following hears the music.
+                        TextButton {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 34
+                            leftPadding: 8
+                            rightPadding: 8
+                            text: "跳至此处"
+                            enabled: !!app.match && app.manualSeek
+                            ToolTip.visible: hovered
+                            ToolTip.delay: 600
+                            ToolTip.text: "播放器跳到智能跟随判断的位置"
+                            onClicked: app.jumpToMatch()
                         }
                     }
 
