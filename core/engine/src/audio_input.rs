@@ -230,6 +230,9 @@ pub struct Selection {
     pub device: String,
     /// Zero-based first channel of an adjacent pair; 0 means CH 1/2 (or mono).
     pub channel_start: u16,
+    /// 现场模式: the input hears a reverberant room (a microphone), so rescue also
+    /// accepts weaker evidence once it corroborates itself over time.
+    pub room: bool,
 }
 impl Selection {
     fn resolved(&self) -> Result<Self> {
@@ -237,9 +240,9 @@ impl Selection {
         if self.device == "auto" {
             let automatic = devices()?.into_iter().find(|d| d.id == "auto").context("自动捕获设备不可用")?;
             if let Some(error) = automatic.error { bail!("{error}"); }
-            return Ok(Self { device: automatic.resolved_id.context("自动捕获设备不可用")?, channel_start: self.channel_start });
+            return Ok(Self { device: automatic.resolved_id.context("自动捕获设备不可用")?, channel_start: self.channel_start, room: self.room });
         }
-        Ok(Self { device: self.device.clone(), channel_start: self.channel_start })
+        Ok(Self { device: self.device.clone(), channel_start: self.channel_start, room: self.room })
     }
     pub fn validate(&self) -> Result<()> {
         if self.device == TEST_SIGNAL {

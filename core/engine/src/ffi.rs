@@ -39,6 +39,8 @@ enum Request {
         channel_start: u16,
         #[serde(default)]
         prepare_only: bool,
+        #[serde(default)]
+        room: bool,
     },
     Stop,
     Status { after_log_id: Option<u64> },
@@ -66,8 +68,8 @@ impl KvjEngine {
             Request::Edit { revision, edit } => json!(e.edit(revision, edit)?),
             Request::Import { set_id, revision, paths } => json!(e.import(&set_id, revision, &paths)?),
             Request::Devices => json!(e.devices()?),
-            Request::Start { set_id, device, channel_start, prepare_only } => {
-                json!(e.start(&set_id, Selection { device, channel_start }, prepare_only)?)
+            Request::Start { set_id, device, channel_start, prepare_only, room } => {
+                json!(e.start(&set_id, Selection { device, channel_start, room }, prepare_only)?)
             }
             Request::Stop => json!(e.stop()),
             Request::Status { after_log_id } => json!(e.status(after_log_id)),
@@ -77,7 +79,8 @@ impl KvjEngine {
             Request::BluetoothDisconnect { id } => json!(e.bluetooth_disconnect(&id)),
             Request::BluetoothSelect { id } => json!(e.bluetooth_select(id)?),
             Request::SendStart { peer, device, channel_start } => {
-                json!(e.send_start(&peer, Selection { device, channel_start })?)
+                // Recognition, and with it room mode, runs on the receiving computer.
+                json!(e.send_start(&peer, Selection { device, channel_start, room: false })?)
             }
         })
     }

@@ -3,7 +3,7 @@
 //!   kvj-cli bluetooth                               KVJ receivers advertising nearby
 //!   kvj-cli listen                                  advertise as a receiver (until interrupted)
 //!   kvj-cli prepare <folder|file>...                 index only, then exit
-//!   kvj-cli follow  <folder|file>... [--device ID] [--channel N]
+//!   kvj-cli follow  <folder|file>... [--device ID] [--channel N] [--room]
 //! Data (Set document and caches) goes to $KVJ_DATA_DIR or the temp directory.
 use kvj_engine::{Edit, Engine, Selection};
 use std::{path::PathBuf, time::Duration};
@@ -19,6 +19,7 @@ fn main() -> anyhow::Result<()> {
     };
     let device = option("--device").unwrap_or_else(|| "auto".into());
     let channel_start = option("--channel").map_or(Ok(0), |c| c.parse())?;
+    let room = args.iter().position(|a| a == "--room").map(|i| args.remove(i)).is_some();
     let data = std::env::var_os("KVJ_DATA_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::temp_dir().join("kvj-cli"));
@@ -51,7 +52,7 @@ fn main() -> anyhow::Result<()> {
             let doc = engine.import(&set, doc.revision, &args)?;
             let count = doc.sets.iter().find(|s| s.id == set).map_or(0, |s| s.entries.len());
             println!("data   {} · Set CLI · {count} entries", data.display());
-            engine.start(&set, Selection { device, channel_start }, command == "prepare")?;
+            engine.start(&set, Selection { device, channel_start, room }, command == "prepare")?;
             let mut cursor = Some(0);
             loop {
                 std::thread::sleep(Duration::from_millis(500));
@@ -93,7 +94,7 @@ fn main() -> anyhow::Result<()> {
                     input);
             }
         }
-        _ => println!("usage: kvj-cli devices | bluetooth | prepare <paths>... | follow <paths>... [--device ID] [--channel N]"),
+        _ => println!("usage: kvj-cli devices | bluetooth | prepare <paths>... | follow <paths>... [--device ID] [--channel N] [--room]"),
     }
     Ok(())
 }

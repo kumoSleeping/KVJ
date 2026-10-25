@@ -53,7 +53,8 @@ public:
     Q_INVOKABLE void deleteSet(const QString &setId);
     Q_INVOKABLE void removeEntry(const QString &setId, const QString &entryId);
     Q_INVOKABLE void importUrls(const QString &setId, const QList<QUrl> &urls);
-    Q_INVOKABLE void start(const QString &setId, const QString &device, int channelStart);
+    // `room`: 现场模式, the input hears a reverberant room through a microphone.
+    Q_INVOKABLE void start(const QString &setId, const QString &device, int channelStart, bool room);
     Q_INVOKABLE void stop();
     // Bluetooth Low Energy: nearby KVJ receivers, advertising as one, standby
     // connections to receivers, the current DJ, and sender-only sessions.

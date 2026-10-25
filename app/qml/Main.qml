@@ -55,6 +55,10 @@ ApplicationWindow {
     // so the DJ's computer can find this one before following starts.
     readonly property bool receiving: page === 0 && !!device && device.id === "bluetooth"
     onReceivingChanged: Engine.listenBluetooth(receiving)
+    // A recording input (a microphone) hears the room: 现场模式 starts on for it
+    // and off for captured or received audio; the operator may switch it either way.
+    readonly property bool microphone: !!device && device.kind === "input"
+    onMicrophoneChanged: roomMode.checked = microphone
 
     function addUrls(urls) {
         if (!urls || urls.length === 0 || !app.editable)
@@ -415,7 +419,8 @@ ApplicationWindow {
                             Engine.stop()
                             return
                         }
-                        Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2)
+                        Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2,
+                                     roomMode.checked)
                         if (!projection.visible)
                             projection.openOn(screenBox.currentIndex, fullscreen.checked)
                     }
@@ -447,6 +452,12 @@ ApplicationWindow {
                             }
                         }
                         Item { Layout.fillWidth: true }
+                        Toggle {
+                            id: roomMode
+                            text: "现场模式"
+                            checked: app.microphone
+                            enabled: !app.running
+                        }
                         IconButton {
                             iconName: "refresh"
                             tip: "刷新设备"
