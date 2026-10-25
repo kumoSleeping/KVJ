@@ -333,9 +333,17 @@ impl Engine {
             .map(|e| e.id.clone())
             .collect();
         let session = document::id();
+        // A DJ selected (or already streaming) before Start is the current source:
+        // its matches must be presented, not wait for the next route change.
+        let presentation_epoch = if input.device == "bluetooth" {
+            self.connections.inbox.lock().unwrap().epoch
+        } else {
+            0
+        };
         let view = View {
             session: session.clone(),
             mode: "vj".into(),
+            presentation_epoch,
             input_device: input.device.clone(),
             input_channel_start: input.channel_start,
             set_id: set_id.into(),

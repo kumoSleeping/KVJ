@@ -132,7 +132,8 @@ pub(super) fn route_changed(engine: &Engine) {
     let epoch = engine.connections.inbox.lock().unwrap().epoch;
     let session = engine.view.lock().unwrap().session.clone();
     engine.present(&session, |v| {
-        if v.mode == "vj" && v.presentation_epoch < epoch {
+        // Local capture always presents epoch 0; Bluetooth routing never touches it.
+        if v.mode == "vj" && v.input_device == "bluetooth" && v.presentation_epoch < epoch {
             v.presentation_epoch = epoch;
             v.matched = None;
             v.candidate = None;
