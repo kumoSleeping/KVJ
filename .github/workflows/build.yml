@@ -65,10 +65,12 @@ jobs:
           $env:KVJ_MAX_HEIGHT = "720"
           ./build/kvj-player-check.exe sample.mp4 0 20 5 30.5
 
-      - name: Smoke test (offscreen, screenshot)
+      # macOS runs headless (offscreen); Windows uses its real platform plugin, so
+      # the screenshot shows system fonts and DirectWrite as users will see them.
+      - name: Smoke test (screenshot)
         shell: bash
         env:
-          QT_QPA_PLATFORM: offscreen
+          QT_QPA_PLATFORM: ${{ runner.os == 'macOS' && 'offscreen' || '' }}
           KVJ_DATA_DIR: ${{ runner.temp }}/kvj-data
           KVJ_SNAPSHOT: ${{ github.workspace }}/screenshot-${{ matrix.name }}.png
         run: |
