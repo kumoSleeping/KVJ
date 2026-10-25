@@ -20,6 +20,16 @@ index or video — so it stays light next to the DJ software. The projecting
 computer picks **蓝牙接收** as its input and chooses the current DJ among the
 connected ones. Pair the two computers in the system's Bluetooth settings first.
 
+## Room mode
+
+**现场模式** is for listening through a microphone in the room. Reverberation
+fills in where notes stop, so a short window seldom clears the acceptance gates
+on its own. With it on, a window that misses them but has clear landmark and
+onset evidence is taken once two others from the last 1.5 s agree on the same
+recording and position. The usual gates are untouched, so direct capture
+follows exactly as before. It starts on when a recording input is chosen and
+off for captured or received audio.
+
 ## Live desk
 
 **现场台** opens a second window for the show itself: a light preview of the
