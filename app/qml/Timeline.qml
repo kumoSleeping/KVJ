@@ -18,12 +18,15 @@ import KVJ
 // and leaves the picture alone; 跳至光标处 (or Enter) plays from it. While smart
 // following leads the keys its helpers at work own rest: the speed's while 对速
 // works, play and seeking while 跳转 does.
+// Opening another Set than the one the picture plays parks the timeline:
+// that Set from its start, paused, while the picture plays on untouched.
 Rectangle {
     id: line
     color: Theme.raised
     implicitHeight: content.implicitHeight + 20
 
     property var entries: []
+    property string setId: ""
     property string setName: ""
     property bool running: false
     property string phase: ""
@@ -35,16 +38,21 @@ Rectangle {
     readonly property bool manualTempo: !!player && player.manualTempo
     readonly property bool manualSeek: !!player && player.manualSeek
     readonly property var transport: player ? player.transport : null
-    readonly property var shown: player ? player.shownEntry : null
+    // The picture comes from another Set than this one: this one is parked,
+    // paused at its first entry's start, and the cursor waits there for Enter.
+    // The speed, the nudge keys and the effects still work on the picture.
+    readonly property bool parked: !!player && player.parked
+    readonly property var live: player ? player.shownEntry : null
+    readonly property var shown: parked ? (clips.length ? clips[0].entry : null) : live
     readonly property string playingId: shown ? shown.id : ""
-    readonly property real position: player ? player.playhead : 0
+    readonly property real position: parked ? 0 : player ? player.playhead : 0
     readonly property real tempo: player ? player.shownTempo : 1
     // The readout shows a held nudge key's bend; the bar stays on the tempo.
     readonly property real speed: player ? player.shownSpeed : 1
     readonly property int bending: speed > tempo + 1e-6 ? 1 : speed < tempo - 1e-6 ? -1 : 0
-    readonly property var match: player && player.aiPicture ? player.match : null
+    readonly property var match: player && player.aiPicture && !parked ? player.match : null
     // The entry on the screen stays until the picture has left it.
-    readonly property var lanes: entries.filter(e => e.enabled !== false || e.id === playingId)
+    readonly property var lanes: entries.filter(e => e.enabled !== false || (!parked && !!live && e.id === live.id))
 
     // The entries end to end: { entry, n (its number), start, length } in seconds along the strip.
     readonly property var clips: {
@@ -67,6 +75,37 @@ Rectangle {
     readonly property real viewLeft: Math.max(0, Math.min(viewStart, total - span))
     // When the strip was last touched; until a while after, it does not follow the playhead.
     property real touchedAt: 0
+    // Each Set's view and cursor while another one is open: back on the Set
+    // the picture plays, the timeline is as it was left. A parked Set opens
+    // whole, from its start, with the cursor there.
+    property var views: ({})
+    property string viewedId: ""
+    onSetIdChanged: {
+        if (viewedId) {
+            const next = Object.assign({}, views)
+            next[viewedId] = { zoom: zoom, viewStart: viewStart, markId: markId, markAt: markAt }
+            views = next
+        }
+        viewedId = setId
+        // Once the Set's entries (and whether it is parked) have followed.
+        Qt.callLater(arrive)
+    }
+    function arrive() {
+        const kept = views[setId]
+        touchedAt = 0
+        if (kept && !parked) {
+            zoom = kept.zoom
+            viewStart = kept.viewStart
+            markId = kept.markId
+            markAt = kept.markAt
+            return
+        }
+        fit()
+        if (parked) {
+            markId = clips.length ? clips[0].entry.id : ""
+            markAt = 0
+        }
+    }
 
     // The mark: an entry and a second in it.
     property string markId: ""
@@ -217,7 +256,7 @@ Rectangle {
     Timer {
         interval: 200
         repeat: true
-        running: line.visible && line.pps > line.fitScale + 1e-6 && line.playT >= 0
+        running: line.visible && !line.parked && line.pps > line.fitScale + 1e-6 && line.playT >= 0
         onTriggered: {
             if (Date.now() - line.touchedAt < 4000)
                 return
@@ -268,7 +307,8 @@ Rectangle {
                     Text {
                         Layout.fillWidth: true
                         text: line.shown ? line.clock(line.position, true) + " / " + line.clock(line.shown.duration, false)
-                                           + "   剩余 " + line.clock(line.shown.duration - line.position, false) : " "
+                                           + (line.parked ? "   暂停 · 画面仍在「" + line.player.playingSet.name + "」"
+                                                          : "   剩余 " + line.clock(line.shown.duration - line.position, false)) : " "
                         font.pixelSize: Theme.sizeXs
                         font.features: { "tnum": 1 }
                         color: Theme.body
@@ -339,12 +379,13 @@ Rectangle {
                 width: 42
                 height: 42
                 padding: 0
-                enabled: line.manualSeek && !!line.transport && !!line.transport.entry
-                icon.source: line.match || (line.transport && line.transport.playing) ? "icons/pause.svg" : "icons/play.svg"
+                enabled: line.manualSeek && (line.parked ? !!line.shown : !!line.transport && !!line.transport.entry)
+                icon.source: !line.parked && (line.match || (line.transport && line.transport.playing)) ? "icons/pause.svg" : "icons/play.svg"
                 icon.width: 18
                 icon.height: 18
                 icon.color: enabled ? Theme.bg : Theme.faint
-                onClicked: line.player.toggle()
+                // Parked, it plays this Set from its start, and the picture comes over.
+                onClicked: line.parked ? line.player.play(line.shown, 0) : line.player.toggle()
                 background: Rectangle {
                     radius: width / 2
                     color: !playKey.enabled ? Theme.line : playKey.down ? Theme.muted : Theme.text
@@ -353,7 +394,7 @@ Rectangle {
                 }
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "播放 / 暂停"
+                ToolTip.text: line.parked ? "从这个 Set 的开头播放（画面切过来）" : "播放 / 暂停"
             }
 
             RowLayout {
@@ -599,7 +640,7 @@ Rectangle {
                 width: 12
                 height: 12
                 radius: 6
-                color: line.manualSeek ? Theme.text : Theme.muted
+                color: line.manualSeek && !line.parked ? Theme.text : Theme.muted
             }
             // Where a press would put the cursor.
             Rectangle {
@@ -865,7 +906,7 @@ Rectangle {
                         x: 1
                         width: 2
                         height: parent.height
-                        color: Theme.text
+                        color: line.parked ? Theme.muted : Theme.text
                     }
                 }
                 Rectangle {
@@ -874,7 +915,7 @@ Rectangle {
                     width: 12
                     height: ruler.height - 2
                     radius: 3
-                    color: Theme.text
+                    color: line.parked ? Theme.muted : Theme.text
                 }
             }
 

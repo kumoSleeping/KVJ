@@ -8,7 +8,9 @@ import KVJ
 // Everything about Sets, and only here, as one tree in one scrolling list: each
 // Set is a folder that opens onto its entries, grouped by the folders they were
 // imported from (a folder holding just one folder shows as one row, "a / b").
-// The chosen Set is the one played and followed; choosing another opens it.
+// The chosen Set is the one on the timeline and followed; choosing another
+// opens it and stops following, while the picture plays on from its own Set
+// until something of the new one is played.
 // Each entry has a key that turns it on or off, at once and also during the
 // show: an entry that is off leaves the timeline and is not followed. At a
 // handover between DJs the next one is turned on while the last stays on, and
@@ -23,8 +25,9 @@ Rectangle {
     property var currentSet: null
     property bool running: false
     property bool editable: true
-    // The entry on the screen now, if any.
+    // The entry on the screen now, if any, and the Set it is in.
     property string playingId: ""
+    property string playingSetId: ""
     // The entry on the screen whose key was pressed once to turn it off.
     property string confirmId: ""
     // Opened and closed by hand: Set ids and folder keys to true (open) or
@@ -60,10 +63,10 @@ Rectangle {
         return !!bar.currentSet && bar.currentSet.id === set.id
     }
     // Choosing a Set opens it; pressing the chosen one opens or closes it.
-    // While following, the chosen Set stays and the others only open.
+    // Choosing another stops following (Main.qml), never the picture.
     function choose(set) {
-        if (isCurrent(set) || bar.running) {
-            setOpen(set.id, !isOpen(set.id, isCurrent(set)))
+        if (isCurrent(set)) {
+            setOpen(set.id, !isOpen(set.id, true))
         } else {
             bar.selectSet(set.id)
             setOpen(set.id, true)
@@ -87,13 +90,13 @@ Rectangle {
     function enableAll(set, on) {
         const ids = set.entries.filter(e => (e.enabled !== false) !== on).map(e => e.id)
         // All off keeps the one on the screen: it is turned off on its own key.
-        const chosen = on || !isCurrent(set) ? ids : ids.filter(id => id !== bar.playingId)
+        const chosen = on ? ids : ids.filter(id => id !== bar.playingId)
         if (chosen.length)
             Engine.enableEntries(set.id, chosen, on)
     }
     // A key pressed on an entry. Off for the one on the screen asks first.
     function press(set, entry, on) {
-        if (!on && isCurrent(set) && entry.id === bar.playingId && entry.enabled !== false) {
+        if (!on && entry.id === bar.playingId && entry.enabled !== false) {
             if (bar.confirmId !== entry.id) {
                 bar.confirmId = entry.id
                 confirmTimer.restart()
@@ -191,7 +194,7 @@ Rectangle {
                     } else {
                         out.push({ kind: "entry", set: set, depth: depth, entry: child.entry, index: child.index,
                                    current: current })
-                        if (current && bar.confirmId === child.entry.id)
+                        if (bar.confirmId === child.entry.id)
                             out.push({ kind: "confirm", set: set, depth: depth })
                     }
                 }
@@ -397,8 +400,19 @@ Rectangle {
                     text: row.set ? row.set.name : ""
                     font.pixelSize: Theme.size
                     font.weight: row.current ? Font.DemiBold : Font.Medium
-                    color: row.current ? Theme.text : bar.running ? Theme.faint : Theme.body
+                    color: row.current ? Theme.text : Theme.body
                     elide: Text.ElideRight
+                }
+                // The picture plays from this Set while another one is open.
+                ColorImage {
+                    visible: !row.current && !!row.set && row.set.id === bar.playingSetId
+                    source: "icons/play.svg"
+                    sourceSize: Qt.size(12, 12)
+                    color: Theme.muted
+                    ToolTip.visible: playTip.hovered
+                    ToolTip.delay: 400
+                    ToolTip.text: "画面正在播这个 Set"
+                    HoverHandler { id: playTip }
                 }
                 Text {
                     visible: !more.visible
@@ -515,7 +529,7 @@ Rectangle {
             property var info: null
             readonly property var entry: info ? info.entry : null
             readonly property bool on: !!entry && entry.enabled !== false
-            readonly property bool playing: !!info && info.current && !!entry && bar.playingId === entry.id
+            readonly property bool playing: !!entry && bar.playingId === entry.id
             height: Theme.row
             topPadding: 0
             bottomPadding: 0

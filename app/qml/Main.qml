@@ -118,6 +118,19 @@ ApplicationWindow {
     // What it plays at this moment: the tempo, bent while a nudge key is held.
     readonly property real shownSpeed: aiPicture ? match.rate : transport.speed
     property real playhead: 0
+    // The Set the picture comes from. Opening another Set leaves it playing
+    // there, effects and speed included: the other Set's timeline is parked,
+    // paused at its start, until something of it is played (Enter, 跳至光标处
+    // or its play key), and coming back to this Set shows the player again.
+    readonly property var playingSet: {
+        const id = shownEntry ? shownEntry.id : ""
+        for (const s of sets)
+            if (s.entries.some(e => e.id === id))
+                return s
+        return null
+    }
+    readonly property var playingEntries: playingSet ? playingSet.entries : entries
+    readonly property bool parked: !!playingSet && !!currentSet && playingSet.id !== currentSet.id
     // Every jump, by hand or by following, can dissolve.
     property bool fadeOn: false
     property int fadeMs: 400
@@ -262,7 +275,7 @@ ApplicationWindow {
     // The entry after `id` that is on, from its start; past the last one, the
     // first that is on.
     function nextOn(id) {
-        const list = app.entries
+        const list = app.playingEntries
         const i = list.findIndex(e => e.id === id)
         for (let k = 1; k <= list.length; ++k) {
             const e = list[(i + k) % list.length]
@@ -276,7 +289,7 @@ ApplicationWindow {
     // on; with none left it stops there. Following finds its own way.
     function dropPlaying(id) {
         const next = app.nextOn(id)
-        Engine.enableEntries(app.currentSet.id, [id], false)
+        Engine.enableEntries((app.playingSet || app.currentSet).id, [id], false)
         if (!app.manualSeek || !transport.entry || transport.entry.id !== id)
             return
         if (next)
@@ -285,8 +298,17 @@ ApplicationWindow {
             transport.setPlaying(false)
         app.tick()
     }
+    // Another Set is chosen: listening and following stop at once (they hear
+    // for the Set they started on), and the player carries the picture on.
+    function chooseSet(id) {
+        if (app.currentSet && app.currentSet.id === id)
+            return
+        if (app.running && !sender.visible)
+            Engine.stop()
+        app.setId = id
+    }
     // The playhead for the timeline; at the end of an entry the player goes on
-    // to the next one in the Set that is on.
+    // to the next one in its Set that is on.
     function tick() {
         if (app.aiPicture) {
             app.playhead = Math.max(0, Math.min(app.shownDuration, app.match.position
@@ -295,8 +317,9 @@ ApplicationWindow {
         }
         app.playhead = transport.now()
         if (transport.playing && transport.duration > 0 && app.playhead >= transport.duration - 0.03) {
-            const i = app.entries.findIndex(e => e.id === transport.entry.id)
-            const next = i >= 0 ? app.entries.slice(i + 1).find(e => e.enabled !== false) : null
+            const list = app.playingEntries
+            const i = list.findIndex(e => e.id === transport.entry.id)
+            const next = i >= 0 ? list.slice(i + 1).find(e => e.enabled !== false) : null
             if (next)
                 transport.load(next, 0, true)
             else
@@ -554,7 +577,8 @@ ApplicationWindow {
                 running: app.running
                 editable: app.editable
                 playingId: app.shownEntry ? app.shownEntry.id : ""
-                onSelectSet: id => app.setId = id
+                playingSetId: app.playingSet ? app.playingSet.id : ""
+                onSelectSet: id => app.chooseSet(id)
                 onAddUrls: urls => app.addUrls(urls)
                 onDropPlaying: id => app.dropPlaying(id)
             }
@@ -893,6 +917,7 @@ ApplicationWindow {
             objectName: "timeline"
             Layout.fillWidth: true
             entries: app.entries
+            setId: app.currentSet ? app.currentSet.id : ""
             setName: app.currentSet ? app.currentSet.name : ""
             running: app.running
             phase: app.phase
