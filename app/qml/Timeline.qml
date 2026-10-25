@@ -522,10 +522,12 @@ Rectangle {
                 id: ruler
                 width: parent.width
                 height: 18
+                // By place too: panning makes the ticks afresh every frame.
                 Repeater {
-                    model: line.ticks
+                    model: line.ticks.length
                     Item {
-                        required property var modelData
+                        required property int index
+                        readonly property var modelData: line.ticks[index] || { x: 0, label: "" }
                         x: modelData.x
                         height: ruler.height
                         Rectangle {
@@ -553,11 +555,16 @@ Rectangle {
                 height: filmHeight + 1 + waveHeight
                 readonly property int filmHeight: 64
                 readonly property int waveHeight: 42
+                // By place, not by clip: the clips are made afresh whenever the
+                // Set or the entry on the screen changes (every cut), and a
+                // model of them would build every strip anew each time.
                 Repeater {
-                    model: line.clips
+                    model: line.clips.length
                     Item {
                         id: piece
-                        required property var modelData
+                        required property int index
+                        readonly property var modelData: line.clips[index]
+                                                         || { entry: { id: "", path: "", title: "", duration: 0, video: false }, n: 0, start: 0, length: 0 }
                         readonly property var entry: modelData.entry
                         readonly property real cx: (modelData.start - line.viewLeft) * line.pps
                         readonly property real cw: modelData.length * line.pps

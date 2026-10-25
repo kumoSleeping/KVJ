@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QObject>
 #include <QStringList>
+#include <QThreadPool>
 #include <QTimer>
 #include <QUrl>
 #include <QVariantList>
@@ -92,8 +93,10 @@ signals:
 
 private:
     using Done = std::function<void(const QJsonValue &ok)>;
-    // `finally` runs after the reply, whether it succeeded or not.
-    void call(const QJsonObject &request, Done done, bool background, std::function<void()> finally = {});
+    // `finally` runs after the reply, whether it succeeded or not. Background
+    // commands run on `pool` (the global thread pool when none).
+    void call(const QJsonObject &request, Done done, bool background, std::function<void()> finally = {},
+              QThreadPool *pool = nullptr);
     void edit(const QJsonObject &edit);
     void setError(const QString &error);
     void applyPresented(const QJsonObject &view);
@@ -115,4 +118,8 @@ private:
     qint64 m_logCursor = 0;
     QString m_session;
     QTimer m_poll;
+    // Entries turned on or off, one after another in the order asked: the
+    // engine writes the document to disk (synced) and may wait for an import,
+    // which the GUI thread drawing the projection must never do.
+    QThreadPool m_edits;
 };

@@ -29,6 +29,7 @@ QJsonObject roundTrip(KvjEngine *engine, const QJsonObject &request)
 Engine::Engine(QObject *parent)
     : QObject(parent)
 {
+    m_edits.setMaxThreadCount(1);
     m_dataDir = defaultDataDir();
     QDir().mkpath(m_dataDir);
     m_engine = kvj_engine_new(QDir::toNativeSeparators(m_dataDir).toUtf8().constData(), &Engine::onEvent, this);
@@ -49,6 +50,7 @@ Engine::~Engine()
     m_poll.stop();
     // Background commands hold the raw engine pointer; let them finish first.
     QThreadPool::globalInstance()->waitForDone();
+    m_edits.waitForDone();
     // Joins the worker: no event can reach this object afterwards.
     kvj_engine_free(m_engine);
     m_engine = nullptr;
@@ -74,7 +76,8 @@ void Engine::onEvent(void *user, const char *json)
     }, Qt::QueuedConnection);
 }
 
-void Engine::call(const QJsonObject &request, Done done, bool background, std::function<void()> finally)
+void Engine::call(const QJsonObject &request, Done done, bool background, std::function<void()> finally,
+                  QThreadPool *pool)
 {
     if (!m_engine)
         return;
@@ -92,7 +95,7 @@ void Engine::call(const QJsonObject &request, Done done, bool background, std::f
     emit busyChanged();
     QPointer<Engine> guard(this);
     KvjEngine *engine = m_engine;
-    QThreadPool::globalInstance()->start([guard, engine, request, done, finally] {
+    (pool ? pool : QThreadPool::globalInstance())->start([guard, engine, request, done, finally] {
         const QJsonObject reply = roundTrip(engine, request);
         QMetaObject::invokeMethod(guard, [guard, reply, done, finally] {
             if (!guard)
@@ -178,9 +181,14 @@ void Engine::enableEntries(const QString &setId, const QStringList &entryIds, bo
         {"on", on},
     };
     call(request, [this](const QJsonValue &ok) {
-        m_document = ok.toObject().toVariantMap();
+        // An edit made meanwhile (on the GUI thread) is never undone by an
+        // older document.
+        const QVariantMap document = ok.toObject().toVariantMap();
+        if (document.value("revision").toLongLong() < m_document.value("revision").toLongLong())
+            return;
+        m_document = document;
         emit documentChanged();
-    }, false);
+    }, true, {}, &m_edits);
 }
 
 void Engine::importUrls(const QString &setId, const QList<QUrl> &urls)
@@ -271,7 +279,8 @@ void Engine::selectBluetooth(const QString &id)
 
 void Engine::listenBluetooth(bool on)
 {
-    call({{"cmd", "bluetooth_listen"}, {"on", on}}, nullptr, true);
+    // In the order asked: a quick off and on again must end listening.
+    call({{"cmd", "bluetooth_listen"}, {"on", on}}, nullptr, true, {}, &m_edits);
 }
 
 void Engine::startSending(const QString &peer, const QString &device, int channelStart)
