@@ -195,7 +195,7 @@ impl LiveIndex {
         canceled: &dyn Fn() -> bool,
     ) -> Result<Vec<LiveSeed>> {
         let rates: [f64; RATES] = std::array::from_fn(|r| 0.80 + r as f64 * 0.025);
-        self.search_rates(query, &rates, canceled)
+        self.search_rates(query, &rates, &|_| true, canceled)
     }
     /// Search every target at a known tempo first. Callers must widen the tempo
     /// range if verification cannot uniquely establish the recording position.
@@ -205,13 +205,25 @@ impl LiveIndex {
         rate: f64,
         canceled: &dyn Fn() -> bool,
     ) -> Result<Vec<LiveSeed>> {
+        self.search_slice_at_rate_among(query, rate, &|_| true, canceled)
+    }
+    /// The same, among only the targets `allowed` admits; the others never take
+    /// a place among the ranked seeds.
+    pub fn search_slice_at_rate_among(
+        &mut self,
+        query: &LiveFeatures,
+        rate: f64,
+        allowed: &dyn Fn(usize) -> bool,
+        canceled: &dyn Fn() -> bool,
+    ) -> Result<Vec<LiveSeed>> {
         anyhow::ensure!((0.80..=1.25).contains(&rate), "实时查询速度无效");
-        self.search_rates(query, &[rate], canceled)
+        self.search_rates(query, &[rate], allowed, canceled)
     }
     fn search_rates(
         &mut self,
         query: &LiveFeatures,
         rates: &[f64],
+        allowed: &dyn Fn(usize) -> bool,
         canceled: &dyn Fn() -> bool,
     ) -> Result<Vec<LiveSeed>> {
         anyhow::ensure!(
@@ -336,6 +348,9 @@ impl LiveIndex {
                 }
                 let pos = cell % width;
                 let target = bases.partition_point(|&b| b <= pos) - 1;
+                if !allowed(target + first) {
+                    continue;
+                }
                 let key = (((cell / width) as u64) << 48)
                     | (((target + first) as u64) << 32)
                     | (pos - bases[target]) as u64;

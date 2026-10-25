@@ -77,5 +77,9 @@ mod tests {
             + query.duration_ms() / 1000. * result.rate;
         let expected = 22.55 - tail;
         assert!((position - expected).abs() < 0.05, "position {position:.3} expected {expected:.3}");
+
+        // Among only the first recording, the second never takes a seed.
+        let among = index.search_slice_at_rate_among(&query, 1., &|t| t == 0, &|| false).unwrap();
+        assert!(among.iter().all(|s| s.target == 0));
     }
 }

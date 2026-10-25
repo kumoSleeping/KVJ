@@ -30,6 +30,7 @@ enum Request {
     Document,
     Edit { revision: u64, edit: Edit },
     Import { set_id: String, revision: u64, paths: Vec<String> },
+    Enable { set_id: String, entry_ids: Vec<String>, on: bool },
     Devices,
     Start {
         set_id: String,
@@ -65,6 +66,7 @@ impl KvjEngine {
             Request::Document => json!(e.document()?),
             Request::Edit { revision, edit } => json!(e.edit(revision, edit)?),
             Request::Import { set_id, revision, paths } => json!(e.import(&set_id, revision, &paths)?),
+            Request::Enable { set_id, entry_ids, on } => json!(e.enable(&set_id, &entry_ids, on)?),
             Request::Devices => json!(e.devices()?),
             Request::Start { set_id, device, channel_start, prepare_only } => {
                 json!(e.start(&set_id, Selection { device, channel_start }, prepare_only)?)

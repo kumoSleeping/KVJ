@@ -113,6 +113,8 @@ pub struct Engine {
     view: Mutex<View>,
     diagnostics: Mutex<Diagnostics>,
     prepared: Mutex<Option<Arc<index::PreparedSet>>>,
+    // Entries of the running Set that are turned off; read every round.
+    off: Mutex<std::collections::HashSet<String>>,
     session: Mutex<Option<Session>>,
     gate: Mutex<()>,
     connections: bluetooth::Hub,
@@ -131,6 +133,7 @@ impl Engine {
             view: Mutex::new(View::default()),
             diagnostics: Mutex::new(Diagnostics::default()),
             prepared: Mutex::new(None),
+            off: Mutex::new(Default::default()),
             session: Mutex::new(None),
             gate: Mutex::new(()),
             connections: bluetooth::Hub::default(),
@@ -207,6 +210,29 @@ impl Engine {
             s.commit(next)
         })?;
         self.invalidate_prepared();
+        Ok(document)
+    }
+    /// Turns entries on or off for following; allowed while following, when the
+    /// running session takes it at its next round.
+    pub fn enable(&self, set_id: &str, entry_ids: &[String], on: bool) -> Result<Document> {
+        // Not between a starting session reading its Set and taking what is off.
+        let _gate = self.gate.lock().unwrap();
+        let document = self.with_store(|s| {
+            let mut next = s.doc.clone();
+            next.enable(set_id, entry_ids, on)?;
+            s.commit(next)
+        })?;
+        let view = self.view.lock().unwrap();
+        if view.set_id == set_id {
+            let mut off = self.off.lock().unwrap();
+            for id in entry_ids {
+                if on {
+                    off.remove(id);
+                } else {
+                    off.insert(id.clone());
+                }
+            }
+        }
         Ok(document)
     }
     /// Files and folders (searched recursively) become entries of one Set.
@@ -299,6 +325,12 @@ impl Engine {
                 .clone())
         })?;
         anyhow::ensure!(!set.entries.is_empty(), "Set 没有素材");
+        *self.off.lock().unwrap() = set
+            .entries
+            .iter()
+            .filter(|e| !e.enabled)
+            .map(|e| e.id.clone())
+            .collect();
         let session = document::id();
         let view = View {
             session: session.clone(),
@@ -316,7 +348,12 @@ impl Engine {
             &session,
             Level::Info,
             Stage::Session,
-            format!("会话开始 · {} · {} 个素材", set.name, set.entries.len()),
+            format!(
+                "会话开始 · {} · {} 个素材 · {} 个启用",
+                set.name,
+                set.entries.len(),
+                set.entries.iter().filter(|e| e.enabled).count()
+            ),
         );
         let cancel = Arc::new(AtomicBool::new(false));
         let worker = {

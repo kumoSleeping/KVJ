@@ -381,6 +381,23 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                 v.rescue = Some(rescue_status.clone());
                 v.tracking = Some(tracking_status.clone());
             });
+            // What the DJ has on right now. Turning off the entry being followed
+            // lets it go: the picture stays until another entry is found.
+            let on: Vec<bool> = {
+                let off = engine.off.lock().unwrap();
+                set.recordings.iter().map(|r| !off.contains(&r.entry.id)).collect()
+            };
+            if current.is_some_and(|c| !on[c.recording]) {
+                log(engine, session, Level::Info, Stage::Decision, format!(
+                    "{} 已停用，改在启用的素材中检索",
+                    set.recordings[current.unwrap().recording].entry.title
+                ));
+                current = None;
+                estimate = None;
+                lost = true;
+                search_cursor = 0;
+                publish(engine, session, |v| v.phase = "searching".into());
+            }
             if current.is_some_and(|c| c.at.elapsed().as_secs_f64() > 2.) && !lost {
                 lost = true;
                 publish(engine, session, |v| v.phase = "searching".into());
@@ -465,7 +482,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                     };
                     scanned.clear();
                     let mut rescued = None;
-                    let rescue_ran = !tracking;
+                    let rescue_ran = !tracking && on.contains(&true);
                     if tracking {
                         search_cursor = 0;
                     }
@@ -508,7 +525,8 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                             let seeds = {
                                 let mut index = set.index.lock().unwrap();
                                 let canceled = || cancel.load(Ordering::Relaxed);
-                                index.search_slice_at_rate(&query, rate, &canceled)?
+                                let allowed = |t: usize| on[set.targets[t].recording];
+                                index.search_slice_at_rate_among(&query, rate, &allowed, &canceled)?
                             };
                             retrieval_ms += started.elapsed().as_secs_f64() * 1000.;
                             tracing::debug!(target: "kvj_probe", scan = scan + 1,

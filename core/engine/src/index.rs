@@ -47,11 +47,17 @@ pub fn signature(path: &Path) -> Result<String> {
     ))
 }
 fn key(set: &Set) -> Result<String> {
+    // Every entry is indexed whether it is on or not, so turning one on or off
+    // keeps the index.
+    let mut indexed = set.clone();
+    for e in &mut indexed.entries {
+        e.enabled = true;
+    }
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (
         "live-set-landmarks-v6",
         LIVE_FEATURE_REVISION,
-        serde_json::to_vec(set)?,
+        serde_json::to_vec(&indexed)?,
     )
         .hash(&mut h);
     for e in &set.entries {
@@ -267,4 +273,28 @@ pub fn prepare(
         ),
     );
     Ok(ready)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn turning_entries_off_keeps_the_index() {
+        let dir = std::env::temp_dir().join(format!("kvj-index-key-{}", super::super::document::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a.mp4");
+        fs::write(&path, b"x").unwrap();
+        let mut set: Set = serde_json::from_value(serde_json::json!({
+            "id": "s", "name": "Set 1",
+            "entries": [{"id": "a", "path": path, "title": "a", "duration": 60.0, "video": true, "presentation": "video"}]
+        }))
+        .unwrap();
+        let on = key(&set).unwrap();
+        set.entries[0].enabled = false;
+        assert_eq!(key(&set).unwrap(), on);
+        set.entries[0].title = "renamed".into();
+        assert_ne!(key(&set).unwrap(), on);
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

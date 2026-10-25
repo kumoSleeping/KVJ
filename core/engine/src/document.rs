@@ -20,8 +20,15 @@ pub struct Entry {
     #[serde(default)]
     pub audio_offset: f64,
     pub presentation: String,
+    /// Followed only while on. The DJ turns entries on and off during the show,
+    /// so this may change while a session runs and never touches the index.
+    #[serde(default = "on")]
+    pub enabled: bool,
     #[serde(flatten)]
     extra: BTreeMap<String, Value>,
+}
+fn on() -> bool {
+    true
 }
 impl Entry {
     pub fn new(path: &Path, video: bool, audio_offset: f64, duration: f64) -> Result<Self> {
@@ -39,6 +46,7 @@ impl Entry {
             video,
             audio_offset,
             presentation: if video { "video" } else { "audio" }.into(),
+            enabled: true,
             extra: BTreeMap::new(),
         })
     }
@@ -341,10 +349,42 @@ impl Document {
         }
         Ok(())
     }
+    /// Turns entries of one Set on or off for following.
+    pub fn enable(&mut self, set_id: &str, entry_ids: &[String], on: bool) -> Result<()> {
+        let set = self.set_mut(set_id)?;
+        for id in entry_ids {
+            set.entries
+                .iter_mut()
+                .find(|e| &e.id == id)
+                .context("素材不存在")?
+                .enabled = on;
+        }
+        Ok(())
+    }
     pub fn set_mut(&mut self, id: &str) -> Result<&mut Set> {
         self.sets
             .iter_mut()
             .find(|s| s.id == id)
             .context("Set 不存在")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn entries_are_on_unless_turned_off() {
+        // Documents written before the switch existed load with every entry on.
+        let raw = r#"{"version":1,"revision":3,"sets":[{"id":"s","name":"Set 1","entries":[
+            {"id":"a","path":"/a.mp4","title":"a","duration":60,"video":true,"presentation":"video"},
+            {"id":"b","path":"/b.mp4","title":"b","duration":60,"video":true,"presentation":"video"}]}]}"#;
+        let mut doc: Document = serde_json::from_str(raw).unwrap();
+        assert!(doc.sets[0].entries.iter().all(|e| e.enabled));
+        doc.enable("s", &["b".into()], false).unwrap();
+        assert!(doc.sets[0].entries[0].enabled && !doc.sets[0].entries[1].enabled);
+        let back: Document = serde_json::from_value(serde_json::to_value(&doc).unwrap()).unwrap();
+        assert!(!back.sets[0].entries[1].enabled);
+        assert!(doc.enable("s", &["missing".into()], true).is_err());
     }
 }

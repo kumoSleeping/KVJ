@@ -18,6 +18,7 @@ KvjEngine *kvj_engine_new(const char *data_dir, KvjEventFn on_event, void *user)
 void kvj_engine_free(KvjEngine *engine);
 /* Requests: {"cmd":"document"} {"cmd":"edit","revision":n,"edit":{"kind":"create","name":"..."}}
  * {"cmd":"import","set_id":"..","revision":n,"paths":[..]} {"cmd":"devices"}
+ * {"cmd":"enable","set_id":"..","entry_ids":[..],"on":true} (also while following)
  * {"cmd":"start","set_id":"..","device":"auto","channel_start":0,"prepare_only":false}
  * {"cmd":"stop"} {"cmd":"status","after_log_id":null}
  * Bluetooth (BLE): {"cmd":"bluetooth_scan"} {"cmd":"bluetooth_listen","on":true}
