@@ -120,9 +120,13 @@ Rectangle {
             zoomAt(x, Math.pow(1.0015, delta))
             return
         }
-        if (wheel.phase !== Qt.NoScrollPhase && (p.x !== 0 || p.y !== 0)) {
-            if (wheel.phase === Qt.ScrollBegin)
+        if (wheel.phase !== Qt.NoScrollPhase) {
+            // macOS begins a gesture as the fingers land, before they move,
+            // so the begin carries no delta: each gesture picks its axis anew.
+            if (wheel.phase === Qt.ScrollBegin || wheel.phase === Qt.ScrollEnd)
                 swipeAxis = 0
+            if (p.x === 0 && p.y === 0)
+                return
             if (swipeAxis === 0)
                 swipeAxis = Math.abs(p.x) >= Math.abs(p.y) ? 1 : 2
             pan(-(swipeAxis === 1 ? p.x : p.y))
@@ -484,8 +488,10 @@ Rectangle {
             MouseArea {
                 id: seekArea
                 anchors.fill: parent
-                enabled: line.manualSeek && line.clips.length > 0
-                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                // Scrolling works while following too; only pressing is held back.
+                readonly property bool seeks: line.manualSeek && line.clips.length > 0
+                acceptedButtons: seeks ? Qt.LeftButton : Qt.NoButton
+                cursorShape: seeks ? Qt.PointingHandCursor : Qt.ArrowCursor
                 preventStealing: true
                 function seek(mouse) {
                     const t = Math.max(0, Math.min(1, mouse.x / width)) * line.total
