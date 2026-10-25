@@ -527,28 +527,25 @@ ApplicationWindow {
                         }
                     }
 
+                    // Listening: the engine hears the music and judges where it is.
+                    TextButton {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 34
+                        iconName: app.following ? "square" : "play"
+                        text: app.following ? "停止监听" : "开始监听"
+                        // At least one entry on; more can be turned on while listening.
+                        enabled: app.following || app.canStart
+                        onClicked: app.following ? Engine.stop() : app.listen()
+                    }
                     RowLayout {
                         Layout.fillWidth: true
+                        Layout.topMargin: -6
                         spacing: 8
-                        // Listening: the engine hears the music and judges where it is.
-                        TextButton {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 34
-                            leftPadding: 8
-                            rightPadding: 8
-                            iconName: app.following ? "square" : "play"
-                            text: app.following ? "停止监听" : "开始监听"
-                            // At least one entry on; more can be turned on while listening.
-                            enabled: app.following || app.canStart
-                            onClicked: app.following ? Engine.stop() : app.listen()
-                        }
                         // Following: that judgement moves the picture. Stopping
                         // it keeps listening.
                         TextButton {
                             Layout.fillWidth: true
                             primary: true
-                            leftPadding: 8
-                            rightPadding: 8
                             iconName: app.aiLeads ? "pause" : "play"
                             text: app.aiLeads ? "停止跟随" : "开始跟随"
                             enabled: app.following || app.canStart
@@ -563,8 +560,6 @@ ApplicationWindow {
                         TextButton {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 34
-                            leftPadding: 8
-                            rightPadding: 8
                             text: "跳至此处"
                             enabled: !!app.match && app.manualSeek
                             ToolTip.visible: hovered
