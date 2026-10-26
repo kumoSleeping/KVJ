@@ -705,7 +705,7 @@ Item {
                         implicitHeight: 26
                         flat: true
                         text: "重置"
-                        enabled: Live.customized
+                        visible: Live.customized
                         onClicked: Live.resetPresets()
                         ToolTip.visible: hovered
                         ToolTip.delay: 600
@@ -869,6 +869,9 @@ Item {
                             }
                             Seek {
                                 Layout.fillWidth: true
+                                // Fills what the row leaves, never pushing the value out.
+                                Layout.preferredWidth: 40
+                                Layout.minimumWidth: 30
                                 large: true
                                 from: 0
                                 to: 100
