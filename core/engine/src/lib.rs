@@ -15,6 +15,7 @@ mod index;
 #[cfg(target_os = "macos")]
 mod output_tap;
 mod qos;
+pub mod rhythm;
 mod runtime;
 pub mod sound;
 pub mod waveform;

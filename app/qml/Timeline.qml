@@ -14,10 +14,13 @@ import KVJ
 // at once; the picture and sound go on) as strips of the middle of their frames
 // over their sound's waveform (KDJ's whole-track preview, the part played
 // dimmed); pinch on the trackpad (or ⌘/Ctrl/Alt + scroll, or − / +) zooms in
-// about the pointer down to a few frames, a two-finger swipe moves along. Pressing or dragging there only sets the cursor
-// and leaves the picture alone; 跳至光标处 (or Enter) plays from it. While smart
-// following leads the keys its helpers at work own rest: the speed's while 对速
-// works, play and seeking while 跳转 does.
+// about the pointer down to a few frames, a two-finger swipe moves along.
+// Over the frames runs each entry's tempo, a block a section with its BPM, and
+// a line down through the frames and the sound where it changes: in a long
+// mix, where one song gives way to the next. Pressing or dragging there only
+// sets the cursor and leaves the picture alone; 跳至光标处 (or Enter) plays
+// from it. While smart following leads the keys its helpers at work own rest:
+// the speed's while 对速 works, play and seeking while 跳转 does.
 // Opening another Set than the one the picture plays parks the timeline:
 // that Set from its start, paused, while the picture plays on untouched.
 Rectangle {
@@ -121,6 +124,13 @@ Rectangle {
         const rest = s - m * 60
         const text = tenths ? rest.toFixed(1) : Math.floor(rest).toString()
         return m + ":" + (rest < 10 ? "0" : "") + text
+    }
+    // A tempo's colour: neighbouring tempi apart, the same tempo alike in every entry.
+    function tempoColor(bpm) {
+        if (bpm === null || bpm === undefined)
+            return Theme.inset
+        const hue = (Math.log(bpm) / Math.LN2 * 2.5) % 1
+        return Theme.dark ? Qt.hsla(hue, 0.42, 0.30, 1) : Qt.hsla(hue, 0.55, 0.84, 1)
     }
     function signed(rate) {
         const pct = (rate - 1) * 100
@@ -741,7 +751,8 @@ Rectangle {
                 id: strips
                 y: ruler.height
                 width: parent.width
-                height: filmHeight + 1 + waveHeight
+                height: tempoHeight + filmHeight + 1 + waveHeight
+                readonly property int tempoHeight: 18
                 readonly property int filmHeight: 64
                 readonly property int waveHeight: 42
                 // By place, not by clip: the clips are made afresh whenever the
@@ -767,7 +778,59 @@ Rectangle {
                             anchors.fill: parent
                             color: Theme.inset
                         }
+                        // The entry's tempo, a block a section; its label stays
+                        // in view while any of the block is.
+                        Item {
+                            id: tempoLane
+                            width: parent.width
+                            height: strips.tempoHeight
+                            Repeater {
+                                model: wave.tempo
+                                Item {
+                                    required property var modelData
+                                    readonly property bool beat: modelData.bpm !== null && modelData.bpm !== undefined
+                                    x: (modelData.start - wave.from) * line.pps
+                                    width: (modelData.end - modelData.start) * line.pps
+                                    height: tempoLane.height
+                                    visible: x + width > 0 && x < tempoLane.width
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        anchors.topMargin: 2
+                                        anchors.bottomMargin: 2
+                                        anchors.leftMargin: 1
+                                        anchors.rightMargin: 1
+                                        radius: 3
+                                        color: line.tempoColor(parent.modelData.bpm)
+                                        // A tempo its beats hardly fit is told with less ink.
+                                        opacity: !parent.beat || parent.modelData.confidence >= 0.15 ? 1 : 0.6
+                                    }
+                                    Text {
+                                        id: bpmLabel
+                                        readonly property string full: parent.beat ? Math.round(parent.modelData.bpm) + " BPM" : "无拍"
+                                        readonly property string brief: parent.beat ? "" + Math.round(parent.modelData.bpm) : ""
+                                        text: parent.width >= fullMetrics.width + 12 ? full : parent.width >= briefMetrics.width + 8 ? brief : ""
+                                        x: Math.max(5, Math.min(-parent.x + 5, parent.width - implicitWidth - 5))
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                        font.features: { "tnum": 1 }
+                                        color: parent.beat ? Theme.text : Theme.faint
+                                        TextMetrics { id: fullMetrics; font: bpmLabel.font; text: bpmLabel.full }
+                                        TextMetrics { id: briefMetrics; font: bpmLabel.font; text: bpmLabel.brief }
+                                    }
+                                }
+                            }
+                            Text {
+                                visible: wave.findingTempo && wave.tempo.length === 0 && piece.width > 120
+                                x: Math.max(6, -piece.cx + 6)
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: wave.analysing ? "" : "分析速度…"
+                                font.pixelSize: 10
+                                color: Theme.faint
+                            }
+                        }
                         FilmStrip {
+                            y: strips.tempoHeight
                             width: parent.width
                             height: strips.filmHeight
                             // Upright strips of each frame's middle: enough to
@@ -782,7 +845,7 @@ Rectangle {
                         }
                         WaveStrip {
                             id: wave
-                            y: strips.filmHeight + 1
+                            y: strips.tempoHeight + strips.filmHeight + 1
                             width: parent.width
                             height: strips.waveHeight
                             source: piece.entry.path
@@ -813,10 +876,29 @@ Rectangle {
                         }
                         // Between the picture and the sound: the panel's tone.
                         Rectangle {
-                            y: strips.filmHeight
+                            y: strips.tempoHeight + strips.filmHeight
                             width: parent.width
                             height: 1
                             color: Theme.raised
+                        }
+                        // Where the tempo changes, down through the frames and the sound.
+                        Repeater {
+                            model: wave.tempo.slice(1)
+                            Rectangle {
+                                required property var modelData
+                                x: (modelData.start - wave.from) * line.pps - 1.5
+                                visible: x > 0 && x < piece.width
+                                y: strips.tempoHeight
+                                width: 3
+                                height: piece.height - y
+                                color: "#59000000"
+                                Rectangle {
+                                    x: 1
+                                    width: 1
+                                    height: parent.height
+                                    color: "#d9ffffff"
+                                }
+                            }
                         }
                         // Entries following does not watch are dimmed.
                         Rectangle {
@@ -834,7 +916,7 @@ Rectangle {
                         }
                         Rectangle {
                             x: 6
-                            y: 5
+                            y: strips.tempoHeight + 5
                             width: Math.min(name.implicitWidth + 12, piece.width - 12)
                             height: 18
                             radius: 4

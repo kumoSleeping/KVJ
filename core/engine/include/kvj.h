@@ -42,6 +42,11 @@ double kvj_clock_ms(void);
 typedef bool (*KvjStopFn)(void *user);
 unsigned char *kvj_waveform(const char *path, const char *cache_dir, KvjStopFn stop, void *user, size_t *columns);
 void kvj_bytes_free(unsigned char *bytes, size_t columns);
+/* Where the tempo changes along a media file, as JSON:
+ * {"duration":s,"sections":[{"start":s,"end":s,"bpm":n|null,"confidence":c}]},
+ * sections end to end over the file (bpm null: no beat holds there). Cached and
+ * stopped as kvj_waveform; null without audio. Free with kvj_string_free. */
+char *kvj_tempo(const char *path, const char *cache_dir, KvjStopFn stop, void *user);
 
 /* The picture's sound, read for playing: interleaved stereo float frames at
  * *rate a second from any point; *duration seconds (0 if unknown). Null when

@@ -4,7 +4,9 @@
 // timeline at its zoom. The engine analyses each file once (kvj_waveform, 100
 // columns a second, cached on disk) on one low-priority thread shared by every
 // strip; a pixel that covers many columns shows their energy, as KDJ's preview
-// buckets do, and their height-weighted colour, as KDJ draws it.
+// buckets do, and their height-weighted colour, as KDJ draws it. The same
+// thread then finds where the file's tempo changes (kvj_tempo) for the lane
+// above the frames, once every waveform asked for is drawn.
 
 #include <QByteArray>
 #include <QColor>
@@ -14,6 +16,7 @@
 #include <QQuickPaintedItem>
 #include <QSet>
 #include <QStringList>
+#include <QVariantList>
 #include <QWaitCondition>
 
 #include <atomic>
@@ -38,6 +41,11 @@ public:
     // and for good when the file has no audio).
     std::shared_ptr<const Wave> wave(const QString &path);
     bool failed(const QString &path);
+    // The file's tempo sections, end to end over it: {start, end, bpm (null
+    // where no beat holds), confidence}. Asks for them when not known yet.
+    QVariantList tempo(const QString &path);
+    // Being looked for: not known yet, and the file has not turned out to have no audio.
+    bool findingTempo(const QString &path);
 
 signals:
     void ready(const QString &path);
@@ -52,6 +60,9 @@ private:
     QStringList m_queue;
     QHash<QString, std::shared_ptr<const Wave>> m_waves;
     QSet<QString> m_failed;
+    QStringList m_tempoQueue;
+    QHash<QString, QVariantList> m_tempi;
+    QSet<QString> m_tempoFailed;
     QString m_cacheDir;
     QThread *m_thread = nullptr;
 };
@@ -69,6 +80,10 @@ class WaveStrip : public QQuickPaintedItem
     Q_PROPERTY(bool ready READ ready NOTIFY readyChanged)
     // Being analysed: no waveform yet, and the file has not turned out to have no audio.
     Q_PROPERTY(bool analysing READ analysing NOTIFY readyChanged)
+    // Where the tempo changes along the file (WaveCache::tempo), and whether
+    // that is still being looked for.
+    Q_PROPERTY(QVariantList tempo READ tempo NOTIFY tempoChanged)
+    Q_PROPERTY(bool findingTempo READ findingTempo NOTIFY tempoChanged)
 
 public:
     explicit WaveStrip(QQuickItem *parent = nullptr);
@@ -83,6 +98,8 @@ public:
     void setBackground(const QColor &color);
     bool ready() const { return !!m_wave; }
     bool analysing() const { return m_analysing; }
+    QVariantList tempo() const { return m_tempo; }
+    bool findingTempo() const { return m_findingTempo; }
 
     void paint(QPainter *painter) override;
 
@@ -90,6 +107,7 @@ signals:
     void sourceChanged();
     void viewChanged();
     void readyChanged();
+    void tempoChanged();
 
 private:
     void fetch();
@@ -100,4 +118,6 @@ private:
     QColor m_background = Qt::white;
     std::shared_ptr<const WaveCache::Wave> m_wave;
     bool m_analysing = false;
+    QVariantList m_tempo;
+    bool m_findingTempo = false;
 };

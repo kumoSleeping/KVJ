@@ -5,6 +5,9 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMutexLocker>
 #include <QPainter>
 #include <QQuickWindow>
@@ -85,23 +88,65 @@ bool WaveCache::failed(const QString &path)
     return m_failed.contains(path);
 }
 
+QVariantList WaveCache::tempo(const QString &path)
+{
+    QMutexLocker lock(&m_mutex);
+    if (const auto found = m_tempi.constFind(path); found != m_tempi.constEnd())
+        return found.value();
+    if (!path.isEmpty() && !m_tempoFailed.contains(path) && !m_tempoQueue.contains(path)) {
+        m_tempoQueue.append(path);
+        m_wake.wakeAll();
+    }
+    return {};
+}
+
+bool WaveCache::findingTempo(const QString &path)
+{
+    QMutexLocker lock(&m_mutex);
+    return !path.isEmpty() && !m_tempi.contains(path) && !m_tempoFailed.contains(path);
+}
+
 void WaveCache::run()
 {
     const QByteArray cacheDir = QDir::toNativeSeparators(m_cacheDir).toUtf8();
     const KvjStopFn stop = [](void *user) { return static_cast<WaveCache *>(user)->m_stop.load(); };
     for (;;) {
         QString path;
+        bool wave = true;
         {
             QMutexLocker lock(&m_mutex);
-            while (m_queue.isEmpty() && !m_stop)
+            while (m_queue.isEmpty() && m_tempoQueue.isEmpty() && !m_stop)
                 m_wake.wait(&m_mutex);
             if (m_stop)
                 return;
-            path = m_queue.first();
+            // Waveforms first: the strip is blank without one, the tempo lane only bare.
+            wave = !m_queue.isEmpty();
+            path = wave ? m_queue.first() : m_tempoQueue.first();
+        }
+        const QByteArray file = QDir::toNativeSeparators(path).toUtf8();
+        if (!wave) {
+            char *json = kvj_tempo(file.constData(), cacheDir.constData(), stop, this);
+            if (m_stop) {
+                kvj_string_free(json);
+                return;
+            }
+            const QVariantList sections =
+                json ? QJsonDocument::fromJson(json).object().value(QStringLiteral("sections")).toArray().toVariantList()
+                     : QVariantList();
+            kvj_string_free(json);
+            {
+                QMutexLocker lock(&m_mutex);
+                m_tempoQueue.removeAll(path);
+                if (sections.isEmpty())
+                    m_tempoFailed.insert(path);
+                else
+                    m_tempi.insert(path, sections);
+            }
+            emit ready(path);
+            continue;
         }
         size_t columns = 0;
-        unsigned char *bytes = kvj_waveform(QDir::toNativeSeparators(path).toUtf8().constData(),
-                                            cacheDir.constData(), stop, this, &columns);
+        unsigned char *bytes = kvj_waveform(file.constData(), cacheDir.constData(), stop, this, &columns);
         if (m_stop) {
             kvj_bytes_free(bytes, columns);
             return;
@@ -172,11 +217,19 @@ void WaveStrip::setBackground(const QColor &color)
 
 void WaveStrip::fetch()
 {
+    auto *cache = WaveCache::instance();
     const bool was = ready(), wasAnalysing = m_analysing;
-    m_wave = WaveCache::instance()->wave(m_source);
-    m_analysing = !m_wave && !m_source.isEmpty() && !WaveCache::instance()->failed(m_source);
+    m_wave = cache->wave(m_source);
+    m_analysing = !m_wave && !m_source.isEmpty() && !cache->failed(m_source);
     if (was != ready() || wasAnalysing != m_analysing)
         emit readyChanged();
+    const QVariantList tempo = cache->tempo(m_source);
+    const bool finding = cache->findingTempo(m_source);
+    if (tempo != m_tempo || finding != m_findingTempo) {
+        m_tempo = tempo;
+        m_findingTempo = finding;
+        emit tempoChanged();
+    }
     update();
 }
 

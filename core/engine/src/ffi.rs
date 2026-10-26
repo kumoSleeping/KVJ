@@ -209,6 +209,36 @@ pub unsafe extern "C" fn kvj_waveform(
     }
 }
 
+/// The tempo sections of a media file (see `rhythm`) as JSON:
+/// `{"duration": s, "sections": [{"start": s, "end": s, "bpm": n | null, "confidence": c}]}`,
+/// made once and kept under `cache_dir`. Blocks for seconds the first time.
+/// Null when the file has no audio or `stop` said so; free with `kvj_string_free`.
+/// # Safety
+/// As `kvj_waveform`.
+#[no_mangle]
+pub unsafe extern "C" fn kvj_tempo(
+    path: *const c_char,
+    cache_dir: *const c_char,
+    stop: Option<StopFn>,
+    user: *mut c_void,
+) -> *mut c_char {
+    if path.is_null() || cache_dir.is_null() {
+        return std::ptr::null_mut();
+    }
+    let path = PathBuf::from(CStr::from_ptr(path).to_string_lossy().into_owned());
+    let cache = PathBuf::from(CStr::from_ptr(cache_dir).to_string_lossy().into_owned());
+    let user = user as usize;
+    let cancelled = move || stop.is_some_and(|stop| stop(user as *mut c_void));
+    match catch_unwind(AssertUnwindSafe(|| super::rhythm::load(&path, &cache, &cancelled))) {
+        Ok(Ok(Some(tempo))) => reply(json!(tempo)),
+        Ok(Err(error)) => {
+            tracing::debug!("速度：{}：{error:#}", path.display());
+            std::ptr::null_mut()
+        }
+        _ => std::ptr::null_mut(),
+    }
+}
+
 /// # Safety
 /// `bytes` came from `kvj_waveform` with `columns` columns (or is null).
 #[no_mangle]
