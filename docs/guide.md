@@ -220,8 +220,9 @@ screen's height).
 The canvas is laid out as a vision mixer, left to right: the program (what is
 on the air, on the stage where stickers are placed, with the output settings
 under it), the **画面** column, the preview (PVW) with its slot settings and the
-layout keys, and the effects. Under them, the bar of words, reactions and
-stickers; at the foot, the player and a row per track, with following in its
+layout keys, and the effects. Under them, the sticker gallery, always out,
+with the words and reactions folded under its **弹幕 · 表情** key (they are
+used less); at the foot, the player and a row per track, with following in its
 strip at their right. The **画面** column has a tile per source: 画面 1 (the main
 track), the aux tracks that have entries (画面 2–4, each with its play key and
 what it plays), and the cameras taken in with its **+** (the list of cameras

@@ -278,7 +278,7 @@ Item {
                 Rectangle {
                     id: screen
                     // A band of the stage stays in sight all round.
-                    width: Math.min(box.width * 0.9, box.height * 0.84 * desk.aspect)
+                    width: Math.min(box.width * 0.66, box.height * 0.66 * desk.aspect)
                     height: width / desk.aspect
                     anchors.centerIn: parent
                     color: "black"
