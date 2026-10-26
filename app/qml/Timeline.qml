@@ -89,7 +89,7 @@ Rectangle {
     // The readout shows a held nudge key's bend; the bar stays on the tempo.
     readonly property real speed: player ? player.shownSpeed : 1
     readonly property int bending: speed > tempo + 1e-6 ? 1 : speed < tempo - 1e-6 ? -1 : 0
-    readonly property var match: player && player.aiPicture && !parked ? player.match : null
+    readonly property var match: player && player.aiMain && !parked ? player.match : null
     // The entry on the screen stays until the picture has left it.
     readonly property var lanes: mainEntries.filter(e => e.enabled !== false || (!parked && !!live && e.id === live.id))
 

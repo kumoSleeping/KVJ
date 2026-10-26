@@ -55,7 +55,7 @@ ApplicationWindow {
     readonly property var mainEntries: entries.filter(app.isMain)
     // The track following listens for (Engine.start); only its entries are
     // matched. The engine says which one a session follows in `view.track`.
-    property int followTrack: 0
+    readonly property int followTrack: strip.followTrack
     readonly property var view: Engine.view
     readonly property string phase: view.phase || ""
     readonly property bool running: ["indexing", "permission", "listening", "matched", "searching", "connecting", "sending"].indexOf(phase) >= 0
@@ -74,6 +74,12 @@ ApplicationWindow {
     readonly property bool followPaused: tempoPaused && jumpPaused
     readonly property bool aiLeads: following && !followPaused
     readonly property bool aiPicture: aiLeads && !tempoPaused && !jumpPaused && !!match
+    // Following leads the main track's picture (the player's), or else that of
+    // the aux track it follows (its TrackPlayer): the main one plays on.
+    readonly property bool aiMain: aiPicture && followTrack === 0
+    // The player following steers and hands back to: the main one's, or the
+    // followed aux track's.
+    readonly property var followedPlayer: followTrack === 0 ? transport : auxPlayers[followTrack - 1].clock
     readonly property bool manual: !aiLeads
     // The player's keys no helper at work owns: the speed while 对速 is paused,
     // play and seeking while 跳转 is.
@@ -89,7 +95,7 @@ ApplicationWindow {
     // the speed is left as it was, since the music's says nothing about it.
     property bool musicAway: false
     readonly property var devices: Engine.devices
-    readonly property var device: devices.length ? devices[Math.min(deviceBox.currentIndex, devices.length - 1)] : null
+    readonly property var device: strip.device
     // Adding never waits for a Set: the first files make "Set 1".
     readonly property bool editable: !running && !Engine.importing
     // Receiving over Bluetooth (an input among the others). This computer
@@ -108,7 +114,6 @@ ApplicationWindow {
     // A recording input (a microphone) hears the room: 现场模式 starts on for it
     // and off for captured or received audio; the operator may switch it either way.
     readonly property bool microphone: !!device && device.kind === "input"
-    onMicrophoneChanged: roomMode.checked = microphone
     // The system title bar the top bar stands in for (main.cpp, macOS): room for
     // the window's keys at its left, and its height; 0 where the system keeps it.
     property real titleInset: 0
@@ -131,11 +136,11 @@ ApplicationWindow {
     // The player, for the desk and its timeline: what the picture shows, from
     // whichever leads, and the keys that move it.
     readonly property alias transport: transport
-    readonly property var shownEntry: aiPicture ? match.entry : transport.entry
+    readonly property var shownEntry: aiMain ? match.entry : transport.entry
     readonly property real shownDuration: shownEntry ? shownEntry.duration : 0
-    readonly property real shownTempo: aiPicture ? match.rate : transport.tempo
+    readonly property real shownTempo: aiMain ? match.rate : transport.tempo
     // What it plays at this moment: the tempo, bent while a nudge key is held.
-    readonly property real shownSpeed: aiPicture ? match.rate : transport.speed
+    readonly property real shownSpeed: aiMain ? match.rate : transport.speed
     property real playhead: 0
     // The Set the picture comes from. Opening another Set leaves it playing
     // there, effects and speed included: the other Set's timeline is parked,
@@ -178,41 +183,44 @@ ApplicationWindow {
     onEntriesChanged: cue()
 
     function takeOver() {
+        const p = app.followedPlayer
         const m = app.lastMatch
         if (!m)
             return
-        const at = m.position + (Engine.clockMs() - m.clock_at_ms + offset.value) / 1000 * m.rate
-        transport.tempo = Math.max(transport.minTempo, Math.min(transport.maxTempo, m.rate))
-        transport.load(m.entry, at, true)
+        const at = m.position + (Engine.clockMs() - m.clock_at_ms + strip.offsetMs) / 1000 * m.rate
+        p.tempo = Math.max(p.minTempo, Math.min(p.maxTempo, m.rate))
+        p.load(m.entry, at, true)
         app.tick()
     }
     function giveTempoBack() {
-        if (!app.aiLeads && transport.tempo !== transport.ownTempo)
-            transport.setTempo(transport.ownTempo)
+        const p = app.followedPlayer
+        if (!app.aiLeads && p.tempo !== p.ownTempo)
+            p.setTempo(p.ownTempo)
     }
     // One helper paused: the player has the picture and the helper at work moves
     // it, measured against the picture itself.
     function steer() {
+        const p = app.followedPlayer
         app.musicAway = false
         if (!app.aiLeads || app.aiPicture || !app.match)
             return
         const m = app.match
-        const music = m.position + (Engine.clockMs() - m.clock_at_ms + offset.value) / 1000 * m.rate
-        const near = !!transport.entry && transport.entry.id === m.entry.id
-                     && Math.abs(transport.now() - music) < app.jumpSeconds
+        const music = m.position + (Engine.clockMs() - m.clock_at_ms + strip.offsetMs) / 1000 * m.rate
+        const near = !!p.entry && p.entry.id === m.entry.id
+                     && Math.abs(p.now() - music) < app.jumpSeconds
         if (app.tempoPaused) {
             // Jumps only, at the player's speed: once the picture is a jump
             // away from the music (or on another entry), it goes there.
             if (!near) {
-                transport.load(m.entry, music, true)
+                p.load(m.entry, music, true)
                 app.tick()
             }
         } else if (near) {
             // Speed only, never a jump: followed, small corrections included,
             // while the music is where the picture is and the picture plays.
-            if (transport.playing) {
-                transport.tempo = Math.max(transport.minTempo, Math.min(transport.maxTempo, m.rate))
-                transport.anchor(music)
+            if (p.playing) {
+                p.tempo = Math.max(p.minTempo, Math.min(p.maxTempo, m.rate))
+                p.anchor(music)
             }
         } else {
             app.musicAway = true
@@ -223,19 +231,20 @@ ApplicationWindow {
     // sets both to work, listening first if it was not.
     function listen() {
         app.tempoPaused = app.jumpPaused = true
-        Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2, roomMode.checked, app.followTrack)
+        Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", strip.channel, strip.roomMode, app.followTrack)
     }
     function follow() {
         app.tempoPaused = app.jumpPaused = false
         if (!app.following)
-            Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2, roomMode.checked, app.followTrack)
+            Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", strip.channel, strip.roomMode, app.followTrack)
     }
     // 跳至此处: the player goes once to where following hears the music.
     function jumpToMatch() {
+        const p = app.followedPlayer
         const m = app.match
         if (!m || !app.manualSeek)
             return
-        transport.load(m.entry, m.position + (Engine.clockMs() - m.clock_at_ms + offset.value) / 1000 * m.rate, true)
+        p.load(m.entry, m.position + (Engine.clockMs() - m.clock_at_ms + strip.offsetMs) / 1000 * m.rate, true)
         app.tick()
     }
     function resetTempo() {
@@ -334,9 +343,9 @@ ApplicationWindow {
     // The playhead for the timeline; at the end of an entry the player goes on
     // to the next one in its Set that is on.
     function tick() {
-        if (app.aiPicture) {
+        if (app.aiMain) {
             app.playhead = Math.max(0, Math.min(app.shownDuration, app.match.position
-                                    + (Engine.clockMs() - app.match.clock_at_ms + offset.value) / 1000 * app.match.rate))
+                                    + (Engine.clockMs() - app.match.clock_at_ms + strip.offsetMs) / 1000 * app.match.rate))
             return
         }
         app.playhead = transport.now()
@@ -458,6 +467,36 @@ ApplicationWindow {
     Transport {
         id: transport
     }
+    // The aux tracks' own players (画面 2..4), each on its own clock; the
+    // one following follows plays the music's place instead (auxTiming).
+    readonly property var auxPlayers: [aux1, aux2, aux3]
+    TrackPlayer {
+        id: aux1
+        track: 1
+        entries: app.entries.filter(e => (e.track || 0) === 1)
+        mainRate: app.shownTempo
+    }
+    TrackPlayer {
+        id: aux2
+        track: 2
+        entries: app.entries.filter(e => (e.track || 0) === 2)
+        mainRate: app.shownTempo
+    }
+    TrackPlayer {
+        id: aux3
+        track: 3
+        entries: app.entries.filter(e => (e.track || 0) === 3)
+        mainRate: app.shownTempo
+    }
+    // What an aux track's picture shows: its player, or the music's place
+    // while following follows it.
+    function auxTiming(track) {
+        const led = app.aiPicture && app.followTrack === track
+        const p = app.auxPlayers[track - 1]
+        return led ? { entry: app.match.entry, position: app.match.position, rate: app.match.rate,
+                       clockAtMs: app.match.clock_at_ms, offsetMs: strip.offsetMs }
+                   : { entry: p.entry, position: p.position, rate: p.rate, clockAtMs: p.clockAtMs, offsetMs: 0 }
+    }
     Timer {
         interval: 50
         repeat: true
@@ -470,10 +509,10 @@ ApplicationWindow {
         // The desk's preview is up whenever this window is.
         previewing: app.visible && app.visibility !== Window.Minimized
         entry: app.shownEntry
-        position: app.aiPicture ? app.match.position : transport.position
-        rate: app.aiPicture ? app.match.rate : transport.rate
-        clockAtMs: app.aiPicture ? app.match.clock_at_ms : transport.clockAtMs
-        offsetMs: app.aiPicture ? offset.value : 0
+        position: app.aiMain ? app.match.position : transport.position
+        rate: app.aiMain ? app.match.rate : transport.rate
+        clockAtMs: app.aiMain ? app.match.clock_at_ms : transport.clockAtMs
+        offsetMs: app.aiMain ? strip.offsetMs : 0
         fadeMs: app.fadeOn ? app.fadeMs : 0
         maxHeight: desk.maxHeight
         maxFps: desk.maxFps
@@ -496,10 +535,6 @@ ApplicationWindow {
         running: app.running
         inputs: app.devices
         onLeaving: app.leaveSender()
-    }
-    Settings {
-        category: "output"
-        property alias offset: offset.value
     }
     Settings {
         category: "bluetooth"
@@ -685,380 +720,6 @@ ApplicationWindow {
                         sound: sound
                     }
 
-                    Card {
-                        Layout.preferredWidth: 304
-                        Layout.fillWidth: false
-                        Layout.fillHeight: true
-
-                        // Everything fits a window of the usual height; a shorter one
-                        // scrolls the card rather than cutting its foot off.
-                        Flickable {
-                            id: panel
-                            anchors.fill: parent
-                            anchors.margins: Theme.gap
-                            anchors.leftMargin: Theme.pad
-                            contentWidth: width
-                            contentHeight: Math.max(height, liveColumn.implicitHeight)
-                            interactive: contentHeight > height
-                            boundsBehavior: Flickable.StopAtBounds
-                            clip: true
-                            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                            ColumnLayout {
-                                id: liveColumn
-                                width: panel.width
-                                height: panel.contentHeight
-                                spacing: 8
-
-                                // Every place here is fixed from the start: nothing appears
-                                // or goes away when listening starts, so no key moves.
-                                Heading {
-                                    Layout.fillWidth: true
-                                    text: "音频对位"
-                                }
-
-                                // Where following itself puts the picture; the desk shows
-                                // what really plays, the same while following draws it.
-                                FollowMonitor {
-                                    Layout.fillWidth: true
-                                    active: app.following
-                                    mirror: app.aiPicture
-                                    match: app.match
-                                    offsetMs: offset.value
-                                    source: projection.surface
-                                }
-
-                                // What following is doing now, and the input's level: their
-                                // lines are there while it is off too, so nothing moves when
-                                // it starts. They must not take a share of the height
-                                // (layouts fill by default).
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: false
-                                    spacing: 2
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: app.match ? app.match.entry.title : app.following ? app.phaseText(app.phase) : "未监听"
-                                        font.pixelSize: 16
-                                        font.weight: Font.DemiBold
-                                        color: app.match && !app.followPaused ? Theme.text : Theme.muted
-                                        elide: Text.ElideRight
-                                    }
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: app.match ? (app.followPaused ? "只监听" : app.phaseText(app.phase)) + " · " + app.clock(app.match.position, true)
-                                                          + " · ×" + app.match.rate.toFixed(3) : " "
-                                        font.pixelSize: Theme.sizeSm
-                                        font.features: { "tnum": 1 }
-                                        color: Theme.muted
-                                    }
-                                    // Input level of the selected channels.
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        Layout.topMargin: 5
-                                        Layout.preferredHeight: 4
-                                        radius: 2
-                                        color: Theme.line
-                                        Rectangle {
-                                            readonly property real db: app.following && app.view.input && app.view.input.rms_dbfs !== null ? app.view.input.rms_dbfs : -70
-                                            width: parent.width * Math.max(0, Math.min(1, (db + 70) / 70))
-                                            height: parent.height
-                                            radius: 2
-                                            color: Theme.text
-                                            Behavior on width { NumberAnimation { duration: 120 } }
-                                        }
-                                    }
-                                }
-
-                                // Listening: the engine hears the music and judges where it is.
-                                TextButton {
-                                    Layout.fillWidth: true
-                                    iconName: app.following ? "square" : "play"
-                                    text: app.following ? "停止监听" : "开始监听"
-                                    // At least one entry on; more can be turned on while listening.
-                                    enabled: app.following || app.canStart
-                                    onClicked: app.following ? Engine.stop() : app.listen()
-                                }
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    Layout.topMargin: -4
-                                    spacing: 8
-                                    // Following: that judgement moves the picture. Stopping
-                                    // it keeps listening.
-                                    TextButton {
-                                        Layout.fillWidth: true
-                                        primary: true
-                                        iconName: app.aiLeads ? "pause" : "play"
-                                        text: app.aiLeads ? "停止跟随" : "开始跟随"
-                                        enabled: app.following || app.canStart
-                                        onClicked: {
-                                            if (app.aiLeads)
-                                                app.tempoPaused = app.jumpPaused = true
-                                            else
-                                                app.follow()
-                                        }
-                                    }
-                                    // Once, by hand: the player to where following hears the music.
-                                    TextButton {
-                                        Layout.fillWidth: true
-                                        text: "跳至此处"
-                                        outlined: true
-                                        enabled: !!app.match && app.manualSeek
-                                        ToolTip.visible: hovered
-                                        ToolTip.delay: 600
-                                        ToolTip.text: "播放器跳到智能跟随判断的位置"
-                                        onClicked: app.jumpToMatch()
-                                    }
-                                }
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.topMargin: 2
-                                    Layout.preferredHeight: 1
-                                    color: Theme.line
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 6
-                                    Caption { text: "声音输入" }
-                                    Select {
-                                        id: deviceBox
-                                        Layout.fillWidth: true
-                                        enabled: !app.running
-                                        model: app.devices.map(d => d.label + (d.error ? "（不可用）" : ""))
-                                    }
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 6
-                                        Select {
-                                            id: channelBox
-                                            Layout.preferredWidth: 104
-                                            enabled: !app.running
-                                            model: {
-                                                const channels = app.device ? Math.max(1, app.device.channels) : 2
-                                                const pairs = []
-                                                for (let i = 0; i < channels; i += 2)
-                                                    pairs.push(i + 1 < channels ? "CH " + (i + 1) + "/" + (i + 2) : "CH " + (i + 1))
-                                                return pairs
-                                            }
-                                        }
-                                        Item { Layout.fillWidth: true }
-                                        Toggle {
-                                            id: roomMode
-                                            text: "现场模式"
-                                            checked: app.microphone
-                                            enabled: !app.running
-                                            ToolTip.visible: hovered
-                                            ToolTip.delay: 600
-                                            ToolTip.text: "麦克风听现场：在混响里也能跟上。选麦克风时自动打开；电脑内录或蓝牙接收时关闭"
-                                        }
-                                        IconButton {
-                                            iconName: "refresh"
-                                            tip: "刷新设备"
-                                            enabled: !app.running && !Engine.busy
-                                            onClicked: Engine.refreshDevices()
-                                        }
-                                    }
-                                }
-
-                                // Calibration of the followed picture against the music.
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    Text { text: "画面偏移"; font.pixelSize: Theme.sizeSm; color: Theme.muted }
-                                    Seek {
-                                        id: offset
-                                        Layout.fillWidth: true
-                                        from: -400
-                                        to: 400
-                                        stepSize: 10
-                                        value: 0
-                                    }
-                                    Text {
-                                        Layout.preferredWidth: 58
-                                        horizontalAlignment: Text.AlignRight
-                                        text: (offset.value > 0 ? "+" : "") + offset.value.toFixed(0) + " ms"
-                                        font.pixelSize: Theme.sizeSm
-                                        font.features: { "tnum": 1 }
-                                        color: offset.value === 0 ? Theme.muted : Theme.text
-                                        MouseArea { anchors.fill: parent; onDoubleClicked: offset.value = 0 }
-                                    }
-                                }
-
-                                // Bluetooth DJs: the operator picks the current DJ, allows a
-                                // new one asking to pair, and forgets paired ones. Below
-                                // everything that is always there, so nothing moves.
-                                ColumnLayout {
-                                    id: djList
-                                    Layout.fillWidth: true
-                                    spacing: 4
-                                    visible: app.receiving || app.incoming.some(p => p.link.state === "asking")
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        Caption { text: "DJ"; Layout.fillWidth: true }
-                                        Toggle {
-                                            text: "可被发现"
-                                            checked: app.discoverable
-                                            onToggled: app.discoverable = checked
-                                            ToolTip.visible: hovered
-                                            ToolTip.delay: 500
-                                            ToolTip.text: "开着时 DJ 电脑随时能找到这台并请求连接；记住的 DJ 回来会自动连上"
-                                        }
-                                    }
-                                    // The chosen DJ is let go only on a second press
-                                    // (within 4 s): one stray click must not cut the music off.
-                                    property string letGoId: ""
-                                    Timer {
-                                        id: letGoTimer
-                                        interval: 4000
-                                        onTriggered: djList.letGoId = ""
-                                    }
-                                    Repeater {
-                                        // A refused or forgotten computer that left is not listed.
-                                        model: app.incoming.filter(p => p.link.state !== "disconnected" || p.selected || p.known)
-                                        ItemDelegate {
-                                            id: dj
-                                            required property var modelData
-                                            readonly property bool asking: modelData.link.state === "asking"
-                                            Layout.fillWidth: true
-                                            implicitHeight: 32
-                                            topPadding: 0
-                                            bottomPadding: 0
-                                            leftPadding: 8
-                                            rightPadding: 2
-                                            readonly property bool lettingGo: modelData.selected && djList.letGoId === modelData.link.peer
-                                            onClicked: {
-                                                if (asking || modelData.link.state === "disconnected") {
-                                                    return
-                                                } else if (!modelData.selected) {
-                                                    djList.letGoId = ""
-                                                    Engine.selectBluetooth(modelData.link.peer)
-                                                } else if (lettingGo) {
-                                                    djList.letGoId = ""
-                                                    Engine.selectBluetooth("")
-                                                } else {
-                                                    djList.letGoId = modelData.link.peer
-                                                    letGoTimer.restart()
-                                                }
-                                            }
-                                            // Why a DJ dropped (a version, permission or timeout).
-                                            ToolTip.visible: hovered && !!modelData.link.error
-                                            ToolTip.delay: 400
-                                            ToolTip.text: modelData.link.error || ""
-                                            contentItem: RowLayout {
-                                                spacing: 6
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: dj.modelData.device.name
-                                                    font.pixelSize: Theme.size
-                                                    font.weight: dj.modelData.selected || dj.asking ? Font.DemiBold : Font.Normal
-                                                    color: dj.modelData.selected || dj.asking ? Theme.text : Theme.muted
-                                                    elide: Text.ElideRight
-                                                }
-                                                Text {
-                                                    visible: !dj.asking
-                                                    text: dj.lettingGo ? "再点一下取消"
-                                                        : dj.modelData.link.state === "receiving" ? "发送中"
-                                                        : dj.modelData.link.state === "connected" ? (dj.modelData.selected ? "当前 DJ" : "待命")
-                                                        : dj.modelData.selected ? "已断开 · 回来后自动恢复" : "已断开"
-                                                    font.pixelSize: Theme.sizeXs
-                                                    color: Theme.muted
-                                                }
-                                                TextButton {
-                                                    visible: dj.asking
-                                                    primary: true
-                                                    text: "允许"
-                                                    onClicked: Engine.pairBluetooth(dj.modelData.link.peer, true)
-                                                }
-                                                TextButton {
-                                                    visible: dj.asking
-                                                    text: "拒绝"
-                                                    onClicked: Engine.pairBluetooth(dj.modelData.link.peer, false)
-                                                }
-                                                IconButton {
-                                                    visible: !dj.asking && dj.modelData.known && dj.hovered
-                                                    iconName: "x"
-                                                    tip: "忘记这台 DJ 电脑（下次需重新允许）"
-                                                    onClicked: Engine.forgetBluetooth(dj.modelData.token)
-                                                }
-                                            }
-                                            background: Rectangle {
-                                                radius: Theme.radius
-                                                color: dj.asking ? Theme.inset : dj.hovered ? Theme.hover : "transparent"
-                                            }
-                                        }
-                                    }
-                                    // Remembered DJs that are not here now.
-                                    Repeater {
-                                        model: app.receiving ? app.awayDjs : []
-                                        ItemDelegate {
-                                            id: away
-                                            required property var modelData
-                                            Layout.fillWidth: true
-                                            implicitHeight: 28
-                                            topPadding: 0
-                                            bottomPadding: 0
-                                            leftPadding: 8
-                                            rightPadding: 2
-                                            contentItem: RowLayout {
-                                                spacing: 6
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: away.modelData.name
-                                                    font.pixelSize: Theme.sizeSm
-                                                    color: Theme.faint
-                                                    elide: Text.ElideRight
-                                                }
-                                                Text {
-                                                    text: "已记住 · 不在附近"
-                                                    font.pixelSize: Theme.sizeXs
-                                                    color: Theme.faint
-                                                }
-                                                IconButton {
-                                                    visible: away.hovered
-                                                    iconName: "x"
-                                                    tip: "忘记这台 DJ 电脑"
-                                                    onClicked: Engine.forgetBluetooth(away.modelData.token)
-                                                }
-                                            }
-                                            background: Rectangle {
-                                                radius: Theme.radius
-                                                color: away.hovered ? Theme.hover : "transparent"
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    visible: Engine.error.length > 0
-                                    text: Engine.error
-                                    font.pixelSize: Theme.sizeSm
-                                    color: Theme.warn
-                                    wrapMode: Text.Wrap
-                                    MouseArea { anchors.fill: parent; onClicked: Engine.clearError() }
-                                }
-
-                                Item { Layout.fillHeight: true }
-
-                                // The two helpers at work: tempo, and whether to jump.
-                                Assistants {
-                                    Layout.fillWidth: true
-                                    active: app.following
-                                    tempoPaused: app.tempoPaused
-                                    jumpPaused: app.jumpPaused
-                                    musicAway: app.musicAway
-                                    tempo: app.shownTempo
-                                    onTempoToggled: app.tempoPaused = !app.tempoPaused
-                                    onJumpToggled: app.jumpPaused = !app.jumpPaused
-                                    onTempoReset: app.resetTempo()
-                                    view: app.view
-                                    match: app.match
-                                }
-                            }
-                        }
-                    }
-
                     // —— Effects, at the far right ——
                     Effects {
                         Layout.preferredWidth: 300
@@ -1166,6 +827,16 @@ ApplicationWindow {
             objectName: "timeline"
             Layout.fillWidth: true
             entries: app.mainEntries
+            // The main track, and the aux ones that have something on them.
+            tracks: [{ track: 0, name: "画面 1", entries: app.mainEntries, player: app }].concat(
+                app.auxPlayers.filter(p => p.entries.length > 0)
+                    .map(p => ({ track: p.track, name: "画面 " + (p.track + 1), entries: p.entries, player: p })))
+            trailing: FollowStrip {
+                id: strip
+                app: app
+                surface: projection.surface
+                rowHeight: timeline.mainRowHeight
+            }
             setId: app.currentSet ? app.currentSet.id : ""
             setName: app.currentSet ? app.currentSet.name : ""
             running: app.running

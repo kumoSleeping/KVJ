@@ -171,7 +171,7 @@ Item {
             id: monitor
             width: parent.width
             active: root.following
-            mirror: !!root.app && root.app.aiPicture
+            mirror: !!root.app && root.app.aiMain
             match: root.match
             offsetMs: root.offsetMs
             source: root.surface
