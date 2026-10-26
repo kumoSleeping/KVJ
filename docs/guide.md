@@ -65,53 +65,71 @@ Under the preview are the output (screen, resolution, frame rate, full screen)
 and **开始投放**. Resolution and frame rate start on **推荐**: as sharp as the
 chosen screen shows and the video holds (480p, 720p, 1080p, or the source past
 1600 rows), and every frame the video has up to 60; the other choices are as
-before. The **timeline** runs across the whole foot of the window and is
-the player's transport, laid out like a video editor's timeline without editing
-anything. Its top row has the play key in the middle; to its left the Set, the
-entry on the screen and where it is, the cursor with **跳至光标处**, **全览** and
-**快捷键**; to its right the speed (a bar from −50 % to +50 % and keys a percent
-at a time; **复原** or a double-click on the speed goes back to 100 %) and
-**跳转渐变**: every jump, by hand
-or by smart following, dissolves from the last picture over the chosen time
-(0.1–2 s), or cuts when it is off. Under it, the whole Set's bar jumps the
-picture (into whichever entry is there); zoomed in, a frame on it shows which
-part of the Set the strip below shows, as in a video editor. Below that the Set's entries that are on lie end to
-end as upright strips of the middle of their frames (enough to know the picture,
-and many more of them) over their sound's waveform, with a ruler in each entry's own
-time. The waveform is KDJ's whole-track preview (整曲预览): its height is the
+before. The **timeline** runs across the whole foot of the window, laid out
+like a video editor's track area without editing anything: a row a source under one
+ruler. A slim bar on top holds what belongs to no one track: the Set and the
+entry the main track shows, where it is (and what is left of it), the cursor
+with **跳至光标处**, the zoom keys (− **全览** +), **快捷键** and **跳转渐变**:
+every jump, by hand or by smart following, dissolves from the last picture over
+the chosen time (0.1–2 s), or cuts when it is off. Under it the whole
+timeline's bar: zoomed in, a frame on it shows which part the rows show, and
+drags along or, by its ends, wider or narrower; a press well away from it only
+sets the cursor. Then the ruler, in each entry's own time along the longest row
+(plain seconds while every row is empty).
+
+The rows come next, two in view; a third and more are reached by scrolling, as
+an editor's tracks are (a scroll bar shows once there are more than fit). The
+main track (画面 1) is always the first row, also while it is empty; each aux
+track (画面 2, 3, 4) that has entries or was added with **+ 轨道** (at the top
+left of the rows) has its own, and so does each camera taken in (**+ 轨道**
+lists the cameras only while its menu is open). A row's header holds the
+source's own small live picture (a press puts it in the preview's chosen slot,
+PVW; on the air it has an ink edge and PGM, in the preview a faint one and PVW),
+its name, an ear on the track following listens to, and ⋯ (an aux track's
+**跟随主轨速度**, and **移除轨道** for an empty aux track or a camera). Across the
+rest of the row runs its own play bar over its lane, so every track is
+operated on its own: play and pause, where it is in its entry, a seek track
+over the whole row (a press or drag moves that track's picture there; on the
+main track a jump into another entry starts it playing, and while the timeline
+is parked it brings the picture over to this Set), the speed with − / + a
+percent at a time, a small bar and **复原** (or a double-click on the speed),
+who sets the speed (手动, 智能跟随, 跟主轨速度 …), and **循环** or **播完即停**
+after the row's last entry (kept per track). An aux track plays on its own
+clock beside the main one; **跟随主轨速度** plays it at its own speed times the
+main track's, so it keeps pace when the main track's tempo changes. A
+track's keys rest while smart following leads its player.
+
+The lane shows the track's entries that are on end to end as upright strips of
+the middle of their frames (enough to know the picture, and many more of them)
+over their sound's waveform, under their tempo, a block a section with its
+BPM. The waveform is KDJ's whole-track preview (整曲预览): its height is the
 energy, its colour how the lows (red), mids (green) and highs (blue) stand
 against the rest of the file, and the part of the entry on the screen that has
 played is dimmed. It is analysed once per file, 100 columns a second, on a
-low-priority thread, and cached on disk, so it keeps its detail zoomed in. Pinch on the trackpad
-(or ⌘/Ctrl + scroll) zooms about the pointer down to a few frames; a two-finger
-swipe moves the strip with the fingers, along the axis it started on and on
-through its momentum, and a mouse wheel (or a Windows touchpad) moves a tenth of
-the view a notch, tilted or with Shift as well; scrolling over the bar above
-does the same. **全览** shows the whole Set again. Pressing or dragging on the
-strip only sets the cursor and leaves the picture alone; **跳至光标处** (or
-Enter) plays from it. While playing, the strip follows the playhead unless
-it was touched in the last few seconds. Frames for the strip are decoded small
-on one low-priority thread and kept up to 48 MB. At the end of an entry the next
-one that is on follows. Seeks aim ahead by what passes while the decoder gets
-there, and a paused seek lands on the exact frame.
-
-The strip has a row a track. The main track (画面 1) is the row described
-above; under it each aux track that has entries (画面 2, 3, 4) has a lower row
-of the same kind: the tempo blocks with their BPM, the frames, the waveform,
-its entries end to end. An aux track plays on its own clock, beside the main
-one: at its left are its name, where it is, its play key, its loop key
-(循环播放, or 播完即停 on its last frame, kept per track) and a menu with its
-speed (a percent at a time, 原速) and **跟随主轨速度**, which plays it at its
-own speed times the main track's, so it keeps pace when the main track's tempo
-changes. A press or drag on an aux row moves that track's picture there at
-once, playing or paused as it was (the main row only sets the cursor, as
-before). All rows share one view: zooming or scrolling over any of them moves
-them all, and the whole bar above spans the longest row. Aux tracks are never
-followed unless chosen for it (below), and never identified otherwise.
+low-priority thread, and cached on disk, so it keeps its detail zoomed in. An
+empty track says **把素材拖到这里**: entries dragged from the drawer, or files
+from the desktop, dropped anywhere on a track's row go on that track (the row
+lights up while they hover); a camera's lane just says it is live. All rows
+share one view. Pinch on the trackpad (or ⌘/Ctrl/Alt + scroll) zooms about the
+pointer down to a few frames; a sideways two-finger swipe moves the lanes with
+the fingers, along the axis it started on and on through its momentum, and an
+upright one scrolls the rows once there are more than fit (else it moves the
+lanes too); a mouse wheel moves a tenth of the view a notch, tilted or with
+Shift, and upright scrolls the rows once there are more than fit; over the
+headers it always scrolls the rows. **全览** shows everything again. Pressing or
+dragging on the main track's lane or on the ruler only sets the cursor and
+leaves the picture alone; **跳至光标处** (or Enter) plays from it. A press or
+drag on an aux track's lane moves that track's picture there at once, playing
+or paused as it was. While playing, the lanes follow the main playhead unless
+they were touched in the last few seconds. Frames for the lanes are decoded
+small on one low-priority thread and kept up to 48 MB. At the end of an entry
+the next one that is on follows. Seeks aim ahead by what passes while the
+decoder gets there, and a paused seek lands on the exact frame. Aux tracks are
+never followed unless chosen for it (below), and never identified otherwise.
 
 At the right end of the rows sits **音频对位** pressed into a strip as tall as
-the main row: what following does (未监听, 监听中 or 跟随中, and the title), the
-input's level, the ear (开始监听 / 停止监听), **跟随** (开始跟随; 暂停 while it
+one row, beside the first: what following does (未监听, 监听中 or 跟随中, and
+the title), the input's level, the ear (开始监听 / 停止监听), **跟随** (开始跟随; 暂停 while it
 leads), the crosshair (跳至此处), the input, which track is followed, and the
 two helpers as small keys, **对速** with its swinging dot and **跳转** with its
 ring and a line to the jump threshold; a press pauses or resumes one, and the
@@ -218,20 +236,18 @@ screen's height).
 ## Compositing
 
 The canvas is laid out as a vision mixer, left to right: the program (what is
-on the air, on the stage where stickers are placed, with the output settings
-under it), the **画面** column, the preview (PVW) with its slot settings and the
-layout keys, and the effects. Under them, the sticker gallery, always out,
-with the words and reactions folded under its **弹幕 · 表情** key (they are
-used less); at the foot, the player and a row per track, with following in its
-strip at their right. The **画面** column has a tile per source: 画面 1 (the main
-track), the aux tracks that have entries (画面 2–4, each with its play key and
-what it plays), and the cameras taken in with its **+** (the list of cameras
-is read only then; a camera tile's × lets it go). Pressing a tile puts that
-source in the preview's chosen slot. A tile on the air has an ink edge, one in
-the preview a faint one. The column's right edge is dragged to widen it. A
-source is decoded (or a camera opened) only while it is on the air or the
-operator's window shows it, and at most six videos decode at once: past that
-a jump cuts instead of dissolving.
+on the air, on the stage where stickers are placed), with the output in one row
+under it (the picture's sound in a popover at its end) and the sticker gallery
+under that, always out, the words and reactions folded under its **弹幕 · 表情**
+key (they are used less); then the preview (PVW) with its slot settings and the
+layout keys; then the effects. At the foot, the track area (see the timeline):
+each row's header shows that source's live picture, and pressing it puts the
+source in the preview's chosen slot; a header on the air has an ink edge and a
+PGM tag, one in the preview a faint edge and a PVW tag. Cameras are rows too
+(+ 轨道 → 相机; the list of cameras is read only then). A source is decoded
+(or a camera opened) only while it is on the air or the operator's window
+shows it, and at most six videos decode at once: past that a jump cuts
+instead of dissolving.
 
 The projection shows a composition of picture sources (the four tracks,
 `track:0`–`track:3`, and cameras, `camera:<id>`) in a layout of slots, mixed the

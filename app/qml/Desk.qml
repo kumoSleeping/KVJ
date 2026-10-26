@@ -7,13 +7,12 @@ import QtQuick.Layouts
 import QtQuick.Window
 import KVJ
 
-// The live desk, in the main window: a light preview of what is projected, and
-// what goes over it. Stickers are dragged from the gallery onto the preview and
-// posted where they are let go; posted ones are moved, sized and turned there
-// and the projection follows. Under the preview, one card in three parts: the
-// output (where the picture goes, and the key that projects it) and the
-// picture's sound; words and reactions; the sticker gallery. Beside it, the
-// effects' card.
+// The live desk, in the main window: the program as projected, on a stage
+// where stickers are dragged from the gallery (LiveBar), posted where they are
+// let go, then moved, sized and turned, the projection following. Under it,
+// the output in one row (where the picture goes, the key that projects it,
+// and the picture's sound in a popover). It also keeps the window's light copy
+// of every picture source and their textures, for the monitors here.
 Item {
     id: desk
 
@@ -435,52 +434,85 @@ Item {
                             onClicked: desk.projection.visible ? desk.projection.closeOutput()
                                                                : desk.projection.openOn(screenBox.currentIndex, fullscreen.checked)
                         }
+                        // The picture's sound, in a popover: it is set once before a show.
+                        IconButton {
+                            id: soundKey
+                            iconName: desk.soundOn ? "volume-2" : "volume-x"
+                            active: soundPop.visible
+                            tip: desk.soundOn ? "画面声音：开（" + Math.round(desk.soundVolume * 100) + "%）" : "画面声音：关"
+                            onClicked: soundPop.visible ? soundPop.close() : soundPop.open()
+                            Rectangle {
+                                visible: desk.soundOn && !!desk.sound && desk.sound.error.length > 0
+                                x: parent.width - 9
+                                y: 3
+                                width: 7
+                                height: 7
+                                radius: 3.5
+                                color: Theme.warn
+                            }
+                            Popup {
+                                id: soundPop
+                                x: soundKey.width - width
+                                y: -height - 6
+                                width: 380
+                                padding: 12
+                                background: Rectangle {
+                                    radius: Theme.radiusLg
+                                    color: Theme.raised
+                                    border.width: 1
+                                    border.color: Theme.line
+                                }
+                                contentItem: ColumnLayout {
+                                    spacing: 8
+                                    // The picture's sound, off by default (the room hears the DJ), on an
+                                    // output of its own: headphones to listen in, or the speakers. Where
+                                    // and how loud can be set before it is turned on.
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Toggle {
+                                            text: "播放声音"
+                                            checked: desk.soundOn
+                                            onToggled: desk.soundOn = checked
+                                        }
+                                        Select {
+                                            id: outputBox
+                                            readonly property var outputs: desk.sound ? desk.sound.devices : []
+                                            Layout.fillWidth: true
+                                            Layout.minimumWidth: 90
+                                            model: ["系统默认输出"].concat(outputs.map(d => d.name))
+                                            currentIndex: outputs.findIndex(d => d.id === desk.soundDevice) + 1
+                                            onActivated: index => desk.soundDevice = index > 0 ? outputs[index - 1].id : ""
+                                        }
+                                        Seek {
+                                            Layout.preferredWidth: 96
+                                            from: 0
+                                            to: 1
+                                            value: desk.soundVolume
+                                            onMoved: desk.soundVolume = value
+                                        }
+                                        Text {
+                                            Layout.preferredWidth: 34
+                                            horizontalAlignment: Text.AlignRight
+                                            text: Math.round(desk.soundVolume * 100) + "%"
+                                            font.pixelSize: Theme.sizeSm
+                                            font.features: { "tnum": 1 }
+                                            color: Theme.body
+                                        }
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        visible: desk.soundOn && !!desk.sound && desk.sound.error.length > 0
+                                        text: desk.sound ? desk.sound.error : ""
+                                        font.pixelSize: Theme.sizeXs
+                                        color: Theme.warn
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+                        }
                     }
 
-                    // The picture's sound, off by default (the room hears the DJ), on an
-                    // output of its own: headphones to listen in, or the speakers. Where
-                    // and how loud can be set before it is turned on.
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        Toggle {
-                            text: "播放声音"
-                            checked: desk.soundOn
-                            onToggled: desk.soundOn = checked
-                        }
-                        Select {
-                            id: outputBox
-                            readonly property var outputs: desk.sound ? desk.sound.devices : []
-                            Layout.fillWidth: true
-                            Layout.minimumWidth: 90
-                            model: ["系统默认输出"].concat(outputs.map(d => d.name))
-                            currentIndex: outputs.findIndex(d => d.id === desk.soundDevice) + 1
-                            onActivated: index => desk.soundDevice = index > 0 ? outputs[index - 1].id : ""
-                        }
-                        Seek {
-                            Layout.preferredWidth: 96
-                            from: 0
-                            to: 1
-                            value: desk.soundVolume
-                            onMoved: desk.soundVolume = value
-                        }
-                        Text {
-                            Layout.preferredWidth: 34
-                            horizontalAlignment: Text.AlignRight
-                            text: Math.round(desk.soundVolume * 100) + "%"
-                            font.pixelSize: Theme.sizeSm
-                            font.features: { "tnum": 1 }
-                            color: Theme.body
-                        }
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        visible: desk.soundOn && !!desk.sound && desk.sound.error.length > 0
-                        text: desk.sound ? desk.sound.error : ""
-                        font.pixelSize: Theme.sizeXs
-                        color: Theme.warn
-                        elide: Text.ElideRight
-                    }
 
                 }
             }

@@ -53,9 +53,10 @@ qt_add_qml_module(KVJ
         qml/Effects.qml
         qml/LiveBar.qml
         qml/IdList.qml
-        qml/SourceColumn.qml
         qml/Sidebar.qml
         qml/Timeline.qml
+        qml/TrackRow.qml
+        qml/TrackPiece.qml
         qml/TrackPlayer.qml
         qml/FollowStrip.qml
         qml/Card.qml
@@ -99,6 +100,7 @@ qt_add_qml_module(KVJ
         qml/icons/square.svg
         qml/icons/trash.svg
         qml/icons/volume-x.svg
+        qml/icons/volume-2.svg
         qml/icons/x.svg
         qml/emoji/1f389.webp
         qml/emoji/1f44f.webp

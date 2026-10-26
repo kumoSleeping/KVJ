@@ -87,11 +87,11 @@ QtObject {
         return (player.entries || []).find(e => e.enabled !== false) || null
     }
     // Something to show from the start: the first entry that is on, paused.
-    // An entry that left the track (deleted, moved, another Set) gives way to
-    // it too.
+    // What it shows stays while another Set is looked at or the entry moves
+    // away: the picture on the air never changes by itself.
     function arrive() {
         const list = player.entries || []
-        if (clock.entry && list.some(e => e.id === clock.entry.id))
+        if (clock.entry)
             return
         const first = firstOn()
         if (first)

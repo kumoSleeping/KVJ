@@ -641,6 +641,19 @@ Rectangle {
                     color: Theme.text
                 }
             }
+            // Dragged down onto a track row of the timeline, it goes on that
+            // track (Timeline reads the ids from the drag's data).
+            Drag.dragType: Drag.Automatic
+            Drag.supportedActions: Qt.MoveAction
+            Drag.mimeData: ({ "text/x-kvj-entry": row.entry ? row.entry.id : "" })
+            Drag.active: entryDrag.active
+            DragHandler {
+                id: entryDrag
+                target: null
+                enabled: bar.editable && !!row.entry
+            }
+            // Its picture under the pointer while dragged.
+            onHoveredChanged: if (hovered && bar.editable) row.grabToImage(result => row.Drag.imageSource = result.url)
             // A right press puts it on another track: the main one is followed
             // and played by the player, the others play side by side with it.
             TapHandler {

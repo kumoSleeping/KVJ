@@ -163,8 +163,6 @@ ApplicationWindow {
     // At the end of the Set's last entry: start over from its first entry, or
     // stop on the last frame.
     property bool loopOn: false
-    // The 画面 column's width, dragged at its edge.
-    property real sourceWidth: 168
     property int fadeMs: 400
 
     onMatchChanged: {
@@ -439,13 +437,26 @@ ApplicationWindow {
         return "ok"
     }
 
-    function addUrls(urls) {
+    // Files into the Set shown, onto the main track or the one they were
+    // dropped on.
+    function addUrls(urls, track) {
         if (!urls || urls.length === 0 || !app.editable)
             return
         if (!app.currentSet)
             Engine.createSet("Set " + (app.sets.length + 1))
         if (app.currentSet)
-            Engine.importUrls(app.currentSet.id, urls)
+            Engine.importUrls(app.currentSet.id, urls, track || 0)
+    }
+    // Entries dragged from the drawer onto a track row: they go on that track,
+    // in whichever Set holds them.
+    function moveToTrack(ids, track) {
+        if (!app.editable)
+            return
+        for (const set of app.sets) {
+            const mine = ids.filter(id => set.entries.some(e => e.id === id && (e.track || 0) !== track))
+            if (mine.length)
+                Engine.setTrack(set.id, mine, track)
+        }
     }
 
     function clock(seconds, tenths) {
@@ -482,9 +493,9 @@ ApplicationWindow {
     // The aux tracks' own players (画面 2..4), each on its own clock; the
     // one following follows plays the music's place instead (auxTiming).
     readonly property var auxPlayers: [aux1, aux2, aux3]
-    // The aux tracks play from the Set the picture comes from, like the main
-    // one: opening another Set to look at it changes nothing on the air.
-    readonly property var auxEntries: (app.playingSet || app.currentSet || { entries: [] }).entries
+    // The aux tracks of the Set shown on the timeline; what one plays stays
+    // while another Set is looked at (TrackPlayer.arrive).
+    readonly property var auxEntries: app.entries
     TrackPlayer {
         id: aux1
         track: 1
@@ -542,11 +553,14 @@ ApplicationWindow {
         id: sourceStore
         category: "sources"
         property string cameras: "[]"
+        property string tracks: "[]"
         Component.onCompleted: {
             try {
                 app.cameraIds = JSON.parse(cameras)
+                app.addedTracks = JSON.parse(tracks)
             } catch (e) {
                 app.cameraIds = []
+                app.addedTracks = []
             }
         }
     }
@@ -554,18 +568,49 @@ ApplicationWindow {
         app.cameraIds = ids
         sourceStore.cameras = JSON.stringify(ids)
     }
-    readonly property var sources: {
-        const list = [{ id: "track:0", name: "画面 1 · 主轨", kind: "track", track: 0, player: app }]
-        for (const p of app.auxPlayers)
-            if (p.entries.length > 0)
-                list.push({ id: "track:" + p.track, name: "画面 " + (p.track + 1), kind: "track", track: p.track, player: p })
+    // Aux tracks shown while still empty: added with the timeline's + 轨道.
+    property var addedTracks: []
+    readonly property var shownAux: [1, 2, 3].filter(t => app.auxPlayers[t - 1].entries.length > 0 || app.addedTracks.indexOf(t) >= 0)
+    // The timeline's rows, which are also the mixer's sources: the main track,
+    // the aux tracks shown, the cameras taken in.
+    readonly property var trackRows: {
+        const rows = [{ key: "track:0", kind: "track", track: 0, name: "画面 1 · 主轨",
+                        entries: app.entries.filter(app.isMain), player: app }]
+        for (const t of app.shownAux) {
+            const p = app.auxPlayers[t - 1]
+            rows.push({ key: "track:" + t, kind: "track", track: t, name: "画面 " + (t + 1), entries: p.entries, player: p })
+        }
         // Names only once there are cameras: the list wakes the camera stack.
         const cams = app.cameraIds.length ? Cameras.list : []
         for (const id of app.cameraIds) {
             const c = cams.find(c => c.id === id)
-            list.push({ id: "camera:" + id, name: c ? c.name : "相机（未连接）", kind: "camera" })
+            rows.push({ key: "camera:" + id, kind: "camera", cameraId: id, name: c ? c.name : "相机（未连接）" })
         }
-        return list
+        return rows
+    }
+    readonly property var sources: trackRows.map(r => ({ id: r.key, name: r.name }))
+    function addTrack() {
+        const t = [1, 2, 3].find(t => app.shownAux.indexOf(t) < 0)
+        if (t)
+            app.setAddedTracks(app.addedTracks.concat([t]))
+    }
+    function removeRow(key) {
+        if (key.startsWith("camera:"))
+            app.setCameras(app.cameraIds.filter(c => "camera:" + c !== key))
+        else
+            app.setAddedTracks(app.addedTracks.filter(t => "track:" + t !== key))
+    }
+    function setAddedTracks(list) {
+        app.addedTracks = list
+        sourceStore.tracks = JSON.stringify(list)
+    }
+    // A source into the preview's chosen slot (a header's picture pressed).
+    function pickSource(key) {
+        const slots = Switcher.preview && Switcher.preview.slots ? Switcher.preview.slots : []
+        if (slots.length === 0)
+            Switcher.addSlot(key)
+        else
+            Switcher.updateSlot(Math.max(0, Math.min(mixer.selected, slots.length - 1)), { source: key })
     }
     // The sound of what the picture shows, on the picture's timing.
     AudioFollower {
@@ -596,7 +641,6 @@ ApplicationWindow {
         property alias fadeMs: app.fadeMs
         property alias keys: app.keysOn
         property alias loop: app.loopOn
-        property alias sourceWidth: app.sourceWidth
     }
     Shortcut {
         sequences: ["Left", "A"]
@@ -758,46 +802,31 @@ ApplicationWindow {
                     Layout.fillHeight: true
                     spacing: Theme.gap
 
-                    Desk {
-                        id: desk
+                    // The program on its stage, the output, and the stickers
+                    // (with the folded words and reactions) under them.
+                    ColumnLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        source: projection.surface
-                        entry: projection.entry
-                        projection: projection
-                        sound: sound
-                        sourceIds: app.sources.map(s => s.id)
-                    }
-
-                    // —— The sources, then the preview to put on the air ——
-                    SourceColumn {
-                        Layout.preferredWidth: app.sourceWidth
-                        Layout.fillWidth: false
-                        Layout.fillHeight: true
-                        sources: app.sources
-                        textures: desk.textures
-                        slot: mixer.selected
-                        cameraIds: app.cameraIds
-                        onAddCamera: id => app.setCameras(app.cameraIds.concat([id]))
-                        onRemoveCamera: id => app.setCameras(app.cameraIds.filter(c => c !== id))
-                        // Its right edge widens or narrows it.
-                        MouseArea {
-                            anchors.right: parent.right
-                            anchors.rightMargin: -Theme.gap / 2 - 3
-                            width: 6
-                            height: parent.height
-                            cursorShape: Qt.SplitHCursor
-                            property real from
-                            property real start
-                            onPressed: mouse => {
-                                from = app.sourceWidth
-                                start = mapToItem(null, mouse.x, 0).x
-                            }
-                            onPositionChanged: mouse => app.sourceWidth = Math.max(120, Math.min(360, from + mapToItem(null, mouse.x, 0).x - start))
+                        spacing: Theme.gap
+                        Desk {
+                            id: desk
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            source: projection.surface
+                            entry: projection.entry
+                            projection: projection
+                            sound: sound
+                            sourceIds: app.sources.map(s => s.id)
+                        }
+                        LiveBar {
+                            Layout.fillWidth: true
+                            desk: desk
                         }
                     }
+
+                    // —— The preview, to put on the air ——
                     Card {
-                        Layout.preferredWidth: 340
+                        Layout.preferredWidth: 440
                         Layout.fillWidth: false
                         Layout.fillHeight: true
                         ColumnLayout {
@@ -828,10 +857,6 @@ ApplicationWindow {
                         Layout.fillWidth: false
                         Layout.fillHeight: true
                     }
-                }
-                LiveBar {
-                    Layout.fillWidth: true
-                    desk: desk
                 }
             }
 
@@ -957,9 +982,19 @@ ApplicationWindow {
             Layout.fillWidth: true
             entries: app.mainEntries
             // The main track, and the aux ones that have something on them.
-            tracks: [{ track: 0, name: "画面 1", entries: app.mainEntries, player: app }].concat(
-                app.auxPlayers.filter(p => p.entries.length > 0)
-                    .map(p => ({ track: p.track, name: "画面 " + (p.track + 1), entries: p.entries, player: p })))
+            // A row per track and camera, as in an editing app: each its own
+            // play bar; entries dragged from the drawer or files from the
+            // Finder onto a row go on that track.
+            tracks: app.trackRows
+            textures: desk.textures
+            followTrack: app.followTrack
+            canAddTrack: app.shownAux.length < 3 && app.editable
+            onPickSource: key => app.pickSource(key)
+            onAddTrack: app.addTrack()
+            onAddCamera: id => app.setCameras(app.cameraIds.concat([id]))
+            onRemoveRow: key => app.removeRow(key)
+            onDropEntries: (ids, track) => app.moveToTrack(ids, track)
+            onDropFiles: (urls, track) => app.addUrls(urls, track)
             trailing: FollowStrip {
                 id: strip
                 app: app

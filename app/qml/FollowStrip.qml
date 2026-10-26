@@ -5,7 +5,7 @@ import QtQuick.Layouts
 import QtQuick.Window
 import KVJ
 
-// 音频对位, pressed into a strip as tall as the main track's row and about
+// 音频对位, pressed into a strip as tall as one timeline row (some 120 px) and about
 // half the old card's width, for the right end of the track area. On it: what
 // following does (未监听 / 监听中 / 跟随中 and the title), the input's level,
 // 开始监听 (the ear), 开始跟随, 跳至此处 (the crosshair), the input, which
@@ -48,7 +48,7 @@ Item {
     property var app: null
     property var surface: null
     property var entries: app ? app.entries : []
-    property real rowHeight: 143
+    property real rowHeight: 120
     property real stripWidth: 184
     property int followTrack: 0
     property alias deviceIndex: deviceBox.currentIndex
@@ -206,7 +206,7 @@ Item {
 
         ColumnLayout {
             anchors.fill: parent
-            anchors.margins: 8
+            anchors.margins: 6
             spacing: 0
 
             // What following does, and how fast the music is heard.
@@ -321,7 +321,7 @@ Item {
                     }
                 }
             }
-            Item { Layout.preferredHeight: 4 }
+            Item { Layout.preferredHeight: 2 }
 
             Select {
                 id: deviceBox
@@ -334,7 +334,7 @@ Item {
                 ToolTip.delay: 600
                 ToolTip.text: "声音输入"
             }
-            Item { Layout.preferredHeight: 4 }
+            Item { Layout.preferredHeight: 2 }
 
             // Which track is followed, and the helpers.
             RowLayout {
