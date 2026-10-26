@@ -18,7 +18,7 @@ Item {
     // One clock for everything that moves, running only while something does.
     property real now: Date.now()
     readonly property bool shown: Window.window ? Window.window.visible : false
-    readonly property bool moving: shown && (overlay.busy || Live.effectsMoving)
+    readonly property bool moving: shown && (overlay.busy || Live.effectsMoving || Switcher.fading)
 
     FrameAnimation {
         running: !stage.lite && stage.moving

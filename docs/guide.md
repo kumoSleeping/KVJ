@@ -214,6 +214,45 @@ elsewhere can come in through `Live.say(text, from, { mode, size })`
 (`app/qml/Live.qml`; mode `scroll`, `top` or `bottom`, size a share of the
 screen's height).
 
+## Compositing
+
+The projection shows a composition of picture sources (the four tracks,
+`track:0`–`track:3`, and cameras, `camera:<id>`) in a layout of slots, mixed the
+way a vision mixer does it. **PGM** (program) is what the audience sees; **PVW**
+(preview) is what the operator puts together next, on its own monitor, without
+touching the air. Until anything is changed both are one slot with the main
+track in full, so the projection looks exactly as it did without a mixer.
+
+A layout's slots each hold a source, a place and size in shares of the
+projected picture (a slot may reach past its edges), an order (z), a fit —
+**铺满** fills the slot and crops the picture's longer way, **完整** shows all of
+it with bands — and a mask. Masks are a rectangle, a rounded rectangle (radius),
+the ellipse that fits the slot, or a closed curve through points that are
+dragged on the monitor (a smooth Catmull-Rom curve through all of them;
+double-click on the slot adds a point on the nearest stretch, Alt-click or
+Delete takes the chosen one away, three always stay). Every mask has a feather
+that softens its edge inwards. Radius and feather are shares of the slot's
+shorter side, so the small monitors and the projection cut the same shape.
+
+On the PVW monitor a slot is chosen by pressing it, moved by dragging it and
+sized by its corners; edges snap to the picture's edges and middle, the arrow
+keys nudge the chosen slot (Shift: more). Under the monitor are its slots (+
+adds one, the bin removes the chosen one) and the chosen slot's source, fit,
+mask, radius, feather and place in per cent. The layout keys start a preview
+from a preset with the sources taken in their order: 单画面, 画中画 (its inset in
+whichever corner of the key is pressed), 左右, 上下, 2×2 and 1 大 + 2 小.
+
+**应用** puts the preview on the air: a cut, or with **渐变** on a dissolve of
+0.3–2 s. During a dissolve both layouts are drawn live, the one before on black
+fading out over the new one, by time alone, so the projection and the PGM
+monitor end it at the same moment. **还原** gives the preview back what is on
+the air. Both layouts and the dissolve length are kept between runs.
+
+The composition takes the place the picture had: the effects apply to all of
+it, and the stickers and overlay go over it. Each window wraps every source into
+one texture however many slots, monitors or dissolve layers show it. Without
+GPU shaders (the software renderer) slots are drawn without their masks.
+
 ## Load
 
 Video is decoded and scaled by the system (VideoToolbox / Media Foundation with
