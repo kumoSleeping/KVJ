@@ -375,8 +375,8 @@ Rectangle {
                     onToggled: line.player.keysOn = checked
                     ToolTip.visible: hovered
                     ToolTip.delay: 600
-                    ToolTip.text: "← / →、A / D 或小键盘 4 / 6：按住时画面以 0.7 / 1.5 倍速播放，松开即恢复；暂停时按一下退后 / 前进 1 秒\n"
-                                  + "↑ / ↓、W / S 或小键盘 8 / 2：速度 +1% / −1%\n回车：跳至光标处\n"
+                    ToolTip.text: "← / →、A / D：按住时画面以 0.7 / 1.5 倍速播放，松开即恢复；暂停时按一下退后 / 前进 1 秒\n"
+                                  + "↑ / ↓、W / S：速度 +1% / −1%\n回车：跳至光标处\n"
                                   + "− / =：缩小 / 放大时间轴，\\：全览\n"
                                   + "空格不再暂停播放"
                 }
@@ -498,7 +498,7 @@ Rectangle {
                 TextButton {
                     flat: true
                     implicitHeight: 26
-                    iconName: line.player && line.player.loopOn ? "refresh" : "square"
+                    iconName: line.player && line.player.loopOn ? "refresh" : ""
                     text: line.player && line.player.loopOn ? "循环播放" : "播完即停"
                     onClicked: line.player.loopOn = !line.player.loopOn
                     ToolTip.visible: hovered

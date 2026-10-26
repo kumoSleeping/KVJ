@@ -116,7 +116,7 @@ Popup {
                 readOnly: true
                 selectByMouse: true
                 text: dialog.preview ? dialog.preview.body : ""
-                font.family: "Menlo, Consolas, monospace"
+                font.family: Qt.platform.os === "windows" ? "Consolas" : "Menlo"
                 font.pixelSize: 11
                 color: Theme.body
                 wrapMode: TextArea.WrapAnywhere
