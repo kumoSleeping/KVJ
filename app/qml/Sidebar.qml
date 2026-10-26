@@ -17,6 +17,8 @@ import KVJ
 // the last is turned off once the next is under way. Turning off the entry on
 // the screen asks again, in red under it; the second press goes on to the next
 // entry that is on. Files dropped on a Set go into that Set.
+// It floats as a drawer over the canvas (Main.qml), which keeps it open while
+// one of its menus or dialogs is in use (`asking`, `holding()`).
 Rectangle {
     id: bar
     color: Theme.raised
@@ -36,6 +38,15 @@ Rectangle {
     property var opened: ({})
     // The Set a drag of files is over.
     property string dropSetId: ""
+    // A Set's menu that is open, and when the last one closed: a press outside
+    // a menu closes it before anything under the press hears it, and that
+    // press must not close the drawer as well.
+    property Popup openMenu: null
+    property real menuClosedAt: 0
+    readonly property bool asking: (!!openMenu && openMenu.visible) || fileDialog.visible || folderDialog.visible
+    function holding() {
+        return bar.asking || Date.now() - bar.menuClosedAt < 300
+    }
 
     signal selectSet(string id)
     signal addUrls(var urls)
@@ -327,11 +338,6 @@ Rectangle {
         }
 
         // Foot: what the chosen Set holds in all.
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 1
-            color: Theme.line
-        }
         RowLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: 34
@@ -451,6 +457,12 @@ Rectangle {
             }
             PopMenu {
                 id: menu
+                onAboutToShow: bar.openMenu = menu
+                onClosed: {
+                    bar.menuClosedAt = Date.now()
+                    if (bar.openMenu === menu)
+                        bar.openMenu = null
+                }
                 PopAction { text: "添加视频…"; enabled: bar.editable; onTriggered: bar.openDialog(row.set, fileDialog) }
                 PopAction { text: "添加文件夹…"; enabled: bar.editable; onTriggered: bar.openDialog(row.set, folderDialog) }
                 MenuSeparator {

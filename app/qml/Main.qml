@@ -7,10 +7,10 @@ import QtQuick.Layouts
 import KVJ
 
 // The operator's one window, a player first: a top bar (in the title bar's row
-// on macOS) with the way into the sender and the light or dark look, the
-// sidebar with the Sets and their entries, and on the canvas between them the
-// live desk (preview and output, words, reactions, stickers, effects) and smart
-// following as cards; across the whole foot the player's timeline. While smart following is on it plays the
+// on macOS) with the way into the sender and the light or dark look, and under
+// it the canvas: the live desk (preview and output, words, reactions, stickers,
+// effects) and smart following as cards, the Sets and their entries in a drawer
+// over its left side; across the whole foot the player's timeline. While smart following is on it plays the
 // picture from the music (where, and how fast) and the player's own keys rest;
 // paused or stopped, the player carries on from there. The sender for the DJ's
 // computer is a small window of its own; the projection window shows only the
@@ -578,6 +578,42 @@ ApplicationWindow {
         onActivated: timeline.fit()
     }
 
+    // The Sets' drawer over the canvas's left side: put away at every start,
+    // brought out by its key in the top bar, Ctrl+B (⌘B) or files dragged to
+    // it; a press elsewhere on the canvas or Esc puts it away. Choosing a Set
+    // leaves it out, and so does anything of its own in use, a menu or a
+    // dialog. The red question about turning off the entry on the screen is
+    // never put away unseen: such a press answers it with no and leaves the
+    // drawer out.
+    property bool setsOpen: false
+    function closeSets() {
+        if (sidebar.confirmId !== "")
+            sidebar.confirmId = ""
+        else if (!sidebar.holding())
+            app.setsOpen = false
+    }
+    function toggleSets() {
+        if (app.setsOpen)
+            app.closeSets()
+        else
+            app.setsOpen = true
+    }
+    Shortcut {
+        sequence: "Ctrl+B"
+        context: Qt.ApplicationShortcut
+        enabled: !sender.visible
+        onActivated: app.toggleSets()
+    }
+    // Not while a sticker is chosen (the desk's Esc lets it go first) or the
+    // drawer's own menu closes on it. Another popup of this window that closes
+    // on Esc shares the key: each press then puts one of them away.
+    Shortcut {
+        sequence: "Esc"
+        enabled: app.setsOpen && desk.chosenSid === "" && !desk.editing && !sidebar.asking
+        onActivated: app.closeSets()
+        onActivatedAmbiguously: app.closeSets()
+    }
+
     // Light or dark for what the system draws too (dialogs, menus, the
     // window's keys), where it allows that.
     function applyScheme() {
@@ -606,39 +642,20 @@ ApplicationWindow {
             live: projection.visible
             canSend: !app.following
             onSend: app.openSender()
+            setsOpen: app.setsOpen
+            onToggleSets: app.toggleSets()
+            onDragOpensSets: app.setsOpen = true
         }
 
-        RowLayout {
+        // The canvas across the whole width, the Sets' drawer over its left side.
+        Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 0
-
-            // —— Sets and their entries ——
-            Sidebar {
-                Layout.preferredWidth: 260
-                Layout.fillWidth: false
-                Layout.fillHeight: true
-                sets: app.sets
-                currentSet: app.currentSet
-                running: app.running
-                editable: app.editable
-                playingId: app.shownEntry ? app.shownEntry.id : ""
-                playingSetId: app.playingSet ? app.playingSet.id : ""
-                onSelectSet: id => app.chooseSet(id)
-                onAddUrls: urls => app.addUrls(urls)
-                onDropPlaying: id => app.dropPlaying(id)
-            }
-            Rectangle {
-                Layout.fillHeight: true
-                Layout.preferredWidth: 1
-                color: Theme.line
-            }
 
             // —— The canvas: the live desk, and smart following ——
             RowLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.margins: Theme.gap
+                anchors.fill: parent
+                anchors.margins: Theme.gap
                 spacing: Theme.gap
 
                 Desk {
@@ -1027,9 +1044,91 @@ ApplicationWindow {
 
                 // —— Effects, at the far right ——
                 Effects {
-                    Layout.preferredWidth: 276
+                    Layout.preferredWidth: 300
                     Layout.fillWidth: false
                     Layout.fillHeight: true
+                }
+            }
+
+            // While the drawer is out a press anywhere else on the canvas puts
+            // it away and does nothing more; the picture is never dimmed.
+            MouseArea {
+                anchors.fill: parent
+                visible: app.setsOpen
+                onPressed: app.closeSets()
+            }
+            // Files dragged to the canvas's left edge bring the drawer out, to
+            // be dropped on a Set.
+            DropArea {
+                width: Theme.gap
+                height: parent.height
+                enabled: !app.setsOpen
+                onEntered: drag => {
+                    drag.accepted = false
+                    app.setsOpen = true
+                }
+            }
+
+            // —— Sets and their entries: the drawer ——
+            Item {
+                id: drawer
+                readonly property real spread: 24
+                width: 280
+                height: parent.height
+                x: -width - spread
+                visible: x > -width - spread
+                states: State {
+                    name: "out"
+                    when: app.setsOpen
+                    PropertyChanges { drawer.x: 0 }
+                }
+                transitions: [
+                    Transition {
+                        to: "out"
+                        NumberAnimation { property: "x"; duration: Theme.quick; easing.type: Easing.OutCubic }
+                    },
+                    Transition {
+                        from: "out"
+                        NumberAnimation { property: "x"; duration: 200; easing.type: Easing.InCubic }
+                    }
+                ]
+
+                // A soft shadow over the canvas, in layers that fade outwards.
+                Repeater {
+                    model: 8
+                    Rectangle {
+                        required property int index
+                        width: drawer.width + (index + 1) * drawer.spread / 8
+                        height: drawer.height
+                        radius: Theme.radiusLg + (index + 1) * drawer.spread / 8
+                        topLeftRadius: 0
+                        bottomLeftRadius: 0
+                        color: Qt.rgba(0, 0, 0, Theme.shadow.a / 8)
+                    }
+                }
+                // Presses and the wheel on the drawer stay on it, never reach
+                // the canvas under it.
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.AllButtons
+                    hoverEnabled: true
+                    onWheel: wheel => wheel.accepted = true
+                }
+                Sidebar {
+                    id: sidebar
+                    anchors.fill: parent
+                    radius: Theme.radiusLg
+                    topLeftRadius: 0
+                    bottomLeftRadius: 0
+                    sets: app.sets
+                    currentSet: app.currentSet
+                    running: app.running
+                    editable: app.editable
+                    playingId: app.shownEntry ? app.shownEntry.id : ""
+                    playingSetId: app.playingSet ? app.playingSet.id : ""
+                    onSelectSet: id => app.chooseSet(id)
+                    onAddUrls: urls => app.addUrls(urls)
+                    onDropPlaying: id => app.dropPlaying(id)
                 }
             }
         }
@@ -1063,6 +1162,9 @@ ApplicationWindow {
                 app.addUrls([Engine.fileUrl(args[i + 1])])
         app.cue()
         app.applyScheme()
+        // A first start has no Set yet: show where they are made.
+        if (!app.sets || app.sets.length === 0)
+            app.setsOpen = true
     }
 
     // Closing the window (its key, Cmd+W, Alt+F4, quitting) during a show is
