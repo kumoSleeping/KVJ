@@ -279,7 +279,14 @@ void Engine::enableEntries(const QString &setId, const QStringList &entryIds, bo
     }, true, {}, &m_edits);
 }
 
-void Engine::importUrls(const QString &setId, const QList<QUrl> &urls)
+void Engine::setTrack(const QString &setId, const QStringList &entryIds, int track)
+{
+    if (entryIds.isEmpty())
+        return;
+    edit({{"kind", "track"}, {"set_id", setId}, {"entry_ids", QJsonArray::fromStringList(entryIds)}, {"track", track}});
+}
+
+void Engine::importUrls(const QString &setId, const QList<QUrl> &urls, int track)
 {
     QJsonArray paths;
     for (const QUrl &url : urls) {
@@ -293,6 +300,7 @@ void Engine::importUrls(const QString &setId, const QList<QUrl> &urls)
         {"set_id", setId},
         {"revision", m_document.value("revision").toLongLong()},
         {"paths", paths},
+        {"track", track},
     };
     clearError();
     m_importing = true;
@@ -306,7 +314,7 @@ void Engine::importUrls(const QString &setId, const QList<QUrl> &urls)
     });
 }
 
-void Engine::start(const QString &setId, const QString &device, int channelStart, bool room)
+void Engine::start(const QString &setId, const QString &device, int channelStart, bool room, int track)
 {
     clearError();
     const QJsonObject request{
@@ -315,6 +323,7 @@ void Engine::start(const QString &setId, const QString &device, int channelStart
         {"device", device.isEmpty() ? QStringLiteral("auto") : device},
         {"channel_start", channelStart},
         {"room", room},
+        {"track", track},
     };
     call(request, [this](const QJsonValue &ok) {
         m_view = ok.toObject().toVariantMap();

@@ -47,6 +47,15 @@ ApplicationWindow {
         return sets.length ? sets[0] : null
     }
     readonly property var entries: currentSet ? currentSet.entries : []
+    // Tracks: every entry is on one, 0 the main track, 1..3 the aux ones (画面
+    // 2..4); `e.track || 0` since the engine may leave it out. This window's
+    // player (transport, the timeline, cue/nextOn/tick) plays the main track
+    // only; the aux tracks get players of their own.
+    function isMain(e) { return (e.track || 0) === 0 }
+    readonly property var mainEntries: entries.filter(app.isMain)
+    // The track following listens for (Engine.start); only its entries are
+    // matched. The engine says which one a session follows in `view.track`.
+    property int followTrack: 0
     readonly property var view: Engine.view
     readonly property string phase: view.phase || ""
     readonly property bool running: ["indexing", "permission", "listening", "matched", "searching", "connecting", "sending"].indexOf(phase) >= 0
@@ -70,8 +79,9 @@ ApplicationWindow {
     // play and seeking while 跳转 is.
     readonly property bool manualTempo: manual || tempoPaused
     readonly property bool manualSeek: manual || jumpPaused
-    // Something on to follow that can be heard: a silent entry is never followed.
-    readonly property bool canStart: !running && !!currentSet && entries.some(e => e.enabled !== false && !e.silent) && !Engine.importing
+    // Something on the followed track to follow that can be heard: a silent
+    // entry is never followed.
+    readonly property bool canStart: !running && !!currentSet && entries.some(e => e.enabled !== false && !e.silent && (e.track || 0) === followTrack) && !Engine.importing
     // The engine's rule (core/engine/src/runtime.rs): further than this from the
     // followed position is a jump, closer is followed by speed.
     readonly property real jumpSeconds: 2.5
@@ -138,7 +148,8 @@ ApplicationWindow {
                 return s
         return null
     }
-    readonly property var playingEntries: playingSet ? playingSet.entries : entries
+    // The main track's, for the player (see isMain).
+    readonly property var playingEntries: (playingSet ? playingSet.entries : entries).filter(app.isMain)
     readonly property bool parked: !!playingSet && !!currentSet && playingSet.id !== currentSet.id
     // Every jump, by hand or by following, can dissolve.
     property bool fadeOn: false
@@ -212,12 +223,12 @@ ApplicationWindow {
     // sets both to work, listening first if it was not.
     function listen() {
         app.tempoPaused = app.jumpPaused = true
-        Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2, roomMode.checked)
+        Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2, roomMode.checked, app.followTrack)
     }
     function follow() {
         app.tempoPaused = app.jumpPaused = false
         if (!app.following)
-            Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2, roomMode.checked)
+            Engine.start(app.currentSet.id, app.device ? app.device.id : "auto", channelBox.currentIndex * 2, roomMode.checked, app.followTrack)
     }
     // 跳至此处: the player goes once to where following hears the music.
     function jumpToMatch() {
@@ -231,9 +242,10 @@ ApplicationWindow {
         if (app.manualTempo)
             transport.setTempo(1)
     }
-    // Something on the screen from the start: the first entry that is on, paused.
+    // Something on the screen from the start: the first entry of the main
+    // track that is on, paused.
     function cue() {
-        const first = app.entries.find(e => e.enabled !== false)
+        const first = app.mainEntries.find(e => e.enabled !== false)
         if (!transport.entry && first)
             transport.load(first, 0, false)
     }
@@ -372,7 +384,7 @@ ApplicationWindow {
     function devCommand(line) {
         const w = String(line).trim().split(/\s+/)
         switch (w[0]) {
-        case "play": app.play(app.entries[Math.max(0, Number(w[1] || 1) - 1)], Number(w[2] || 0)); transport.setPlaying(true); break
+        case "play": app.play(app.mainEntries[Math.max(0, Number(w[1] || 1) - 1)], Number(w[2] || 0)); transport.setPlaying(true); break
         case "pause": transport.setPlaying(false); break
         case "resume": transport.setPlaying(true); break
         case "tempo": transport.setTempo(Number(w[1])); break
@@ -1143,7 +1155,7 @@ ApplicationWindow {
             id: timeline
             objectName: "timeline"
             Layout.fillWidth: true
-            entries: app.entries
+            entries: app.mainEntries
             setId: app.currentSet ? app.currentSet.id : ""
             setName: app.currentSet ? app.currentSet.name : ""
             running: app.running
