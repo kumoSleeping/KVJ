@@ -83,8 +83,10 @@ ApplicationWindow {
     readonly property bool manual: !aiLeads
     // The player's keys no helper at work owns: the speed while 对速 is paused,
     // play and seeking while 跳转 is.
-    readonly property bool manualTempo: manual || tempoPaused
-    readonly property bool manualSeek: manual || jumpPaused
+    // The main player's own keys: free unless following leads it (following
+    // an aux track leaves the main one to the operator).
+    readonly property bool manualTempo: manual || tempoPaused || followTrack !== 0
+    readonly property bool manualSeek: manual || jumpPaused || followTrack !== 0
     // Something on the followed track to follow that can be heard: a silent
     // entry is never followed.
     readonly property bool canStart: !running && !!currentSet && entries.some(e => e.enabled !== false && !e.silent && (e.track || 0) === followTrack) && !Engine.importing
@@ -196,8 +198,16 @@ ApplicationWindow {
     }
     function giveTempoBack() {
         const p = app.followedPlayer
-        if (!app.aiLeads && p.tempo !== p.ownTempo)
+        if (app.aiLeads || p.tempo === p.ownTempo)
+            return
+        // An aux track's own speed may lie beyond the main player's range.
+        if (p === transport) {
             p.setTempo(p.ownTempo)
+        } else {
+            const at = p.now()
+            p.tempo = p.ownTempo
+            p.anchor(at)
+        }
     }
     // One helper paused: the player has the picture and the helper at work moves
     // it, measured against the picture itself.
@@ -472,32 +482,35 @@ ApplicationWindow {
     // The aux tracks' own players (画面 2..4), each on its own clock; the
     // one following follows plays the music's place instead (auxTiming).
     readonly property var auxPlayers: [aux1, aux2, aux3]
+    // The aux tracks play from the Set the picture comes from, like the main
+    // one: opening another Set to look at it changes nothing on the air.
+    readonly property var auxEntries: (app.playingSet || app.currentSet || { entries: [] }).entries
     TrackPlayer {
         id: aux1
         track: 1
-        entries: app.entries.filter(e => (e.track || 0) === 1)
+        entries: app.auxEntries.filter(e => (e.track || 0) === 1)
+        lead: app.aiPicture && app.followTrack === 1 ? { match: app.match, offsetMs: strip.offsetMs } : null
         mainRate: app.shownTempo
     }
     TrackPlayer {
         id: aux2
         track: 2
-        entries: app.entries.filter(e => (e.track || 0) === 2)
+        entries: app.auxEntries.filter(e => (e.track || 0) === 2)
+        lead: app.aiPicture && app.followTrack === 2 ? { match: app.match, offsetMs: strip.offsetMs } : null
         mainRate: app.shownTempo
     }
     TrackPlayer {
         id: aux3
         track: 3
-        entries: app.entries.filter(e => (e.track || 0) === 3)
+        entries: app.auxEntries.filter(e => (e.track || 0) === 3)
+        lead: app.aiPicture && app.followTrack === 3 ? { match: app.match, offsetMs: strip.offsetMs } : null
         mainRate: app.shownTempo
     }
-    // What an aux track's picture shows: its player, or the music's place
-    // while following follows it.
+    // What an aux track's picture shows: its player's clock, or the music's
+    // place while following follows it (TrackPlayer.lead).
     function auxTiming(track) {
-        const led = app.aiPicture && app.followTrack === track
         const p = app.auxPlayers[track - 1]
-        return led ? { entry: app.match.entry, position: app.match.position, rate: app.match.rate,
-                       clockAtMs: app.match.clock_at_ms, offsetMs: strip.offsetMs }
-                   : { entry: p.entry, position: p.position, rate: p.rate, clockAtMs: p.clockAtMs, offsetMs: 0 }
+        return { entry: p.entry, position: p.position, rate: p.rate, clockAtMs: p.clockAtMs, offsetMs: p.offsetMs }
     }
     Timer {
         interval: 50

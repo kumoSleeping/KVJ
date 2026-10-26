@@ -134,7 +134,9 @@ void CameraSurface::schedule()
 
 bool CameraSurface::shown() const
 {
-    return isVisible() && window() && window()->isVisible();
+    // Exposed, not only visible: a minimized or covered window draws nothing,
+    // so a frame waiting to be drawn would hold back the previews' frames.
+    return isVisible() && window() && window()->isVisible() && window()->isExposed();
 }
 
 QCameraDevice CameraSurface::findDevice() const

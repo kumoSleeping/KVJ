@@ -658,22 +658,22 @@ Rectangle {
                 }
                 PopAction {
                     text: (row.track === 0 ? "✓ " : "") + "放到主轨（画面 1）"
-                    enabled: row.track !== 0
+                    enabled: bar.editable && row.track !== 0
                     onTriggered: Engine.setTrack(row.info.set.id, [row.entry.id], 0)
                 }
                 PopAction {
                     text: (row.track === 1 ? "✓ " : "") + "放到画面 2"
-                    enabled: row.track !== 1
+                    enabled: bar.editable && row.track !== 1
                     onTriggered: Engine.setTrack(row.info.set.id, [row.entry.id], 1)
                 }
                 PopAction {
                     text: (row.track === 2 ? "✓ " : "") + "放到画面 3"
-                    enabled: row.track !== 2
+                    enabled: bar.editable && row.track !== 2
                     onTriggered: Engine.setTrack(row.info.set.id, [row.entry.id], 2)
                 }
                 PopAction {
                     text: (row.track === 3 ? "✓ " : "") + "放到画面 4"
-                    enabled: row.track !== 3
+                    enabled: bar.editable && row.track !== 3
                     onTriggered: Engine.setTrack(row.info.set.id, [row.entry.id], 3)
                 }
             }

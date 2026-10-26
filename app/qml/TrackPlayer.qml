@@ -36,11 +36,16 @@ QtObject {
     property bool followMain: false
     property bool loop: false
 
-    readonly property var entry: clock.entry
-    readonly property real position: clock.position
-    readonly property real clockAtMs: clock.clockAtMs
-    readonly property bool playing: clock.playing
-    readonly property real rate: clock.rate
+    // Following leads this track's picture: { match, offsetMs } from the
+    // window, or null. Its picture is then the music's place and its own keys
+    // rest; let go, its clock carries on from there (Main's takeOver).
+    property var lead: null
+    readonly property var entry: lead ? lead.match.entry : clock.entry
+    readonly property real position: lead ? lead.match.position : clock.position
+    readonly property real clockAtMs: lead ? lead.match.clock_at_ms : clock.clockAtMs
+    readonly property real offsetMs: lead ? lead.offsetMs : 0
+    readonly property bool playing: lead ? lead.match.rate > 0 : clock.playing
+    readonly property real rate: lead ? lead.match.rate : clock.rate
     readonly property real duration: clock.duration
     readonly property real effectiveSpeed: Math.max(0.25, Math.min(3, followMain ? speed * Math.max(0, mainRate) : speed))
     property real playhead: 0
@@ -72,6 +77,10 @@ QtObject {
     }
 
     function now() {
+        if (lead) {
+            const m = lead.match
+            return Math.max(0, m.position + (Engine.clockMs() - m.clock_at_ms + lead.offsetMs) / 1000 * m.rate)
+        }
         return clock.now()
     }
     function firstOn() {
@@ -92,6 +101,8 @@ QtObject {
         tick()
     }
     function play(entry, at) {
+        if (lead)
+            return
         if (!entry)
             return
         if (clock.entry && clock.entry.id === entry.id)
@@ -101,6 +112,8 @@ QtObject {
         tick()
     }
     function seek(entry, at) {
+        if (lead)
+            return
         if (!entry)
             return
         if (clock.entry && clock.entry.id === entry.id)
@@ -110,6 +123,8 @@ QtObject {
         tick()
     }
     function toggle() {
+        if (lead)
+            return
         if (!clock.entry) {
             const first = firstOn()
             if (!first)
@@ -121,6 +136,8 @@ QtObject {
         tick()
     }
     function pause() {
+        if (lead)
+            return
         clock.setPlaying(false)
         tick()
     }
@@ -133,6 +150,10 @@ QtObject {
     // At the end of an entry: the next one on the track that is on, or the
     // first with `loop`, else the last frame, as the main track does.
     function tick() {
+        if (lead) {
+            player.playhead = now()
+            return
+        }
         player.playhead = clock.now()
         if (clock.playing && clock.duration > 0 && player.playhead >= clock.duration - 0.03) {
             const list = player.entries || []
@@ -149,7 +170,7 @@ QtObject {
     property Timer ticker: Timer {
         interval: 50
         repeat: true
-        running: player.playing
+        running: player.playing || !!player.lead
         onTriggered: player.tick()
     }
 }

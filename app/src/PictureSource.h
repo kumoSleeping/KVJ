@@ -58,6 +58,10 @@ protected:
 
 private:
     QList<PreviewSurface *> m_previews;
+    // A small copy of the picture last shown, for a preview attached while
+    // the source shows a still picture (paused) and sends no new frame.
+    QImage m_last;
+    double m_lastAt = -1e9;
     bool m_hasFrame = false;
     QString m_error;
 };

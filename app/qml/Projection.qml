@@ -177,16 +177,20 @@ Window {
                 fadeMs: root.fadeMs
             }
         }
+        IdList {
+            id: cameraList
+            ids: root.cameraIds
+        }
         Repeater {
             id: cameraBank
-            model: root.cameraIds
+            model: cameraList.model
             onItemAdded: root.sourceRevision += 1
             onItemRemoved: root.sourceRevision += 1
             CameraSurface {
-                required property string modelData
+                required property string key
                 anchors.fill: parent
-                deviceId: modelData
-                active: (root.visible || root.previewing) && root.wants("camera:" + modelData)
+                deviceId: key
+                active: (root.visible || root.previewing) && root.wants("camera:" + key)
             }
         }
         Rectangle {

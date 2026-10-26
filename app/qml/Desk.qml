@@ -294,21 +294,26 @@ Item {
                     // Each source's light copy, under the picture (z below the
                     // screen's own black) and as large as it: the monitors here
                     // draw them through `textures`, never these items themselves.
+                    IdList {
+                        id: bankIds
+                        ids: desk.allIds
+                    }
                     Repeater {
                         id: bank
-                        model: desk.allIds
+                        model: bankIds.model
                         onItemAdded: textures.refresh()
                         onItemRemoved: textures.refresh()
                         PreviewSurface {
-                            required property string modelData
-                            readonly property string key: modelData
+                            required property string key
                             z: -1
                             width: screen.width
                             height: screen.height
+                            // Sharp enough for the program monitor, which shows it largest.
+                            rows: 540
                             fps: 24
                             source: {
                                 desk.projection ? desk.projection.sourceRevision : 0
-                                return desk.projection ? desk.projection.sourceItem(modelData) : null
+                                return desk.projection ? desk.projection.sourceItem(key) : null
                             }
                         }
                     }

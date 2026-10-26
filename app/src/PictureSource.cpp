@@ -22,6 +22,12 @@ void PictureSource::attachPreview(PreviewSurface *preview)
     if (m_previews.contains(preview))
         return;
     m_previews.append(preview);
+    // It shows the picture at once, moving or not.
+    if (!m_last.isNull() && hasFrame()) {
+        const int height = preview->frameHeight();
+        preview->setFrame(m_last.height() > height ? m_last.scaledToHeight(height, Qt::SmoothTransformation) : m_last,
+                          kvj_clock_ms());
+    }
     previewsChanged();
 }
 
@@ -44,9 +50,18 @@ bool PictureSource::previewsWatching() const
 // size and halved smoothly: a soft picture for a fraction of a millisecond.
 void PictureSource::feedPreviews(const QImage &image, Layer layer, int fadeMs, bool mirror)
 {
-    if (m_previews.isEmpty() || image.isNull())
+    if (image.isNull())
         return;
     const double now = kvj_clock_ms();
+    // The picture shown, kept small (at most twice a second) for previews to come.
+    if (layer != Layer::Previous && now - m_lastAt >= 500) {
+        const int keep = 540;
+        QImage last = image.height() > keep ? image.scaledToHeight(keep, Qt::SmoothTransformation) : image.copy();
+        m_last = mirror ? std::move(last).mirrored(true, false) : std::move(last);
+        m_lastAt = now;
+    }
+    if (m_previews.isEmpty())
+        return;
     const bool jump = layer == Layer::Jump;
     QImage small;
     for (PreviewSurface *preview : std::as_const(m_previews)) {
@@ -70,6 +85,8 @@ void PictureSource::feedPreviews(const QImage &image, Layer layer, int fadeMs, b
 
 void PictureSource::clearPreviews()
 {
+    m_last = QImage();
+    m_lastAt = -1e9;
     for (PreviewSurface *preview : std::as_const(m_previews))
         preview->clearFrame();
 }
