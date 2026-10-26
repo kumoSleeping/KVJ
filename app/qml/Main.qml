@@ -142,6 +142,9 @@ ApplicationWindow {
     readonly property bool parked: !!playingSet && !!currentSet && playingSet.id !== currentSet.id
     // Every jump, by hand or by following, can dissolve.
     property bool fadeOn: false
+    // At the end of the Set's last entry: start over from its first entry, or
+    // stop on the last frame.
+    property bool loopOn: false
     property int fadeMs: 400
 
     onMatchChanged: {
@@ -329,8 +332,9 @@ ApplicationWindow {
             const list = app.playingEntries
             const i = list.findIndex(e => e.id === transport.entry.id)
             const next = i >= 0 ? list.slice(i + 1).find(e => e.enabled !== false) : null
-            if (next)
-                transport.load(next, 0, true)
+            const first = app.loopOn ? list.find(e => e.enabled !== false) : null
+            if (next || first)
+                transport.load(next || first, 0, true)
             else
                 transport.setPlaying(false)
             app.playhead = transport.now()
@@ -494,6 +498,7 @@ ApplicationWindow {
         property alias fade: app.fadeOn
         property alias fadeMs: app.fadeMs
         property alias keys: app.keysOn
+        property alias loop: app.loopOn
     }
     Shortcut {
         sequences: ["Left", "A", "Num+4"]

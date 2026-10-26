@@ -494,6 +494,18 @@ Rectangle {
                     implicitHeight: 18
                     color: Theme.line
                 }
+                // What happens after the Set's last entry.
+                TextButton {
+                    flat: true
+                    implicitHeight: 26
+                    iconName: line.player && line.player.loopOn ? "refresh" : "square"
+                    text: line.player && line.player.loopOn ? "循环播放" : "播完即停"
+                    onClicked: line.player.loopOn = !line.player.loopOn
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: line.player && line.player.loopOn ? "放完 Set 的最后一个素材后从第一个重新开始；点一下改为播完即停"
+                                                                    : "放完 Set 的最后一个素材后停在最后一帧；点一下改为循环播放"
+                }
                 Toggle {
                     text: "跳转渐变"
                     checked: !!line.player && line.player.fadeOn

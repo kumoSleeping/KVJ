@@ -102,9 +102,19 @@ void VideoPlayer::run()
         return;
     }
     const double duration = decoder->duration();
+    // The last frame's time, once the end of the file has been decoded.
+    double lastFrame = -1;
     // Past the end the last frame is the target: a clock running on (music
-    // longer than the video) must not seek to the end over and over.
-    const auto bounded = [duration](double t) { return duration > 0 ? std::min(t, std::max(0.0, duration - 0.05)) : t; };
+    // longer than the video) must not seek to the end over and over. Until
+    // the end is known it is a little before the stated duration; after, it is
+    // the last frame itself, which is the one shown there. Bounding a paused end
+    // before that frame read the shown frame as a step back and sought, and the
+    // picture flipped between the last two frames.
+    const auto bounded = [duration, &lastFrame](double t) {
+        if (lastFrame >= 0)
+            return std::min(t, lastFrame);
+        return duration > 0 ? std::min(t, std::max(0.0, duration - 0.05)) : t;
+    };
     {
         std::lock_guard lock(m_mutex);
         m_sourceSize = decoder->sourceSize();
@@ -186,6 +196,8 @@ void VideoPlayer::run()
             const QString error = decoder->error();
             if (error.isEmpty()) {
                 ended = true;
+                if (last >= 0)
+                    lastFrame = std::max(lastFrame, last);
                 continue;
             }
             // A failure mid-stream (the GPU device lost to a driver reset or a
