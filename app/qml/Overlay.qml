@@ -2,10 +2,11 @@ import QtQuick
 import QtQuick.Window
 import KVJ
 
-// Live messages over the picture: words fly across, reactions rise from the foot
-// the way Google Meet's do, and a caption takes the middle. Everything moves on
-// `now` (Date.now() ms) given by the Stage, so the projection and the preview,
-// which advance it at different rates, show the same moment.
+// Live messages over the picture: words fly across or hold at the top or the
+// foot as on Bilibili, reactions rise from the foot the way Google Meet's do,
+// and a caption takes the middle. Everything moves on `now` (Date.now() ms)
+// given by the Stage, so the projection and the preview, which advance it at
+// different rates, show the same moment.
 Item {
     id: overlay
     clip: true
@@ -18,7 +19,6 @@ Item {
     readonly property bool busy: alive > 0 || captionUp
     // Spawn only where it is seen; a hidden window would only pile them up.
     readonly property bool shown: Window.window ? Window.window.visible : false
-    readonly property real bulletSize: height / 16
 
     function texture(glyph) {
         for (let i = 0; i < faces.count; ++i) {
@@ -81,22 +81,30 @@ Item {
         }
     }
 
+    // A bullet, where and as large as Live placed it: a scrolling one crosses
+    // from the right edge to the left; a top or bottom one holds in the middle
+    // (cut short if it would reach past nine tenths of the width), then fades.
     Component {
         id: bullet
         Text {
             id: line
             required property var item
+            readonly property bool scrolling: item.mode === "scroll"
             readonly property real t: Math.max(0, overlay.now - item.born)
-            readonly property real duration: (overlay.width + width) / Math.max(1, overlay.width) * 8000
-            x: overlay.width - (overlay.width + width) * Math.min(1, t / duration)
-            y: overlay.height * (0.04 + item.lane * 0.1)
+            readonly property real life: scrolling ? item.duration : item.hold + item.fade
+            x: scrolling ? overlay.width - (overlay.width + width) * Math.min(1, t / item.duration)
+                         : (overlay.width - width) / 2
+            y: overlay.height * item.y
+            width: scrolling ? implicitWidth : Math.min(implicitWidth, overlay.width * 0.9)
+            elide: scrolling ? Text.ElideNone : Text.ElideRight
+            opacity: !scrolling && t > item.hold ? Math.max(0, 1 - (t - item.hold) / item.fade) : 1
             text: item.from ? item.from + "：" + item.text : item.text
             color: "white"
-            font.pixelSize: overlay.bulletSize
+            font.pixelSize: Math.max(1, overlay.height * item.size)
             font.weight: Font.DemiBold
             style: Text.Outline
             styleColor: "#99000000"
-            onTChanged: if (t > duration) destroy()
+            onTChanged: if (t > life) destroy()
             Component.onCompleted: overlay.alive += 1
             Component.onDestruction: overlay.alive -= 1
         }

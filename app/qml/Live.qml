@@ -8,7 +8,8 @@ import QtQuick
 // one clock and any randomness already rolled.
 //
 // Danmaku from elsewhere (an audience page, a chat bridge) comes in through
-// say(text, from) like the operator's own words; nothing else needs to change.
+// say(text, from, options) like the operator's own words; nothing else needs
+// to change.
 QtObject {
     id: live
 
@@ -16,7 +17,11 @@ QtObject {
     readonly property real epoch: Date.now()
 
     // Events: each drawing spawns its own copy and lets it go.
-    signal bullet(var item)    // { text, from, lane, born }
+    // A bullet: { text, from, mode: "scroll" | "top" | "bottom", lane, y (top of
+    // its line, as a share of the screen's height), size (its font, the same
+    // share), born, and duration (scroll: across the screen) or hold and fade
+    // (top, bottom: shown, then fading) in ms }.
+    signal bullet(var item)
     signal reaction(var item)  // { emoji, x, seed, born }
 
     // State: drawn for as long as it is set.
@@ -38,16 +43,97 @@ QtObject {
         { glyph: "🤘", file: "1f918" }, { glyph: "✨", file: "2728" }, { glyph: "🪩", file: "1faa9" }
     ]
 
-    property int lane: 0
     property int serial: 0
     property var recent: []
 
-    function say(text, from) {
+    // —— Danmaku, as on Bilibili ——
+    // Font sizes on offer (小, 中, 大), as shares of the screen's height.
+    readonly property var sizes: [1 / 26, 1 / 20, 1 / 15]
+    // The projection's width over its height, for telling how far a line
+    // reaches across it.
+    property real aspect: 16 / 9
+    // Every scrolling line takes as long to cross, so a longer one moves faster.
+    readonly property int crossing: 7000
+    readonly property int hold: 4500
+    readonly property int fade: 300
+    // A line's height, in font sizes.
+    readonly property real lineSpan: 1.25
+    // The lines still up, by mode: { y, h, born, end, width, speed } in shares
+    // of the screen and ms.
+    property var flying: ({ scroll: [], top: [], bottom: [] })
+
+    // How wide `text` is in font sizes: CJK and full-width forms (and emoji)
+    // about one each, anything else about half.
+    function ems(text) {
+        let n = 0
+        for (const ch of text) {
+            const c = ch.codePointAt(0)
+            n += c >= 0x1100 && !(c >= 0x2000 && c < 0x2e80) && !(c >= 0xff61 && c <= 0xffdc) ? 1 : 0.55
+        }
+        return n
+    }
+    // The first lane between `top` and `bottom` (from the bottom up when
+    // `upward`) that no line still up holds at `now`; failing that, the one
+    // that frees soonest. `freeAt(other)` is when `other` stops holding a lane.
+    function place(list, line, top, bottom, upward, now, freeAt) {
+        const lanes = Math.max(1, Math.floor((bottom - top) / line + 1e-6))
+        const at = k => upward ? bottom - (k + 1) * line : top + k * line
+        let best = 0
+        let soonest = Infinity
+        for (let k = 0; k < lanes; ++k) {
+            const y = at(k)
+            let free = now
+            for (const other of list)
+                if (other.y < y + line - 1e-6 && y < other.y + other.h - 1e-6)
+                    free = Math.max(free, freeAt(other))
+            if (free <= now)
+                return { lane: k, y: y }
+            if (free < soonest) {
+                soonest = free
+                best = k
+            }
+        }
+        return { lane: best, y: at(best) }
+    }
+    // `options`: { mode: "scroll" (the default) | "top" | "bottom", size (a
+    // share of the screen's height; 中 by default) }. Scrolling lines take the
+    // top three quarters of the screen, the topmost lane where the one before
+    // has come fully in and will be gone off the left before this one catches
+    // it; top and bottom lines stack, centred, down from the top or up from
+    // the foot.
+    function say(text, from, options) {
         const words = (text || "").trim()
         if (!words.length)
             return
-        lane = (lane + 1) % 9
-        bullet({ text: words, from: from || "", lane: lane, born: Date.now() })
+        const opts = options || {}
+        const mode = ["scroll", "top", "bottom"].indexOf(opts.mode) >= 0 ? opts.mode : "scroll"
+        const size = typeof opts.size === "number" && opts.size > 0 ? opts.size : sizes[1]
+        const name = from || ""
+        const now = Date.now()
+        const line = size * lineSpan
+        const list = flying[mode].filter(o => o.end > now)
+        let spot
+        let entry
+        if (mode === "scroll") {
+            // Shares of the screen's width, and of it a millisecond.
+            const width = ems(name ? name + "：" + words : words) * size / Math.max(0.1, aspect)
+            const gap = size / Math.max(0.1, aspect)
+            const speed = (1 + width) / crossing
+            spot = place(list, line, 0.02, 0.75, false, now, other => Math.max(
+                other.born + (other.width + gap) / other.speed,
+                other.born + crossing - (1 - gap) / speed))
+            entry = { width: width, speed: speed, end: now + crossing }
+        } else {
+            spot = mode === "top" ? place(list, line, 0.02, 0.5, false, now, other => other.end)
+                                  : place(list, line, 0.5, 0.97, true, now, other => other.end)
+            entry = { end: now + hold + fade }
+        }
+        list.push(Object.assign(entry, { y: spot.y, h: line, born: now }))
+        flying[mode] = list
+        bullet({
+            text: words, from: name, mode: mode, lane: spot.lane, y: spot.y, size: size, born: now,
+            duration: crossing, hold: hold, fade: fade
+        })
     }
     // Reactions rise from anywhere along the foot of the screen. The fourth of
     // one emoji within a second and a half, and every one after, bursts.

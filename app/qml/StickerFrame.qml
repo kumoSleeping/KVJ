@@ -1,16 +1,19 @@
 import QtQuick
+import QtQuick.Controls.Basic
 import KVJ
 
 // A posted sticker on the operator's preview, where it is changed live: pressed,
 // it is chosen and follows the pointer; chosen, a frame shows with a point at
 // each corner that sizes it about its centre, a point above that turns it
-// (Shift: in steps of 15°) and a key that takes it down.
+// (Shift: in steps of 15°). While the desk is editing, every sticker shows a
+// faint outline and a key on its top right corner that takes it down.
 Sticker {
     id: frame
 
     required property var model
     // The id of the chosen sticker, and the way to choose one.
     property string chosen: ""
+    property bool editing: false
     signal choose(string sid)
     signal resized(real size)
 
@@ -56,6 +59,16 @@ Sticker {
         }
     }
 
+    // While editing, a faint outline on the ones not chosen, so each is found.
+    Rectangle {
+        visible: frame.editing && !frame.isChosen
+        anchors.fill: parent
+        anchors.margins: -2
+        color: "transparent"
+        border.width: 1
+        border.color: "#80ffffff"
+    }
+
     // The frame, outside the picture so it never covers it.
     Rectangle {
         visible: frame.isChosen
@@ -73,9 +86,12 @@ Sticker {
         }
     }
 
-    // Corners: size about the centre, as far as the pointer is from it.
+    // Corners: size about the centre, as far as the pointer is from it. While
+    // editing, the top right one gives way to the key that takes it down.
     Repeater {
-        model: frame.isChosen ? [Qt.point(0, 0), Qt.point(1, 0), Qt.point(0, 1), Qt.point(1, 1)] : []
+        model: !frame.isChosen ? []
+             : frame.editing ? [Qt.point(0, 0), Qt.point(0, 1), Qt.point(1, 1)]
+             : [Qt.point(0, 0), Qt.point(1, 0), Qt.point(0, 1), Qt.point(1, 1)]
         Rectangle {
             id: corner
             required property point modelData
@@ -158,15 +174,19 @@ Sticker {
         }
     }
 
-    // Beyond the top right corner: take it down.
+    // Centred on the top right corner, so it turns with the sticker and stays on
+    // it, but kept upright: take it down.
     Rectangle {
-        visible: frame.isChosen
-        x: frame.width + 8
-        y: -8 - height
+        visible: frame.editing
+        z: 2
+        x: frame.width - width / 2
+        y: -height / 2
         width: 18
         height: 18
         radius: 9
         color: "#cc000000"
+        border.width: 1
+        border.color: "#b3ffffff"
         rotation: -frame.angle
         Text {
             anchors.centerIn: parent
@@ -178,8 +198,16 @@ Sticker {
         MouseArea {
             anchors.fill: parent
             anchors.margins: -3
+            hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: Live.unpost(frame.model.sid)
+            ToolTip.visible: containsMouse
+            ToolTip.delay: 600
+            ToolTip.text: "撤下"
+            onClicked: {
+                if (frame.isChosen)
+                    frame.choose("")
+                Live.unpost(frame.model.sid)
+            }
         }
     }
 }

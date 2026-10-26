@@ -28,7 +28,12 @@ chooses the current DJ among the connected ones. Pair the two computers in the s
 
 Everything is in one window, and nothing in it appears or moves when following
 starts. The top bar (the title bar itself on macOS) holds **发送端** and the
-light / dark switch at the right. The sidebar is one tree of the Sets: each Set
+light / dark switch at the right. The Sets are in a drawer over the left side
+of the canvas, put away at every start: the key beside **KVJ** in the top bar,
+or Ctrl+B (⌘B on macOS), brings it out, and so do files dragged onto that key or
+to the canvas's left edge, to be dropped on a Set. A press elsewhere on the
+canvas, the key again or Esc puts it away; choosing a Set leaves it out, and
+so does a Set's menu or an add dialog in use. The drawer is one tree of the Sets: each Set
 opens onto its entries (videos only: mp4, m4v, mkv, mov, webm; a folder adds
 the videos in it and its subfolders), grouped by the folders they came from;
 the chosen Set is the one played and followed, and files dropped on a Set go
@@ -41,8 +46,10 @@ never waits for indexing: the index holds the whole Set, entries that are off
 included (about 0.6 MiB a minute of sound, up to 192 MiB, some five hours; a
 larger collection goes into several Sets). Turning off the entry on the screen asks again in red
 under it; the second press goes on to the start of the next entry that is on,
-with the jump's dissolve. The middle is the live desk with the player; the
-right side is smart following (**音频对位**).
+with the jump's dissolve. While it asks the drawer is not put away: a press
+outside it, Esc or its key answers no first. The canvas, across the whole
+width, is the live desk with the player, then smart following
+(**音频对位**) and the effects at the right.
 
 Under the preview are the output (screen, resolution, frame rate, full screen)
 and **开始投放**. Resolution and frame rate start on **推荐**: as sharp as the
@@ -126,7 +133,8 @@ through a simulated laptop speaker and a noisy room, and on songs outside it.
 ## Live desk
 
 The live desk is a light preview of the
-projection, danmaku (Enter sends; scrolling or large in the middle), Google
+projection, danmaku (Enter sends; scrolling, held at the top or the foot as on
+Bilibili, or large in the middle; small, medium or large), Google
 Meet–style reactions (Noto's animated emoji rising from anywhere along the foot
 of the screen; hold to send a stream, and sweep along the bar while holding to
 change the emoji), stickers and picture effects. Stickers are kept in a gallery of images (GIFs play), and words; one is posted
@@ -135,7 +143,10 @@ posts it in the middle; images from the Finder dropped on the preview are added
 and posted there). Posted stickers are changed on the preview and the
 projection follows: press one to choose it and drag it around; the chosen one
 has a point at each corner that sizes it, a point above that turns it (Shift:
-steps of 15°, double-click: upright) and a key that takes it down (or Delete).
+steps of 15°, double-click: upright); Delete takes it down. **编辑** (next to the
+size bar) puts the stickers in edit mode: every posted one shows a × on its top
+right corner that takes it down, and every one in the gallery a × that takes it
+out of the gallery; **完成** or Esc ends it.
 The size bar works on the chosen sticker, or else on the one posted last, and
 sets the size of the next. Each effect (mosaic, RGB split, video wall, lens,
 zoom blur, wave, glitch, scanlines, halftone, posterize, hue, black and
@@ -149,8 +160,16 @@ whose rows show their key; , and . make the last effect switched (or tuned)
 5 % weaker or stronger. An effect tuned that way and then switched off keeps that
 strength as its own (a dot on its key); 重置 gives every effect back the strength
 it came with. The effects panel's own 快捷键 turns these keys off. Effects touch
-only the video, never the words or stickers. Danmaku from elsewhere can come in through
-`Live.say(text, from)` (`app/qml/Live.qml`).
+only the video, never the words or stickers. Danmaku keeps out of each other's way
+as on Bilibili: every scrolling line crosses in the same seven seconds (a long
+one moves faster) on the topmost lane of the upper three quarters where the line
+before it has come fully in and will be gone before this one catches it; top and
+bottom lines hold, centred, for four and a half seconds on the first free lane
+down from the top or up from the foot. Lanes, sizes and timing are decided once
+in `Live`, so the preview and the projection show the same. Danmaku from
+elsewhere can come in through `Live.say(text, from, { mode, size })`
+(`app/qml/Live.qml`; mode `scroll`, `top` or `bottom`, size a share of the
+screen's height).
 
 ## Load
 

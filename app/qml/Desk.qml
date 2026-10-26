@@ -59,6 +59,9 @@ Item {
     // The posted sticker chosen on the preview; the size bar works on it, or
     // else on the one posted last.
     property string chosenSid: ""
+    // Editing the stickers: each posted one and each in the gallery shows a key
+    // that takes it down or out. Off at every start.
+    property bool editing: false
     readonly property string sizing: {
         Live.revision
         return chosenSid && Live.find(chosenSid) >= 0 ? chosenSid
@@ -120,8 +123,8 @@ Item {
             Live.update(desk.sizing, { size: size })
     }
     function send(text) {
-        if (modeBox.currentIndex === 0)
-            Live.say(text)
+        if (modeBox.currentIndex < 3)
+            Live.say(text, "", { mode: ["scroll", "top", "bottom"][modeBox.currentIndex], size: Live.sizes[sizeBox.currentIndex] })
         else
             Live.showCaption(text)
     }
@@ -130,7 +133,8 @@ Item {
         id: store
         category: "desk"
         property string gallery: "[]"
-        property alias mode: modeBox.currentIndex
+        property alias wordMode: modeBox.currentIndex
+        property alias wordSize: sizeBox.currentIndex
         property alias size: desk.placeSize
     }
     Settings {
@@ -166,10 +170,14 @@ Item {
             desk.chosenSid = ""
         }
     }
+    // Esc lets the chosen sticker go and ends editing.
     Shortcut {
         sequence: "Esc"
-        enabled: desk.chosenSid !== ""
-        onActivated: desk.chosenSid = ""
+        enabled: desk.chosenSid !== "" || desk.editing
+        onActivated: {
+            desk.chosenSid = ""
+            desk.editing = false
+        }
     }
 
     RowLayout {
@@ -212,6 +220,7 @@ Item {
                             StickerFrame {
                                 area: screen
                                 chosen: desk.chosenSid
+                                editing: desk.editing
                                 onChoose: sid => desk.chosenSid = sid
                                 onResized: size => desk.placeSize = size
                             }
@@ -364,25 +373,29 @@ Item {
                         elide: Text.ElideRight
                     }
 
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 1
-                        color: Theme.line
-                    }
+                    Item { Layout.preferredHeight: 4 }
 
-                    // Words: scrolling across, or large in the middle. Enter sends.
+                    // Words: scrolling across, held at the top or the foot, at a
+                    // size of three, or large in the middle. Enter sends.
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 6
                         Select {
                             id: modeBox
                             Layout.preferredWidth: 96
-                            model: ["滚动弹幕", "居中大字"]
+                            model: ["滚动弹幕", "顶部弹幕", "底部弹幕", "居中大字"]
+                        }
+                        Select {
+                            id: sizeBox
+                            Layout.preferredWidth: 56
+                            visible: modeBox.currentIndex < 3
+                            currentIndex: 1
+                            model: ["小", "中", "大"]
                         }
                         Field {
                             id: words
                             Layout.fillWidth: true
-                            placeholderText: modeBox.currentIndex === 0 ? "弹幕，回车发送" : "居中显示的文字，回车发送"
+                            placeholderText: modeBox.currentIndex < 3 ? "弹幕，回车发送" : "居中显示的文字，回车发送"
                             onAccepted: {
                                 desk.send(text)
                                 clear()
@@ -406,7 +419,7 @@ Item {
                         Layout.fillWidth: true
                         implicitHeight: reactionBar.key + 6
                         radius: Theme.radiusLg
-                        color: Theme.inset
+                        color: "transparent"
                         Row {
                             id: reactions
                             anchors.centerIn: parent
@@ -474,11 +487,7 @@ Item {
                             ToolTip.text: "按住连发 · 按住左右拖动换表情"
                         }
                     }
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 1
-                        color: Theme.line
-                    }
+                    Item { Layout.preferredHeight: 4 }
                     // —— Stickers, in a row under the reactions: drag one onto the picture ——
                     ColumnLayout {
                         Layout.fillWidth: true
@@ -532,6 +541,14 @@ Item {
                                 font.pixelSize: Theme.sizeSm
                                 font.features: { "tnum": 1 }
                                 color: Theme.body
+                            }
+                            TextButton {
+                                flat: true
+                                text: desk.editing ? "完成" : "编辑"
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 600
+                                ToolTip.text: desk.editing ? "结束编辑（Esc）" : "显示 ×，撤下贴图或移出图库"
+                                onClicked: desk.editing = !desk.editing
                             }
                             TextButton {
                                 text: "全部撤下"
@@ -626,15 +643,20 @@ Item {
                                     ToolTip.delay: 900
                                     ToolTip.text: "拖到画面上贴出 · 双击贴在中间"
                                 }
+                                // Only while editing, on a plate so it reads over the picture.
                                 IconButton {
+                                    id: forgetKey
+                                    background: Rectangle {
+                                        radius: Theme.radius
+                                        color: forgetKey.down ? Theme.selected : forgetKey.hovered ? Theme.hover : Theme.inset
+                                    }
                                     anchors.top: parent.top
                                     anchors.right: parent.right
                                     implicitWidth: 20
                                     implicitHeight: 20
                                     iconName: "x"
                                     tip: "移出图库"
-                                    opacity: (pick.containsMouse || hovered) && !desk.carrying ? 1 : 0
-                                    enabled: opacity > 0
+                                    visible: desk.editing && !desk.carrying
                                     onClicked: desk.forget(tile.modelData.id)
                                 }
                             }
