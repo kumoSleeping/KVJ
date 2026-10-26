@@ -4,12 +4,12 @@
 //! stops sending) stays chosen, and is granted again once back.
 use super::{
     protocol::*,
-    transport::{canceled, Connection, Native},
+    transport::{canceled, report, Connection, Native},
     Inbox, LinkStatus, Observation, PeerStatus,
 };
 use crate::{
     clock_ms,
-    diagnostics::{InputState, InputStatus},
+    diagnostics::{InputState, InputStatus, Level, Stage},
     Engine,
 };
 use anyhow::{bail, Context, Result};
@@ -118,7 +118,7 @@ impl Peer {
         self.endpoint = None;
         self.generation += 1;
     }
-    fn tick(&mut self, shared: &Mutex<Inbox>, cancel: &AtomicBool) -> Result<bool> {
+    fn tick(&mut self, engine: &Weak<Engine>, shared: &Mutex<Inbox>, cancel: &AtomicBool) -> Result<bool> {
         anyhow::ensure!(
             self.seen.elapsed() < Duration::from_secs(6),
             "蓝牙设备心跳超时"
@@ -131,6 +131,7 @@ impl Peer {
             let mut grant = vec![u8::from(selected)];
             grant.extend(if selected { lease } else { 0 }.to_le_bytes());
             self.connection.send(SELECT, &grant, cancel)?;
+            note(engine, format!("蓝牙：{} {}当前 DJ", self.id, if selected { "设为" } else { "不再是" }));
             self.selected = selected;
             self.lease = if selected { lease } else { 0 };
             self.streaming = false;
@@ -156,16 +157,30 @@ impl Peer {
         if !self.ready {
             anyhow::ensure!(kind == HELLO, "蓝牙握手失败");
             let name = check_hello(&body, 1)?;
+            note(engine, format!("蓝牙：{} 握手完成（{name}）", self.id));
             self.connection.send(HELLO, &hello(2), cancel)?;
             self.connection.send(SELECT, &[0; 9], cancel)?;
             self.ready = true;
             let mut inbox = shared.lock().unwrap();
             let peer = inbox.peers.get_mut(&self.id).context("设备已移除")?;
             if !name.is_empty() {
-                peer.device.name = name;
+                peer.device.name = name.clone();
             }
             peer.link.state = "connected".into();
             peer.link.error.clear();
+            // A Mac reconnecting under a new private address comes back with a new
+            // id: the chosen DJ, gone under its old one, is this computer again.
+            let moved = inbox.selected.clone().filter(|chosen| {
+                *chosen != self.id
+                    && !name.is_empty()
+                    && inbox.peers.get(chosen).is_some_and(|old| old.link.state == "disconnected" && old.device.name == name)
+            });
+            if let Some(old) = moved {
+                inbox.selected = Some(self.id.clone());
+                inbox.peers.remove(&old);
+                drop(inbox);
+                note(engine, format!("蓝牙：{name} 以新 id 回来（{old} → {}），仍是当前 DJ", self.id));
+            }
             return Ok(false);
         }
         match kind {
@@ -313,6 +328,13 @@ impl Peer {
         Ok(false)
     }
 }
+/// A line in the running session's log (none without a session).
+fn note(engine: &Weak<Engine>, message: String) {
+    if let Some(engine) = engine.upgrade() {
+        let session = engine.view.lock().unwrap().session.clone();
+        engine.log(&session, Level::Info, Stage::Input, message);
+    }
+}
 fn route_changed(engine: &Weak<Engine>) {
     if let Some(engine) = engine.upgrade() {
         super::route_changed(&engine);
@@ -328,6 +350,7 @@ fn run(engine: &Weak<Engine>, shared: &Mutex<Inbox>, cancel: &AtomicBool) -> Res
     let mut peers: Vec<Peer> = Vec::new();
     let started = Instant::now();
     let mut announced = false;
+    let mut reported = Instant::now();
     loop {
         canceled(cancel)?;
         // Advertising normally starts within a second; after three, say why not.
@@ -336,8 +359,22 @@ fn run(engine: &Weak<Engine>, shared: &Mutex<Inbox>, cancel: &AtomicBool) -> Res
             announced = waiting.is_none();
             shared.lock().unwrap().error = waiting.unwrap_or_default();
         }
+        if reported.elapsed() >= Duration::from_secs(30) {
+            reported = Instant::now();
+            if let Some(line) = report() {
+                note(engine, line);
+            }
+        }
         if let Some((native, id)) = listener.accept()? {
-            if peers.len() < 8 && !peers.iter().any(|p| p.id == id) {
+            // A new link for an id is only offered once its old one has closed:
+            // the old peer is stale, so the new link replaces it. Dropping the new
+            // one instead would wedge that DJ until its link changes again.
+            let stale = peers.iter().position(|p| p.id == id);
+            note(engine, format!("蓝牙：{id} 连入{}", if stale.is_some() { "（替换已断开的旧连接）" } else { "" }));
+            if let Some(stale) = stale {
+                peers.remove(stale);
+            }
+            if peers.len() < 8 {
                 // The sender names itself in its HELLO.
                 let device = super::Device {
                     id: id.clone(),
@@ -371,7 +408,7 @@ fn run(engine: &Weak<Engine>, shared: &Mutex<Inbox>, cancel: &AtomicBool) -> Res
         }
         let mut index = 0;
         while index < peers.len() {
-            match peers[index].tick(shared, cancel) {
+            match peers[index].tick(engine, shared, cancel) {
                 Ok(changed) => {
                     if changed {
                         route_changed(engine);
@@ -380,6 +417,7 @@ fn run(engine: &Weak<Engine>, shared: &Mutex<Inbox>, cancel: &AtomicBool) -> Res
                 }
                 Err(error) => {
                     let peer = peers.remove(index);
+                    note(engine, format!("蓝牙：{} 断开：{error:#}", peer.id));
                     let mut inbox = shared.lock().unwrap();
                     if let Some(status) = inbox.peers.get_mut(&peer.id) {
                         status.link.state = "disconnected".into();

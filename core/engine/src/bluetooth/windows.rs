@@ -7,7 +7,10 @@
 use super::*;
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
-    sync::{Arc, Mutex, Once},
+    sync::{
+        atomic::{AtomicU64, AtomicUsize},
+        Arc, Mutex, Once,
+    },
 };
 use windows::{
     core::{Ref, GUID},
@@ -16,7 +19,7 @@ use windows::{
             BluetoothLEAdvertisementReceivedEventArgs, BluetoothLEAdvertisementWatcher,
             BluetoothLEAdvertisementWatcherStatus, BluetoothLEScanningMode,
         },
-        BluetoothCacheMode, BluetoothConnectionStatus, BluetoothError, BluetoothLEDevice,
+        BluetoothAddressType, BluetoothCacheMode, BluetoothConnectionStatus, BluetoothError, BluetoothLEDevice,
         GenericAttributeProfile::{
             GattCharacteristic, GattCharacteristicProperties, GattClientCharacteristicConfigurationDescriptorValue,
             GattCommunicationStatus, GattLocalCharacteristic, GattLocalCharacteristicParameters,
@@ -54,16 +57,43 @@ fn buffer_of(bytes: &[u8]) -> windows::core::Result<IBuffer> {
     writer.WriteBytes(bytes)?;
     writer.DetachBuffer()
 }
-fn address_text(address: u64) -> String {
-    format!("{address:012X}")
+/// A receiver's id: its address, prefixed `R:` when it is a random address (a Mac
+/// advertises with one). Windows only finds a random-address device by its type.
+fn address_text(address: u64, kind: BluetoothAddressType) -> String {
+    let prefix = if kind == BluetoothAddressType::Random { "R:" } else { "" };
+    format!("{prefix}{address:012X}")
 }
-fn parse_address(id: &str) -> Result<u64> {
-    let compact = id.replace([':', '-'], "");
+fn parse_address(id: &str) -> Result<(u64, BluetoothAddressType)> {
+    let (kind, rest) = match id.strip_prefix("R:") {
+        Some(rest) => (BluetoothAddressType::Random, rest),
+        None => (BluetoothAddressType::Public, id),
+    };
+    let compact = rest.replace([':', '-'], "");
     anyhow::ensure!(
         compact.len() == 12 && compact.bytes().all(|b| b.is_ascii_hexdigit()),
         "蓝牙设备无效"
     );
-    Ok(u64::from_str_radix(&compact, 16)?)
+    Ok((u64::from_str_radix(&compact, 16)?, kind))
+}
+/// How long connecting to a receiver may take, as on macOS. Uncached GATT
+/// discovery can otherwise hang for minutes and keep Stop waiting.
+const CONNECT_LIMIT: Duration = Duration::from_secs(15);
+/// Waits for a WinRT operation until it finishes, the deadline passes or the
+/// connection is stopped (then the operation is cancelled).
+macro_rules! wait {
+    ($operation:expr, $deadline:expr, $cancel:expr) => {{
+        let operation = $operation;
+        // AsyncStatus::Started
+        while operation.Status()?.0 == 0 {
+            if $cancel.load(Ordering::Relaxed) || Instant::now() >= $deadline {
+                let _ = operation.Cancel();
+                canceled($cancel)?;
+                bail!("连接接收电脑超时，请确认对方 KVJ 正在接收并重新查找");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        operation.get()
+    }};
 }
 
 pub fn host_name() -> String {
@@ -80,17 +110,19 @@ pub fn scan(duration: Duration) -> Result<Vec<Device>> {
         .Advertisement()?
         .ServiceUuids()?
         .Append(SERVICE)?;
-    let found: Arc<Mutex<BTreeMap<u64, String>>> = Arc::default();
+    let found: Arc<Mutex<BTreeMap<u64, (BluetoothAddressType, String)>>> = Arc::default();
     let sink = found.clone();
     let token = watcher.Received(&TypedEventHandler::new(
         move |_, args: Ref<BluetoothLEAdvertisementReceivedEventArgs>| {
             if let Some(args) = args.as_ref() {
                 let address = args.BluetoothAddress()?;
+                let kind = args.BluetoothAddressType()?;
                 let name = args.Advertisement()?.LocalName()?.to_string();
                 let mut found = sink.lock().unwrap();
-                let entry = found.entry(address).or_default();
+                let entry = found.entry(address).or_insert((kind, String::new()));
+                entry.0 = kind;
                 if !name.is_empty() {
-                    *entry = name;
+                    entry.1 = name;
                 }
             }
             Ok(())
@@ -111,9 +143,9 @@ pub fn scan(duration: Duration) -> Result<Vec<Device>> {
     let found = found.lock().unwrap();
     Ok(found
         .iter()
-        .map(|(address, name)| Device {
-            id: address_text(*address),
-            name: if name.is_empty() { address_text(*address) } else { name.clone() },
+        .map(|(address, (kind, name))| Device {
+            id: address_text(*address, *kind),
+            name: if name.is_empty() { format!("{address:012X}") } else { name.clone() },
         })
         .collect())
 }
@@ -144,6 +176,63 @@ struct Peer {
 struct Accepting {
     peers: HashMap<String, Peer>,
     pending: VecDeque<(String, Shared)>,
+    /// Inbound writes finished out of turn, held until the earlier ones are in.
+    /// WriteRequested handlers run on the thread pool and may overlap, so the
+    /// bytes of one message could otherwise be appended out of order.
+    early: BTreeMap<u64, Option<(String, Vec<u8>)>>,
+    next: u64,
+    entered: u64,
+}
+
+/// Inbound write counters since the last report, for the session log.
+struct WriteStats {
+    writes: AtomicU64,
+    reordered: AtomicU64,
+    failed: AtomicU64,
+    skipped: AtomicU64,
+    inflight: AtomicUsize,
+    overlap: AtomicUsize,
+}
+static WRITES: WriteStats = WriteStats {
+    writes: AtomicU64::new(0),
+    reordered: AtomicU64::new(0),
+    failed: AtomicU64::new(0),
+    skipped: AtomicU64::new(0),
+    inflight: AtomicUsize::new(0),
+    overlap: AtomicUsize::new(0),
+};
+/// What the receiving side's writes looked like since the last call, if any came.
+pub fn report() -> Option<String> {
+    let writes = WRITES.writes.swap(0, Ordering::Relaxed);
+    let (reordered, failed, skipped) = (
+        WRITES.reordered.swap(0, Ordering::Relaxed),
+        WRITES.failed.swap(0, Ordering::Relaxed),
+        WRITES.skipped.swap(0, Ordering::Relaxed),
+    );
+    let overlap = WRITES.overlap.swap(0, Ordering::Relaxed);
+    (writes > 0).then(|| format!(
+        "蓝牙接收写入 · {writes} 次 · 乱序已重排 {reordered} · 失败 {failed} · 跳过 {skipped} · 最多同时 {overlap}"
+    ))
+}
+/// Deliver finished writes in the order they were raised.
+fn deliver(state: &mut Accepting, turn: u64, write: Option<(String, Vec<u8>)>) {
+    if turn != state.next {
+        WRITES.reordered.fetch_add(1, Ordering::Relaxed);
+    }
+    state.early.insert(turn, write);
+    // A handler that never finishes must not hold every later write back.
+    if state.early.len() > 64 {
+        let first = *state.early.keys().next().unwrap();
+        WRITES.skipped.fetch_add(first - state.next, Ordering::Relaxed);
+        state.next = first;
+    }
+    while let Some(write) = state.early.remove(&state.next) {
+        state.next += 1;
+        if let Some((id, bytes)) = write {
+            let buffer = peer(state, &id);
+            buffer.lock().unwrap().receive(&bytes);
+        }
+    }
 }
 pub struct Server {
     provider: GattServiceProvider,
@@ -177,7 +266,12 @@ impl Drop for Native {
                 let _ = server.provider.StopAdvertising();
             }
             Kind::Accepted { server, id } => {
-                server.1.lock().unwrap().peers.remove(id);
+                // Only this connection's own entry: the same central may already
+                // be back under the same id with a new buffer (and subscription).
+                let mut state = server.1.lock().unwrap();
+                if state.peers.get(id).is_some_and(|p| Arc::ptr_eq(&p.buffer, &self.buffer)) {
+                    state.peers.remove(id);
+                }
             }
             Kind::Central(central) => {
                 let _ = central.session.Close();
@@ -221,18 +315,39 @@ impl Native {
         inbound.WriteRequested(&TypedEventHandler::new(
             move |_, args: Ref<GattWriteRequestedEventArgs>| {
                 let Some(args) = args.as_ref() else { return Ok(()) };
-                let deferral = args.GetDeferral()?;
-                let id = args.Session()?.DeviceId()?.Id()?.to_string();
-                let request = args.GetRequestAsync()?.get()?;
-                let bytes = bytes_of(&request.Value()?)?;
-                if request.Option()? == GattWriteOption::WriteWithResponse {
-                    request.Respond()?;
+                // The turn is taken before anything that can block or fail, and
+                // always handed back, so a lost write never stalls the others.
+                let turn = {
+                    let mut state = writes.lock().unwrap();
+                    state.entered += 1;
+                    state.entered - 1
+                };
+                let inflight = WRITES.inflight.fetch_add(1, Ordering::Relaxed) + 1;
+                WRITES.overlap.fetch_max(inflight, Ordering::Relaxed);
+                let result = (|| -> windows::core::Result<((String, Vec<u8>), _)> {
+                    let deferral = args.GetDeferral()?;
+                    let id = args.Session()?.DeviceId()?.Id()?.to_string();
+                    let request = args.GetRequestAsync()?.get()?;
+                    let bytes = bytes_of(&request.Value()?)?;
+                    if request.Option()? == GattWriteOption::WriteWithResponse {
+                        request.Respond()?;
+                    }
+                    Ok(((id, bytes), deferral))
+                })();
+                WRITES.inflight.fetch_sub(1, Ordering::Relaxed);
+                WRITES.writes.fetch_add(1, Ordering::Relaxed);
+                let (write, deferral) = match result {
+                    Ok((write, deferral)) => (Some(write), Some(deferral)),
+                    Err(_) => {
+                        WRITES.failed.fetch_add(1, Ordering::Relaxed);
+                        (None, None)
+                    }
+                };
+                deliver(&mut writes.lock().unwrap(), turn, write);
+                match deferral {
+                    Some(deferral) => deferral.Complete(),
+                    None => Ok(()),
                 }
-                let mut state = writes.lock().unwrap();
-                let buffer = peer(&mut state, &id);
-                buffer.lock().unwrap().receive(&bytes);
-                drop(state);
-                deferral.Complete()
             },
         ))?;
         let subscriptions = state.clone();
@@ -271,12 +386,15 @@ impl Native {
     pub fn connect(id: &str, cancel: &AtomicBool) -> Result<Self> {
         initialize();
         canceled(cancel)?;
-        let device = BluetoothLEDevice::FromBluetoothAddressAsync(parse_address(id)?)?
-            .get()
+        let deadline = Instant::now() + CONNECT_LIMIT;
+        let (address, kind) = parse_address(id)?;
+        let device = wait!(BluetoothLEDevice::FromBluetoothAddressWithBluetoothAddressTypeAsync(address, kind)?, deadline, cancel)
             .map_err(|_| anyhow::anyhow!("找不到这台接收电脑，请重新查找"))?;
-        let services = device
-            .GetGattServicesForUuidWithCacheModeAsync(SERVICE, BluetoothCacheMode::Uncached)?
-            .get()?;
+        let services = wait!(
+            device.GetGattServicesForUuidWithCacheModeAsync(SERVICE, BluetoothCacheMode::Uncached)?,
+            deadline,
+            cancel
+        )?;
         anyhow::ensure!(
             services.Status()? == GattCommunicationStatus::Success && services.Services()?.Size()? > 0,
             "对方没有运行 KVJ 接收"
@@ -286,9 +404,11 @@ impl Native {
         session.SetMaintainConnection(true)?;
         canceled(cancel)?;
         let characteristic = |uuid| -> Result<GattCharacteristic> {
-            let found = service
-                .GetCharacteristicsForUuidWithCacheModeAsync(uuid, BluetoothCacheMode::Uncached)?
-                .get()?;
+            let found = wait!(
+                service.GetCharacteristicsForUuidWithCacheModeAsync(uuid, BluetoothCacheMode::Uncached)?,
+                deadline,
+                cancel
+            )?;
             anyhow::ensure!(
                 found.Status()? == GattCommunicationStatus::Success && found.Characteristics()?.Size()? > 0,
                 "KVJ 蓝牙服务不完整，请更新两端"
@@ -320,11 +440,13 @@ impl Native {
                 Ok(())
             },
         ))?;
-        let subscribed = outbound
-            .WriteClientCharacteristicConfigurationDescriptorAsync(
+        let subscribed = wait!(
+            outbound.WriteClientCharacteristicConfigurationDescriptorAsync(
                 GattClientCharacteristicConfigurationDescriptorValue::Notify,
-            )?
-            .get()?;
+            )?,
+            deadline,
+            cancel
+        )?;
         anyhow::ensure!(subscribed == GattCommunicationStatus::Success, "无法接收对方消息");
         Ok(Self {
             kind: Kind::Central(Central { device, session, inbound, _outbound: outbound }),
@@ -383,6 +505,14 @@ impl Native {
                     if let Some(client) = server.1.lock().unwrap().peers.get(id).and_then(|p| p.client.clone()) {
                         break client;
                     }
+                    // A central that stayed subscribed across a reconnect raises no
+                    // SubscribedClientsChanged: look among the subscribers directly.
+                    if let Some(client) = subscribed(&server.0, id) {
+                        if let Some(peer) = server.1.lock().unwrap().peers.get_mut(id) {
+                            peer.client = Some(client.clone());
+                        }
+                        break client;
+                    }
                     anyhow::ensure!(started.elapsed() < Duration::from_millis(750), "对方尚未订阅 KVJ 消息");
                     std::thread::sleep(Duration::from_millis(5));
                 };
@@ -406,6 +536,12 @@ impl Native {
         }
         Ok(())
     }
+}
+/// The subscription of the central `id`, if it holds one.
+fn subscribed(outbound: &GattLocalCharacteristic, id: &str) -> Option<GattSubscribedClient> {
+    outbound.SubscribedClients().ok()?.into_iter().find(|client| {
+        client.Session().and_then(|s| s.DeviceId()).and_then(|d| d.Id()).is_ok_and(|found| found.to_string() == id)
+    })
 }
 /// The buffer for a central, created (and offered for accepting) on first sight.
 fn peer(state: &mut Accepting, id: &str) -> Shared {

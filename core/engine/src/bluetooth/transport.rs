@@ -29,6 +29,9 @@ mod platform {
     pub fn host_name() -> String {
         "KVJ".into()
     }
+    pub fn report() -> Option<String> {
+        None
+    }
     pub struct Native;
     impl Native {
         pub fn listen() -> Result<Self> {
@@ -51,7 +54,7 @@ mod platform {
         }
     }
 }
-pub use platform::{host_name, Native};
+pub use platform::{host_name, report, Native};
 
 /// KVJ receivers advertising nearby; nothing else is ever listed.
 pub fn receivers() -> Result<Vec<Device>> {

@@ -42,6 +42,10 @@ pub fn scan(duration: Duration) -> Result<Vec<Device>> {
     anyhow::ensure!(!text.is_null(), "{}", message(&error));
     Ok(serde_json::from_str(&owned(text))?)
 }
+/// Transport counters for the session log; CoreBluetooth delivers writes in order.
+pub fn report() -> Option<String> {
+    None
+}
 pub fn host_name() -> String {
     owned(unsafe { kvj_ble_host_name() })
 }
