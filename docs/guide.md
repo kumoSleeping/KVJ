@@ -29,10 +29,11 @@ chooses the current DJ among the connected ones. Pair the two computers in the s
 Everything is in one window, and nothing in it appears or moves when following
 starts. The top bar (the title bar itself on macOS) holds **发送端** and the
 light / dark switch at the right. The Sets are in a drawer over the left side
-of the canvas, put away at every start: the key beside **KVJ** in the top bar,
-or Ctrl+B (⌘B on macOS), brings it out, and so do files dragged onto that key or
-to the canvas's left edge, to be dropped on a Set. A press elsewhere on the
-canvas, the key again or Esc puts it away; choosing a Set leaves it out, and
+of the canvas, put away at every start: the small key at the canvas's top
+left (where the drawer's own head has it), or Ctrl+B (⌘B on macOS), brings it
+out, and so do files dragged onto that key or to the canvas's left edge, to be
+dropped on a Set. A press elsewhere on the canvas, the key in its head again or
+Esc puts it away; choosing a Set leaves it out, and
 so does a Set's menu or an add dialog in use. The drawer is one tree of the Sets: each Set
 opens onto its entries (videos only: mp4, m4v, mkv, mov, webm; a folder adds
 the videos in it and its subfolders), grouped by the folders they came from;
@@ -215,6 +216,21 @@ elsewhere can come in through `Live.say(text, from, { mode, size })`
 screen's height).
 
 ## Compositing
+
+The canvas is laid out as a vision mixer, left to right: the program (what is
+on the air, on the stage where stickers are placed, with the output settings
+under it), the **画面** column, the preview (PVW) with its slot settings and the
+layout keys, and the effects. Under them, the bar of words, reactions and
+stickers; at the foot, the player and a row per track, with following in its
+strip at their right. The **画面** column has a tile per source: 画面 1 (the main
+track), the aux tracks that have entries (画面 2–4, each with its play key and
+what it plays), and the cameras taken in with its **+** (the list of cameras
+is read only then; a camera tile's × lets it go). Pressing a tile puts that
+source in the preview's chosen slot. A tile on the air has an ink edge, one in
+the preview a faint one. The column's right edge is dragged to widen it. A
+source is decoded (or a camera opened) only while it is on the air or the
+operator's window shows it, and at most six videos decode at once: past that
+a jump cuts instead of dissolving.
 
 The projection shows a composition of picture sources (the four tracks,
 `track:0`–`track:3`, and cameras, `camera:<id>`) in a layout of slots, mixed the
