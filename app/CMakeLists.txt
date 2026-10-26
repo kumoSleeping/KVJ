@@ -50,6 +50,7 @@ qt_add_qml_module(KVJ
         qml/Sticker.qml
         qml/StickerFrame.qml
         qml/Desk.qml
+        qml/Effects.qml
         qml/Sidebar.qml
         qml/Timeline.qml
         qml/Card.qml

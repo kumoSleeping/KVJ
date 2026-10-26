@@ -1024,6 +1024,13 @@ ApplicationWindow {
                         }
                     }
                 }
+
+                // —— Effects, at the far right ——
+                Effects {
+                    Layout.preferredWidth: 276
+                    Layout.fillWidth: false
+                    Layout.fillHeight: true
+                }
             }
         }
 
