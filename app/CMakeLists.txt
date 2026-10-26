@@ -24,7 +24,7 @@ corrosion_import_crate(
 qt_add_executable(KVJ MACOSX_BUNDLE WIN32
     src/main.cpp
 )
-set_source_files_properties(qml/Theme.qml qml/Live.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/Theme.qml qml/Live.qml qml/Switcher.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(KVJ
     URI KVJ
     VERSION 1.0
@@ -60,6 +60,12 @@ qt_add_qml_module(KVJ
         qml/TopBar.qml
         qml/About.qml
         qml/ReportDialog.qml
+        qml/Switcher.qml
+        qml/SourceTextures.qml
+        qml/Compositor.qml
+        qml/Program.qml
+        qml/SwitcherPanel.qml
+        qml/LayoutPresets.qml
     RESOURCES
         qml/icons/check.svg
         qml/icons/chevron-down.svg
@@ -111,10 +117,11 @@ qt_add_qml_module(KVJ
         src/Decoder.h
         src/Awake.h
 )
-# Picture effects, compiled to every shading language Qt Quick may run on.
+# Picture effects and the compositor's masked slot, compiled to every shading
+# language Qt Quick may run on.
 qt_add_shaders(KVJ "shaders"
     PREFIX "/qt/qml/KVJ"
-    FILES shaders/effects.frag)
+    FILES shaders/effects.frag shaders/mask.frag)
 target_include_directories(KVJ PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/../core/engine/include)
