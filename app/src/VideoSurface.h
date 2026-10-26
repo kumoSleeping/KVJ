@@ -8,21 +8,20 @@
 // new file, or a time the clock alone would not have reached) can dissolve from
 // the old picture over `fadeMs`: the old one does not stop but plays on, on a
 // player of its own from where it was at its speed, until the new one has a
-// frame and through the dissolve, so both move while they cross. Previews
-// (PreviewSurface) get reduced copies of the frames it shows.
+// frame and through the dissolve, so both move while they cross. That takes a
+// second decoder; with the process's decoders at their budget a jump cuts
+// instead. Previews (PreviewSurface) get reduced copies of the frames it shows.
 
 #include "Decoder.h"
+#include "PictureSource.h"
 
 #include <QImage>
-#include <QQuickItem>
-#include <QList>
 #include <QTimer>
 #include <memory>
 
-class PreviewSurface;
 class VideoPlayer;
 
-class VideoSurface : public QQuickItem
+class VideoSurface : public PictureSource
 {
     Q_OBJECT
     QML_ELEMENT
@@ -38,11 +37,8 @@ class VideoSurface : public QQuickItem
     Q_PROPERTY(int maxFps MEMBER m_maxFps NOTIFY qualityChanged)
     // Dissolve this long into the picture after a jump (0 = cut).
     Q_PROPERTY(int fadeMs MEMBER m_fadeMs NOTIFY fadeChanged)
-    Q_PROPERTY(bool hasFrame READ hasFrame NOTIFY hasFrameChanged)
-    Q_PROPERTY(QString error READ error NOTIFY errorChanged)
-    // The video as stored (its own frame size and frames a second), kept from
-    // the last one opened; for recommending the output's quality.
-    Q_PROPERTY(QSize sourceSize READ sourceSize NOTIFY sourceInfoChanged)
+    // The video as stored (sourceSize, and its frames a second), kept from the
+    // last one opened; for recommending the output's quality.
     Q_PROPERTY(double sourceFps READ sourceFps NOTIFY sourceInfoChanged)
 
 public:
@@ -53,35 +49,26 @@ public:
     void setSource(const QString &source);
     int maxHeight() const { return m_options.maxHeight; }
     void setMaxHeight(int height);
-    bool hasFrame() const { return m_hasFrame; }
-    QString error() const { return m_error; }
-    QSize sourceSize() const { return m_sourceSize; }
     double sourceFps() const { return m_sourceFps; }
     int fadeMs() const { return m_fadeMs; }
-    void attachPreview(PreviewSurface *preview);
-    void detachPreview(PreviewSurface *preview);
 
 signals:
     void sourceChanged();
     void timingChanged();
     void qualityChanged();
     void fadeChanged();
-    void hasFrameChanged();
-    void errorChanged();
-    void sourceInfoChanged();
 
 protected:
     QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override;
 
 private:
-    enum class Layer { Shown, Jump, Previous };
     void restart();
     void tick();
     bool fadeable() const;
+    static bool withinBudget();
     bool keepPlaying(double nowMs);
     void dropOutgoing();
     void tickOutgoing(double nowMs, int *wait);
-    void feedPreviews(const QImage &image, Layer layer);
 
     QString m_source;
     DecodeOptions m_options;
@@ -104,11 +91,7 @@ private:
     QImage m_pending;
     bool m_newFrame = false;
     bool m_clear = false;
-    bool m_hasFrame = false;
-    QString m_error;
-    QSize m_sourceSize;
     double m_sourceFps = 0;
-    QList<PreviewSurface *> m_previews;
     // The picture before the last jump, playing on from `m_outBase` seconds at
     // `m_outAt` (engine clock) at `m_outRate`. Holding: the new player has no
     // frame yet, so this one is still the picture; then it dissolves out from

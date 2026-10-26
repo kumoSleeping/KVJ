@@ -104,7 +104,10 @@ qt_add_qml_module(KVJ
         src/Engine.h src/Engine.cpp
         src/VideoSurface.h src/VideoSurface.cpp
         src/VideoPlayer.h src/VideoPlayer.cpp
+        src/PictureSource.h src/PictureSource.cpp
         src/PreviewSurface.h src/PreviewSurface.cpp
+        src/CameraSurface.h src/CameraSurface.cpp
+        src/Cameras.h src/Cameras.cpp
         src/FilmStrip.h src/FilmStrip.cpp
         src/WaveStrip.h src/WaveStrip.cpp
         src/FrameNode.h
