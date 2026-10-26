@@ -49,6 +49,8 @@ Rectangle {
     }
 
     signal selectSet(string id)
+    // Its key in the head was pressed.
+    signal putAway()
     signal addUrls(var urls)
     // The entry on the screen is turned off, confirmed.
     signal dropPlaying(string id)
@@ -234,9 +236,18 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: 44
-            Layout.leftMargin: 16
+            Layout.leftMargin: 8
             Layout.rightMargin: 8
             spacing: 0
+            // Where the canvas has its key while the drawer is away: it puts
+            // the drawer away again.
+            IconButton {
+                Layout.rightMargin: 6
+                iconName: "panel-left"
+                active: true
+                tip: "收起素材（" + (Qt.platform.os === "osx" ? "⌘B" : "Ctrl+B") + "）"
+                onClicked: bar.putAway()
+            }
             Caption {
                 Layout.fillWidth: true
                 text: "素材"

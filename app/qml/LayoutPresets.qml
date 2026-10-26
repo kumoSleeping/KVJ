@@ -45,7 +45,7 @@ GridLayout {
                 id: drawing
                 x: 10
                 y: 10
-                width: parent.width - 20
+                width: parent.width - 12
                 height: width / Math.max(0.2, presets.aspect)
                 radius: 3
                 color: Theme.dark ? "#0b0d11" : "#d9d9de"
@@ -73,7 +73,7 @@ GridLayout {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.top: drawing.bottom
                 anchors.topMargin: 6
-                width: parent.width - 12
+                width: parent.width - 4
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight
                 text: key.pip && (area.containsMouse || key.chosen) ? key.sample.name : key.modelData.name

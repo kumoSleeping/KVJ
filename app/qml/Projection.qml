@@ -27,6 +27,43 @@ Window {
     // The operator's preview is up: keep decoding even while this is put away.
     property bool previewing: false
     readonly property alias surface: surface
+    // The aux tracks' pictures (画面 2..4): what each shows and where, as
+    // { entry, position, rate, clockAtMs, offsetMs } (Main.auxTiming).
+    property var auxTimings: [null, null, null]
+    // Cameras taken in as sources, by device id.
+    property var cameraIds: []
+    // Sources the operator's window shows besides those on the air: decoded
+    // too while it is up.
+    property var wantedIds: []
+    // On the air now, and the layout a dissolve leaves.
+    readonly property var programIds: Switcher.sourcesOf(Switcher.program).concat(
+                                          Switcher.transition ? Switcher.sourcesOf(Switcher.transition.from) : [])
+    function wants(id) {
+        return programIds.indexOf(id) >= 0 || (root.previewing && wantedIds.indexOf(id) >= 0)
+    }
+    // The item that shows a source here, or null; `sourceRevision` moves when
+    // the answer may have changed.
+    property int sourceRevision: 0
+    function sourceItem(id) {
+        if (id === "track:0")
+            return surface
+        if (id.startsWith("track:"))
+            return auxBank.itemAt(Number(id.substring(6)) - 1)
+        if (id.startsWith("camera:")) {
+            const device = id.substring(7)
+            for (let i = 0; i < cameraBank.count; ++i) {
+                const c = cameraBank.itemAt(i)
+                if (c && c.deviceId === device)
+                    return c
+            }
+        }
+        return null
+    }
+    SourceTextures {
+        id: textures
+        sourceItem: root.sourceItem
+        ids: root.programIds
+    }
     // The picture's shape as the audience sees it: the window's while it is
     // up, else the screen it would fill or the 16:9 window it would open as.
     // The operator's preview takes the same shape, so a sticker sits in the
@@ -99,9 +136,14 @@ Window {
         hide()
     }
 
+    // The picture is the program (Switcher): the sources composed by its
+    // layout. The sources themselves lie under a black cover, drawn only
+    // through it; the effects work on the composed picture.
     Stage {
+        id: stage
         anchors.fill: parent
         entry: root.entry
+        // The main track: the player's or following's.
         VideoSurface {
             id: surface
             anchors.fill: parent
@@ -115,7 +157,49 @@ Window {
             offsetMs: root.offsetMs
             fadeMs: root.fadeMs
         }
+        // The aux tracks, decoded only while on the air or watched.
+        Repeater {
+            id: auxBank
+            model: 3
+            onItemAdded: root.sourceRevision += 1
+            VideoSurface {
+                required property int index
+                readonly property var timing: root.auxTimings[index] || null
+                readonly property var entry: timing ? timing.entry : null
+                anchors.fill: parent
+                source: (root.visible || root.previewing) && !!entry && entry.video && root.wants("track:" + (index + 1)) ? entry.path : ""
+                maxHeight: root.maxHeight
+                maxFps: root.maxFps
+                position: timing ? timing.position : 0
+                rate: timing ? timing.rate : 0
+                clockAtMs: timing ? timing.clockAtMs : 0
+                offsetMs: timing ? timing.offsetMs : 0
+                fadeMs: root.fadeMs
+            }
+        }
+        Repeater {
+            id: cameraBank
+            model: root.cameraIds
+            onItemAdded: root.sourceRevision += 1
+            onItemRemoved: root.sourceRevision += 1
+            CameraSurface {
+                required property string modelData
+                anchors.fill: parent
+                deviceId: modelData
+                active: (root.visible || root.previewing) && root.wants("camera:" + modelData)
+            }
+        }
+        Rectangle {
+            anchors.fill: parent
+            color: "black"
+        }
+        Program {
+            anchors.fill: parent
+            now: stage.now
+            textures: textures
+        }
     }
+    onSourceRevisionChanged: textures.refresh()
     Shortcut {
         sequence: "Esc"
         enabled: root.visibility === Window.FullScreen

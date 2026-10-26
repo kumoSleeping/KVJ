@@ -19,6 +19,34 @@ Item {
 
     // The projected surface the preview copies its picture from.
     property VideoSurface source
+    // The picture sources the operator sees here (the 画面 column's), besides
+    // those the layouts use.
+    property var sourceIds: []
+    readonly property var allIds: {
+        const ids = sourceIds.slice()
+        const add = list => list.forEach(id => { if (ids.indexOf(id) < 0) ids.push(id) })
+        add(Switcher.sourcesOf(Switcher.program))
+        add(Switcher.sourcesOf(Switcher.preview))
+        if (Switcher.transition)
+            add(Switcher.sourcesOf(Switcher.transition.from))
+        return ids
+    }
+    // This window's light copy of a source (a PreviewSurface), or null.
+    function previewItem(id) {
+        for (let i = 0; i < bank.count; ++i) {
+            const item = bank.itemAt(i)
+            if (item && item.key === id)
+                return item
+        }
+        return null
+    }
+    // Every source of this window as a texture, for the monitors and tiles.
+    readonly property alias textures: textures
+    SourceTextures {
+        id: textures
+        sourceItem: desk.previewItem
+        ids: desk.allIds
+    }
     property var entry: null
     // The projection window the output keys open and put away.
     property var projection: null
@@ -223,14 +251,12 @@ Item {
             Layout.fillHeight: true
             spacing: Theme.gap
 
-            // The stage, as tall as the picture's shape at this width allows;
-            // the picture in its middle with a band of the stage around it.
+            // The stage, all the height the column has; the picture in its
+            // middle with a band of the stage around it.
             Rectangle {
                 id: box
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.maximumHeight: width / desk.aspect
-                Layout.verticalStretchFactor: 100
                 radius: Theme.radiusLg
                 color: Theme.inset
                 clip: true
@@ -241,7 +267,7 @@ Item {
                     onPressed: desk.chosenSid = ""
                 }
                 Text {
-                    x: 10
+                    x: 44
                     y: 6
                     visible: box.height - screen.height > 30 || box.width - screen.width > 120
                     text: "画外 · 贴图可停在这里，拖进画面才会投放"
@@ -251,8 +277,8 @@ Item {
 
                 Rectangle {
                     id: screen
-                    // A band of the stage stays in sight above and below.
-                    width: Math.min(box.width, box.height * 0.84 * desk.aspect)
+                    // A band of the stage stays in sight all round.
+                    width: Math.min(box.width * 0.9, box.height * 0.84 * desk.aspect)
                     height: width / desk.aspect
                     anchors.centerIn: parent
                     color: "black"
@@ -265,7 +291,29 @@ Item {
                         border.width: 1
                         border.color: Theme.faint
                     }
+                    // Each source's light copy, under the picture (z below the
+                    // screen's own black) and as large as it: the monitors here
+                    // draw them through `textures`, never these items themselves.
+                    Repeater {
+                        id: bank
+                        model: desk.allIds
+                        onItemAdded: textures.refresh()
+                        onItemRemoved: textures.refresh()
+                        PreviewSurface {
+                            required property string modelData
+                            readonly property string key: modelData
+                            z: -1
+                            width: screen.width
+                            height: screen.height
+                            fps: 24
+                            source: {
+                                desk.projection ? desk.projection.sourceRevision : 0
+                                return desk.projection ? desk.projection.sourceItem(modelData) : null
+                            }
+                        }
+                    }
                     Stage {
+                        id: deskStage
                         anchors.fill: parent
                         lite: true
                         entry: desk.entry
@@ -279,16 +327,17 @@ Item {
                                 onResized: size => desk.placeSize = size
                             }
                         }
-                        PreviewSurface {
-                            id: preview
+                        // What is on the air, as the projection composes it.
+                        Program {
                             anchors.fill: parent
-                            source: desk.source
-                            fps: 24
+                            now: deskStage.now
+                            textures: textures
+                            operator: true
                         }
                     }
                     Text {
                         anchors.centerIn: parent
-                        visible: !preview.hasFrame && !desk.entry
+                        visible: !desk.entry
                         text: "播放的画面在这里预览"
                         font.pixelSize: Theme.sizeSm
                         color: Theme.faint
@@ -429,10 +478,6 @@ Item {
                     }
 
                 }
-            }
-            Item {
-                Layout.fillHeight: true
-                Layout.verticalStretchFactor: 1
             }
         }
     }

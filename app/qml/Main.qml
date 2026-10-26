@@ -161,6 +161,8 @@ ApplicationWindow {
     // At the end of the Set's last entry: start over from its first entry, or
     // stop on the last frame.
     property bool loopOn: false
+    // The 画面 column's width, dragged at its edge.
+    property real sourceWidth: 168
     property int fadeMs: 400
 
     onMatchChanged: {
@@ -516,6 +518,41 @@ ApplicationWindow {
         fadeMs: app.fadeOn ? app.fadeMs : 0
         maxHeight: desk.maxHeight
         maxFps: desk.maxFps
+        auxTimings: [app.auxTiming(1), app.auxTiming(2), app.auxTiming(3)]
+        cameraIds: app.cameraIds
+        wantedIds: desk.allIds
+    }
+    // The picture sources on offer to the mixer (Switcher): the main track,
+    // the aux tracks that have entries, the cameras taken in.
+    property var cameraIds: []
+    Settings {
+        id: sourceStore
+        category: "sources"
+        property string cameras: "[]"
+        Component.onCompleted: {
+            try {
+                app.cameraIds = JSON.parse(cameras)
+            } catch (e) {
+                app.cameraIds = []
+            }
+        }
+    }
+    function setCameras(ids) {
+        app.cameraIds = ids
+        sourceStore.cameras = JSON.stringify(ids)
+    }
+    readonly property var sources: {
+        const list = [{ id: "track:0", name: "画面 1 · 主轨", kind: "track", track: 0, player: app }]
+        for (const p of app.auxPlayers)
+            if (p.entries.length > 0)
+                list.push({ id: "track:" + p.track, name: "画面 " + (p.track + 1), kind: "track", track: p.track, player: p })
+        // Names only once there are cameras: the list wakes the camera stack.
+        const cams = app.cameraIds.length ? Cameras.list : []
+        for (const id of app.cameraIds) {
+            const c = cams.find(c => c.id === id)
+            list.push({ id: "camera:" + id, name: c ? c.name : "相机（未连接）", kind: "camera" })
+        }
+        return list
     }
     // The sound of what the picture shows, on the picture's timing.
     AudioFollower {
@@ -546,6 +583,7 @@ ApplicationWindow {
         property alias fadeMs: app.fadeMs
         property alias keys: app.keysOn
         property alias loop: app.loopOn
+        property alias sourceWidth: app.sourceWidth
     }
     Shortcut {
         sequences: ["Left", "A"]
@@ -689,9 +727,6 @@ ApplicationWindow {
             live: projection.visible
             canSend: !app.following
             onSend: app.openSender()
-            setsOpen: app.setsOpen
-            onToggleSets: app.toggleSets()
-            onDragOpensSets: app.setsOpen = true
         }
 
         // The canvas across the whole width, the Sets' drawer over its left side.
@@ -718,6 +753,60 @@ ApplicationWindow {
                         entry: projection.entry
                         projection: projection
                         sound: sound
+                        sourceIds: app.sources.map(s => s.id)
+                    }
+
+                    // —— The sources, then the preview to put on the air ——
+                    SourceColumn {
+                        Layout.preferredWidth: app.sourceWidth
+                        Layout.fillWidth: false
+                        Layout.fillHeight: true
+                        sources: app.sources
+                        textures: desk.textures
+                        slot: mixer.selected
+                        cameraIds: app.cameraIds
+                        onAddCamera: id => app.setCameras(app.cameraIds.concat([id]))
+                        onRemoveCamera: id => app.setCameras(app.cameraIds.filter(c => c !== id))
+                        // Its right edge widens or narrows it.
+                        MouseArea {
+                            anchors.right: parent.right
+                            anchors.rightMargin: -Theme.gap / 2 - 3
+                            width: 6
+                            height: parent.height
+                            cursorShape: Qt.SplitHCursor
+                            property real from
+                            property real start
+                            onPressed: mouse => {
+                                from = app.sourceWidth
+                                start = mapToItem(null, mouse.x, 0).x
+                            }
+                            onPositionChanged: mouse => app.sourceWidth = Math.max(120, Math.min(360, from + mapToItem(null, mouse.x, 0).x - start))
+                        }
+                    }
+                    Card {
+                        Layout.preferredWidth: 340
+                        Layout.fillWidth: false
+                        Layout.fillHeight: true
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: Theme.gap
+                            spacing: Theme.gap
+                            SwitcherPanel {
+                                id: mixer
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                sources: app.sources
+                                textures: desk.textures
+                                aspect: desk.aspect
+                            }
+                            LayoutPresets {
+                                Layout.fillWidth: true
+                                columns: 6
+                                columnSpacing: 4
+                                sources: app.sources
+                                aspect: desk.aspect
+                            }
+                        }
                     }
 
                     // —— Effects, at the far right ——
@@ -749,6 +838,32 @@ ApplicationWindow {
                 onEntered: drag => {
                     drag.accepted = false
                     app.setsOpen = true
+                }
+            }
+
+            // The drawer's key, at the top left of the canvas where the drawer's
+            // own head has it: put away, only the key stays, over the stage's
+            // corner. Files dragged onto it bring the drawer out too.
+            IconButton {
+                x: 8
+                y: (44 - height) / 2
+                z: 2
+                visible: !app.setsOpen
+                iconName: "panel-left"
+                tip: "素材（" + (Qt.platform.os === "osx" ? "⌘B" : "Ctrl+B") + "）"
+                onClicked: app.toggleSets()
+                background: Rectangle {
+                    radius: Theme.radius
+                    color: parent.hovered ? Theme.hover : Theme.raised
+                    border.width: 1
+                    border.color: Theme.line
+                }
+                DropArea {
+                    anchors.fill: parent
+                    onEntered: drag => {
+                        drag.accepted = false
+                        app.setsOpen = true
+                    }
                 }
             }
 
@@ -812,6 +927,7 @@ ApplicationWindow {
                     onSelectSet: id => app.chooseSet(id)
                     onAddUrls: urls => app.addUrls(urls)
                     onDropPlaying: id => app.dropPlaying(id)
+                    onPutAway: app.closeSets()
                 }
             }
         }

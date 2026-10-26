@@ -52,6 +52,7 @@ qt_add_qml_module(KVJ
         qml/Desk.qml
         qml/Effects.qml
         qml/LiveBar.qml
+        qml/SourceColumn.qml
         qml/Sidebar.qml
         qml/Timeline.qml
         qml/TrackPlayer.qml

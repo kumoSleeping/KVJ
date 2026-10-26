@@ -22,13 +22,8 @@ Rectangle {
     property string status: ""
     property bool live: false
     property bool canSend: true
-    // The Sets' drawer is out.
-    property bool setsOpen: false
 
     signal send()
-    signal toggleSets()
-    // Files dragged onto the drawer's key open it, to be dropped on a Set.
-    signal dragOpensSets()
 
     implicitHeight: unified ? Math.max(32, titleHeight) : 36
 
@@ -55,23 +50,6 @@ Rectangle {
             font.weight: Font.Bold
             font.letterSpacing: 0.6
             color: Theme.text
-        }
-        // The Sets and their entries, a drawer over the canvas.
-        IconButton {
-            Layout.leftMargin: -4
-            implicitWidth: 28
-            implicitHeight: 26
-            iconName: "panel-left"
-            tip: "素材（" + (Qt.platform.os === "osx" ? "⌘B" : "Ctrl+B") + "）"
-            active: top.setsOpen
-            onClicked: top.toggleSets()
-            DropArea {
-                anchors.fill: parent
-                onEntered: drag => {
-                    drag.accepted = false
-                    top.dragOpensSets()
-                }
-            }
         }
         // What is going on: listening, following, projecting.
         Rectangle {
