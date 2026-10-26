@@ -102,6 +102,33 @@ Rectangle {
             implicitHeight: 16
             color: Theme.line
         }
+        // Version, updates and logs; a dot when a newer release is out.
+        IconButton {
+            id: aboutKey
+            implicitWidth: 28
+            implicitHeight: 26
+            iconName: about.newer ? "circle-arrow-up" : "info"
+            tip: about.newer ? "有新版本 v" + Engine.update.latest + " 待下载" : "关于 · 更新 · 日志"
+            active: about.visible
+            onClicked: about.visible ? about.close() : about.open()
+            Rectangle {
+                visible: about.newer
+                x: parent.width - 9
+                y: 3
+                width: 7
+                height: 7
+                radius: 3.5
+                color: Theme.text
+                border.width: 1.5
+                border.color: Theme.raised
+            }
+            About {
+                id: about
+                x: aboutKey.width - width
+                y: aboutKey.height + 6
+                onReport: report.open()
+            }
+        }
         IconButton {
             implicitWidth: 28
             implicitHeight: 26
@@ -116,5 +143,10 @@ Rectangle {
         width: parent.width
         height: 1
         color: Theme.line
+    }
+
+    ReportDialog {
+        id: report
+        parent: Overlay.overlay
     }
 }

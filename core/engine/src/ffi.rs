@@ -52,6 +52,10 @@ enum Request {
         receiving: bool,
     },
     BluetoothPair { id: String, allow: bool },
+    Version,
+    ReportPrepare { note: String },
+    ReportSubmit { id: String },
+    UpdateCheck,
     BluetoothForget { token: String },
     BluetoothConnect { device: BluetoothDevice },
     BluetoothDisconnect { id: String },
@@ -84,6 +88,10 @@ impl KvjEngine {
             Request::BluetoothScan => json!(e.bluetooth_scan()?),
             Request::BluetoothListen { on, receiving } => json!(e.bluetooth_listen(on, receiving)?),
             Request::BluetoothPair { id, allow } => json!(e.bluetooth_pair(&id, allow)?),
+            Request::Version => json!(crate::report::VERSION),
+            Request::ReportPrepare { note } => json!(e.report_prepare(&note)?),
+            Request::ReportSubmit { id } => json!({ "id": e.report_submit(&id)? }),
+            Request::UpdateCheck => json!(crate::report::check_update()?),
             Request::BluetoothForget { token } => json!(e.bluetooth_forget(&token)?),
             Request::BluetoothConnect { device } => json!(e.bluetooth_connect(device)?),
             Request::BluetoothDisconnect { id } => json!(e.bluetooth_disconnect(&id)),
@@ -112,6 +120,7 @@ pub unsafe extern "C" fn kvj_engine_new(
         return std::ptr::null_mut();
     }
     let dir = PathBuf::from(CStr::from_ptr(data_dir).to_string_lossy().into_owned());
+    crate::report::record_panics(&dir);
     let callback = on_event.map(|on_event| Callback { on_event, user });
     let engine = Engine::new(
         dir,

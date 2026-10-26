@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kvj-bug-collector",
+  "account_id": "50f4c50f5cf3266c891dd98277ac3d72",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-26",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "bug.kvj.kumo.ltd", "custom_domain": true }],
+  // database_id: from `npx wrangler d1 create kvj-bug-reports` (see README).
+  "d1_databases": [{ "binding": "DB", "database_name": "kvj-bug-reports", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }],
+  "ratelimits": [
+    { "name": "UPLOAD_LIMIT", "namespace_id": "1849202611", "simple": { "limit": 5, "period": 60 } },
+    { "name": "GLOBAL_LIMIT", "namespace_id": "1849202612", "simple": { "limit": 100, "period": 60 } }
+  ],
+  "triggers": { "crons": ["17 3 * * *"] },
+  "observability": { "enabled": true, "logs": { "enabled": true, "invocation_logs": false }, "traces": { "enabled": true, "head_sampling_rate": 0.01 } },
+  "rules": [{ "type": "Text", "globs": ["**/*.html", "**/*.browser.js"], "fallthrough": false }]
+}

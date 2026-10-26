@@ -17,6 +17,12 @@ tracing = "0.1.41"
 rustfft = "6.4.1"
 symphonia = { version = "0.5.4", default-features = false, features = ["aac", "alac", "mp3", "isomp4", "mkv", "ogg", "vorbis", "flac", "wav", "pcm"] }
 cpal = { path = "../../vendor/cpal-0.18.1" }
+# Bug reports and the update check, over the system's own TLS (SChannel /
+# Security.framework) and trust store: nothing to deploy, no C to build.
+ureq = { version = "2.12", default-features = false, features = ["native-tls"] }
+native-tls = "0.2"
+regex = "1.11"
+semver = "1.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"

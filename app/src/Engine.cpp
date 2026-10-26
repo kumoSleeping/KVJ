@@ -3,6 +3,7 @@
 #include "Awake.h"
 #include "kvj.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -43,6 +44,9 @@ Engine::Engine(QObject *parent)
     for (int i = 14; i < old.size(); ++i)
         QFile::remove(logs.filePath(old.at(i)));
     m_engine = kvj_engine_new(QDir::toNativeSeparators(m_dataDir).toUtf8().constData(), &Engine::onEvent, this);
+    if (m_engine)
+        m_version = roundTrip(m_engine, {{"cmd", "version"}}).value("ok").toString();
+    QCoreApplication::setApplicationVersion(m_version);
 
     call({{"cmd", "document"}}, [this](const QJsonValue &ok) {
         m_document = ok.toObject().toVariantMap();
@@ -135,6 +139,62 @@ void Engine::call(const QJsonObject &request, Done done, bool background, std::f
             if (finally)
                 finally();
         }, Qt::QueuedConnection);
+    });
+}
+
+void Engine::ask(const QJsonObject &request, std::function<void(const QJsonObject &reply)> done)
+{
+    if (!m_engine)
+        return;
+    QPointer<Engine> guard(this);
+    KvjEngine *engine = m_engine;
+    QThreadPool::globalInstance()->start([guard, engine, request, done] {
+        const QJsonObject reply = roundTrip(engine, request);
+        QMetaObject::invokeMethod(guard, [guard, reply, done] {
+            if (guard)
+                done(reply);
+        }, Qt::QueuedConnection);
+    });
+}
+
+void Engine::checkUpdate(bool quiet)
+{
+    if (m_checkingUpdate)
+        return;
+    m_checkingUpdate = true;
+    if (!quiet)
+        m_updateError.clear();
+    emit updateChanged();
+    ask({{"cmd", "update_check"}}, [this, quiet](const QJsonObject &reply) {
+        m_checkingUpdate = false;
+        if (reply.contains("error")) {
+            if (!quiet)
+                m_updateError = reply.value("error").toString();
+        } else {
+            m_update = reply.value("ok").toObject().toVariantMap();
+            m_updateError.clear();
+        }
+        emit updateChanged();
+    });
+}
+
+void Engine::prepareReport(const QString &note)
+{
+    ask({{"cmd", "report_prepare"}, {"note", note}}, [this](const QJsonObject &reply) {
+        if (reply.contains("error"))
+            emit reportFailed(reply.value("error").toString());
+        else
+            emit reportReady(reply.value("ok").toObject().toVariantMap());
+    });
+}
+
+void Engine::submitReport(const QString &id)
+{
+    ask({{"cmd", "report_submit"}, {"id", id}}, [this](const QJsonObject &reply) {
+        if (reply.contains("error"))
+            emit reportFailed(reply.value("error").toString());
+        else
+            emit reportSent(reply.value("ok").toObject().value("id").toString());
     });
 }
 

@@ -69,6 +69,8 @@ fn main() -> anyhow::Result<()> {
             }
             engine.shutdown();
         }
+        // The newest published release, as the app's update check sees it.
+        "update" => println!("{}", serde_json::to_string_pretty(&kvj_engine::report::check_update()?)?),
         "bluetooth" => {
             for d in engine.bluetooth_scan()? {
                 println!("KVJ    {:<40} {}", d.id, d.name);
@@ -100,7 +102,7 @@ fn main() -> anyhow::Result<()> {
                     input);
             }
         }
-        _ => println!("usage: kvj-cli devices | bluetooth | prepare <paths>... | follow <paths>... [--device ID] [--channel N] [--room]"),
+        _ => println!("usage: kvj-cli devices | bluetooth | update | prepare <paths>... | follow <paths>... [--device ID] [--channel N] [--room]"),
     }
     Ok(())
 }

@@ -35,6 +35,12 @@ class Engine : public QObject
     // Files being probed into a Set; only this holds back further adding.
     Q_PROPERTY(bool importing READ importing NOTIFY importingChanged)
     Q_PROPERTY(QString dataDir READ dataDir CONSTANT)
+    // This build's version (the release tag without its "v").
+    Q_PROPERTY(QString version READ version CONSTANT)
+    // The last update check: {current, latest, newer, url, name, published_at}.
+    Q_PROPERTY(QVariantMap update READ update NOTIFY updateChanged)
+    Q_PROPERTY(bool checkingUpdate READ checkingUpdate NOTIFY updateChanged)
+    Q_PROPERTY(QString updateError READ updateError NOTIFY updateChanged)
     // The computer and its screens kept awake (Awake.h): set while projecting,
     // following or sending.
     Q_PROPERTY(bool keepAwake READ keepAwake WRITE setKeepAwake NOTIFY keepAwakeChanged)
@@ -53,6 +59,17 @@ public:
     bool busy() const { return m_busy > 0; }
     bool importing() const { return m_importing; }
     QString dataDir() const { return m_dataDir; }
+    QString version() const { return m_version; }
+    QVariantMap update() const { return m_update; }
+    bool checkingUpdate() const { return m_checkingUpdate; }
+    QString updateError() const { return m_updateError; }
+
+    // The newest published release (GitHub). `quiet`: a failure is not shown.
+    Q_INVOKABLE void checkUpdate(bool quiet);
+    // A scrubbed report from the logs on disk, previewed in full
+    // (reportReady), then sent exactly as shown (reportSent); reportFailed says why not.
+    Q_INVOKABLE void prepareReport(const QString &note);
+    Q_INVOKABLE void submitReport(const QString &id);
     bool keepAwake() const { return m_keepAwake; }
     void setKeepAwake(bool on);
 
@@ -96,6 +113,10 @@ signals:
     void busyChanged();
     void importingChanged();
     void keepAwakeChanged();
+    void updateChanged();
+    void reportReady(const QVariantMap &preview);
+    void reportSent(const QString &id);
+    void reportFailed(const QString &error);
 
 private:
     using Done = std::function<void(const QJsonValue &ok)>;
@@ -103,6 +124,9 @@ private:
     // commands run on `pool` (the global thread pool when none).
     void call(const QJsonObject &request, Done done, bool background, std::function<void()> finally = {},
               QThreadPool *pool = nullptr);
+    // A background command whose reply ({"ok"} or {"error"}) goes to `done`
+    // as is: its failure is the caller's to show, not the window's error line.
+    void ask(const QJsonObject &request, std::function<void(const QJsonObject &reply)> done);
     void edit(const QJsonObject &edit);
     void setError(const QString &error);
     void applyPresented(const QJsonObject &view);
@@ -114,6 +138,10 @@ private:
 
     KvjEngine *m_engine = nullptr;
     QString m_dataDir;
+    QString m_version;
+    QVariantMap m_update;
+    bool m_checkingUpdate = false;
+    QString m_updateError;
     QVariantMap m_document;
     QVariantMap m_view;
     QVariantMap m_matched;

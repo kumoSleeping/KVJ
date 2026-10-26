@@ -15,6 +15,7 @@ mod index;
 #[cfg(target_os = "macos")]
 mod output_tap;
 mod qos;
+pub mod report;
 pub mod rhythm;
 mod runtime;
 pub mod sound;
@@ -121,6 +122,7 @@ pub struct Engine {
     session: Mutex<Option<Session>>,
     gate: Mutex<()>,
     connections: bluetooth::Hub,
+    reports: report::Reports,
     notify: Notify,
 }
 // Only videos go into a Set: KVJ projects pictures. Their sound is what is
@@ -140,8 +142,17 @@ impl Engine {
             session: Mutex::new(None),
             gate: Mutex::new(()),
             connections,
+            reports: report::Reports::default(),
             notify,
         })
+    }
+    /// A scrubbed bug report built from the logs on disk, to be read in full
+    /// before `report_submit` sends exactly it.
+    pub fn report_prepare(&self, note: &str) -> Result<report::Preview> {
+        self.reports.prepare(&self.data_dir, note)
+    }
+    pub fn report_submit(&self, id: &str) -> Result<String> {
+        self.reports.submit(id)
     }
     fn with_store<T>(&self, f: impl FnOnce(&mut Store) -> Result<T>) -> Result<T> {
         let mut store = self.store.lock().unwrap();

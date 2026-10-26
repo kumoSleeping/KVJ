@@ -4,7 +4,8 @@ members = ["core/recognize", "core/engine"]
 exclude = ["vendor/cpal-0.18.1"]
 
 [workspace.package]
-version = "0.1.0"
+# The release's own version (tags are v<version>): the update check compares it.
+version = "0.1.0-rc3"
 edition = "2021"
 license = "GPL-3.0-or-later"
 

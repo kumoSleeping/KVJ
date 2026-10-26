@@ -57,6 +57,8 @@ qt_add_qml_module(KVJ
         qml/PopMenu.qml
         qml/PopAction.qml
         qml/TopBar.qml
+        qml/About.qml
+        qml/ReportDialog.qml
     RESOURCES
         qml/icons/check.svg
         qml/icons/chevron-down.svg
@@ -65,6 +67,7 @@ qt_add_qml_module(KVJ
         qml/icons/folder.svg
         qml/icons/folder-open.svg
         qml/icons/info.svg
+        qml/icons/circle-arrow-up.svg
         qml/icons/moon.svg
         qml/icons/music.svg
         qml/icons/sun.svg
@@ -138,7 +141,7 @@ if(APPLE)
     target_link_libraries(KVJ PRIVATE
         "-weak_framework ScreenCaptureKit" "-weak_framework CoreAudio"
         "-framework CoreMedia" "-framework AudioToolbox" "-framework CoreBluetooth"
-        "-framework Foundation" "-framework CoreFoundation" iconv objc)
+        "-framework Foundation" "-framework CoreFoundation" "-framework Security" iconv objc)
 elseif(WIN32)
     target_link_libraries(KVJ PRIVATE kernel32 ntdll userenv ws2_32 dbghelp)
 endif()
@@ -187,7 +190,7 @@ if(KVJ_BUILD_CHECKS)
         target_link_libraries(kvj-sound-check PRIVATE
             "-weak_framework ScreenCaptureKit" "-weak_framework CoreAudio"
             "-framework CoreMedia" "-framework AudioToolbox" "-framework CoreBluetooth"
-            "-framework Foundation" "-framework CoreFoundation" iconv objc)
+            "-framework Foundation" "-framework CoreFoundation" "-framework Security" iconv objc)
     elseif(WIN32)
         target_link_libraries(kvj-sound-check PRIVATE kernel32 ntdll userenv ws2_32 dbghelp)
     endif()

@@ -200,7 +200,6 @@ int main(int argc, char *argv[])
     QGuiApplication::setOrganizationName(QStringLiteral("kumo"));
     QGuiApplication::setApplicationName(QStringLiteral("KVJ"));
     QGuiApplication::setApplicationDisplayName(QStringLiteral("KVJ"));
-    QGuiApplication::setApplicationVersion(QStringLiteral("0.1.0"));
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
     const QStringList args = app.arguments();
