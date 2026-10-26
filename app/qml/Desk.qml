@@ -688,9 +688,29 @@ Item {
                         implicitHeight: 24
                         iconName: "info"
                         iconSize: 14
-                        tip: "点名字开关（推荐强度），按住上下拖一起开关\n拖条微调，双击数字关掉\n拖 ⠿ 换顺序，上面的先作用"
+                        tip: "点名字开关（推荐强度），按住上下拖一起开关\n拖条微调，双击数字关掉\n拖 ⠿ 换顺序，上面的先作用\n"
+                             + "快捷键：1–9、0（小键盘也行）开关前十个；, / . 把最后操作的效果减弱 / 加强 5%\n"
+                             + "用 , / . 调过再关掉，这个强度就记成它的推荐强度（名字上有小点）；「重置」恢复默认"
                     }
                     Item { Layout.fillWidth: true }
+                    Toggle {
+                        text: "快捷键"
+                        checked: Live.keysOn
+                        onToggled: Live.keysOn = checked
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 600
+                        ToolTip.text: "1–9、0 开关效果，, / . 调强度；关掉后这些键不起作用"
+                    }
+                    TextButton {
+                        implicitHeight: 26
+                        flat: true
+                        text: "重置"
+                        enabled: Live.customized
+                        onClicked: Live.resetPresets()
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 600
+                        ToolTip.text: "记住的强度全部恢复为默认推荐强度"
+                    }
                     TextButton {
                         implicitHeight: 26
                         flat: true
@@ -723,6 +743,8 @@ Item {
                         required property int index
                         readonly property real level: Live.level[key] || 0
                         readonly property bool on: level > 0
+                        // Its number key, for the first ten.
+                        readonly property string digit: Live.keysOn && index < 10 ? String((index + 1) % 10) : ""
                         width: ListView.view.width
                         height: effectList.rowHeight
                         z: grip.pressed ? 1 : 0
@@ -764,6 +786,14 @@ Item {
                                     ToolTip.text: "拖动调整顺序（上面的先作用）"
                                 }
                             }
+                            Text {
+                                Layout.preferredWidth: 10
+                                horizontalAlignment: Text.AlignHCenter
+                                text: effect.digit
+                                font.pixelSize: Theme.sizeXs
+                                font.features: { "tnum": 1 }
+                                color: Live.focused === effect.key ? Theme.text : Theme.faint
+                            }
                             // On at its best strength, or off.
                             Rectangle {
                                 implicitWidth: 80
@@ -783,6 +813,16 @@ Item {
                                     font.weight: effect.on ? Font.DemiBold : Font.Medium
                                     color: effect.on ? Theme.bg : Theme.body
                                     elide: Text.ElideRight
+                                }
+                                // A strength of its own was kept (see Live.tune).
+                                Rectangle {
+                                    visible: Live.custom[effect.key] !== undefined
+                                    x: parent.width - 8
+                                    y: 4
+                                    width: 4
+                                    height: 4
+                                    radius: 2
+                                    color: effect.on ? Theme.bg : Theme.muted
                                 }
                                 // Pressed, it switches; dragged on over the other
                                 // keys, it switches them the same way. Dragged back,
@@ -835,7 +875,10 @@ Item {
                                 stepSize: 1
                                 value: effect.level * 100
                                 opacity: effect.on ? 1 : 0.5
-                                onMoved: Live.setLevel(effect.key, value / 100)
+                                onMoved: {
+                                    Live.focused = effect.key
+                                    Live.setLevel(effect.key, value / 100)
+                                }
                             }
                             Text {
                                 Layout.preferredWidth: 24

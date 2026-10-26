@@ -127,21 +127,69 @@ QtObject {
         { key: "mono", name: "黑白", preset: 1 }
     ]
     property var level: ({})
+    // Strengths the operator kept in place of a preset: { key: 0..1 }.
+    property var custom: ({})
+    // The effect last switched or tuned: what , and . adjust.
+    property string focused: ""
+    // Effects tuned with , or . since they were switched on: switched off, they
+    // keep that strength as their own preset.
+    property var tuned: ({})
+    // The number keys (1–0, the number pad too) switch the first ten effects
+    // in the list; , and . tune the last one. On unless turned off.
+    property bool keysOn: true
 
     function setLevel(key, value) {
         const next = Object.assign({}, level)
         next[key] = Math.max(0, Math.min(1, value))
         level = next
     }
+    function presetOf(key) {
+        const i = kind(key)
+        return custom[key] !== undefined ? custom[key] : i >= 0 ? effects[i].preset : 0
+    }
     // On at its preset (one that is on already keeps its strength), or off.
     function switchEffect(key, on) {
         const i = kind(key)
-        if (i >= 0 && on !== amount(key) > 0)
-            setLevel(key, on ? effects[i].preset : 0)
+        if (i < 0)
+            return
+        focused = key
+        if (on === amount(key) > 0)
+            return
+        if (!on && tuned[key]) {
+            const kept = Object.assign({}, custom)
+            kept[key] = Math.round(amount(key) * 100) / 100
+            custom = kept
+            store.presets = JSON.stringify(custom)
+        }
+        if (tuned[key]) {
+            const next = Object.assign({}, tuned)
+            delete next[key]
+            tuned = next
+        }
+        setLevel(key, on ? presetOf(key) : 0)
     }
     function toggleEffect(key) {
         switchEffect(key, !(amount(key) > 0))
     }
+    // , and . : the last effect switched or tuned (or the first one on) a
+    // step weaker or stronger; a step up from off switches it on there.
+    function tune(delta) {
+        const key = focused && kind(focused) >= 0 ? focused : active.length ? active[0] : ""
+        if (!key)
+            return
+        focused = key
+        setLevel(key, Math.round((amount(key) + delta) * 100) / 100)
+        const next = Object.assign({}, tuned)
+        next[key] = true
+        tuned = next
+    }
+    // Every effect back at the strength it came with.
+    function resetPresets() {
+        custom = {}
+        tuned = {}
+        store.presets = "{}"
+    }
+    readonly property bool customized: Object.keys(custom).length > 0
     function amount(key) {
         return level[key] || 0
     }
@@ -168,6 +216,8 @@ QtObject {
     property Settings store: Settings {
         category: "effects"
         property string order: ""
+        property string presets: "{}"
+        property alias keys: live.keysOn
     }
 
     function kind(key) {
@@ -181,6 +231,16 @@ QtObject {
         store.order = order.join(",")
     }
     Component.onCompleted: {
+        try {
+            const kept = JSON.parse(store.presets)
+            const valid = {}
+            for (const k in kept)
+                if (kind(k) >= 0 && typeof kept[k] === "number" && kept[k] > 0 && kept[k] <= 1)
+                    valid[k] = kept[k]
+            custom = valid
+        } catch (error) {
+            custom = {}
+        }
         const saved = store.order.split(",").filter((k, i, all) => kind(k) >= 0 && all.indexOf(k) === i)
         const keys = saved.concat(effects.map(e => e.key).filter(k => saved.indexOf(k) < 0))
         for (const k of keys)

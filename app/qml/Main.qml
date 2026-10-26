@@ -501,30 +501,57 @@ ApplicationWindow {
         property alias loop: app.loopOn
     }
     Shortcut {
-        sequences: ["Left", "A", "Num+4"]
+        sequences: ["Left", "A"]
         context: Qt.ApplicationShortcut
         autoRepeat: false
         enabled: app.keysLive && app.manualSeek && app.manualTempo && !!transport.entry
         onActivated: app.nudge(-1)
     }
     Shortcut {
-        sequences: ["Right", "D", "Num+6"]
+        sequences: ["Right", "D"]
         context: Qt.ApplicationShortcut
         autoRepeat: false
         enabled: app.keysLive && app.manualSeek && app.manualTempo && !!transport.entry
         onActivated: app.nudge(1)
     }
     Shortcut {
-        sequences: ["Up", "W", "Num+8"]
+        sequences: ["Up", "W"]
         context: Qt.ApplicationShortcut
         enabled: app.keysLive && app.manualTempo
         onActivated: app.nudgeTempo(0.01)
     }
     Shortcut {
-        sequences: ["Down", "S", "Num+2"]
+        sequences: ["Down", "S"]
         context: Qt.ApplicationShortcut
         enabled: app.keysLive && app.manualTempo
         onActivated: app.nudgeTempo(-0.01)
+    }
+    // Effects: 1–9 and 0 (the number pad too) switch the first ten in the
+    // list, , and . tune the last one; their own switch in the effects panel.
+    readonly property bool effectKeysLive: Live.keysOn && !app.typing && !sender.visible
+    Instantiator {
+        model: 10
+        delegate: Shortcut {
+            required property int index
+            readonly property string digit: String((index + 1) % 10)
+            sequences: [digit, "Num+" + digit]
+            context: Qt.ApplicationShortcut
+            autoRepeat: false
+            enabled: app.effectKeysLive && index < Live.order.length
+            onActivated: Live.toggleEffect(Live.order[index])
+        }
+    }
+    Shortcut {
+        sequences: [","]
+        context: Qt.ApplicationShortcut
+        enabled: app.effectKeysLive
+        onActivated: Live.tune(-0.05)
+    }
+    Shortcut {
+        sequences: ["."]
+        context: Qt.ApplicationShortcut
+        enabled: app.effectKeysLive
+        onActivated: Live.tune(0.05)
     }
     Shortcut {
         sequences: ["Return", "Enter"]

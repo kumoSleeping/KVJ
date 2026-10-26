@@ -78,11 +78,10 @@ on one low-priority thread and kept up to 48 MB. At the end of an entry the next
 one that is on follows. Seeks aim ahead by what passes while the decoder gets
 there, and a paused seek lands on the exact frame.
 
-With **快捷键** on (it is by default), ← / →, A / D or 4 / 6 on the number pad
+With **快捷键** on (it is by default), ← / → or A / D
 nudge the picture back or ahead without a jump, as a pitch bend does: while
 held, the picture plays at 0.7 or 1.5 of its speed, and let go it is back at
-its speed (paused, a press steps a second); ↑ / ↓, W / S or
-8 / 2 change the speed by 1 % and the speed bar follows; Enter plays from the
+its speed (paused, a press steps a second); ↑ / ↓ or W / S change the speed by 1 % and the speed bar follows; Enter plays from the
 cursor.
 Space does nothing: one touch of it during a show is too easy. No key acts while
 words are being typed.
@@ -144,7 +143,12 @@ white) has a key that turns it on at the strength it looks best at (or off;
 dragged on over the other keys, it switches them the same way) and a bar that
 fine-tunes it; they apply from the
 top down, each to the picture the ones above made, and a grip at the left of
-each drags it to another place in that order (kept between runs). Effects touch
+each drags it to another place in that order (kept between runs). The number
+keys 1–9 and 0 (on the number pad too) switch the first ten effects in the list,
+whose rows show their key; , and . make the last effect switched (or tuned)
+5 % weaker or stronger. An effect tuned that way and then switched off keeps that
+strength as its own (a dot on its key); 重置 gives every effect back the strength
+it came with. The effects panel's own 快捷键 turns these keys off. Effects touch
 only the video, never the words or stickers. Danmaku from elsewhere can come in through
 `Live.say(text, from)` (`app/qml/Live.qml`).
 
