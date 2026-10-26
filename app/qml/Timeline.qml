@@ -23,6 +23,21 @@ import KVJ
 // the speed's while 对速 works, play and seeking while 跳转 does.
 // Opening another Set than the one the picture plays parks the timeline:
 // that Set from its start, paused, while the picture plays on untouched.
+// The strip has a row a track: the main track's (画面 1) as above, under it
+// each aux track's (画面 2/3/4) the same pieces a little lower, its entries
+// end to end on its own clock, its own playhead, and at its left its name, its
+// play key, its loop and, in a menu, its speed and 跟随主轨速度. All rows share
+// the view (zoom and pan). A press or drag on an aux row moves that track's
+// picture there at once, playing or paused as it was. At the rows' right
+// waits `trailing` (the audio-alignment strip), as tall as it makes itself.
+//
+//   tracks  [{ track, name, entries, player }], row 0 the main track (its
+//           player is `player`; only its track-0 entries are laid out), rows
+//           1..3 aux tracks (player: a TrackPlayer). The host passes the aux
+//           tracks it wants shown (an empty one shows 空). Empty: the main
+//           track alone, from `entries`, as before tracks existed.
+//   trailing  an item placed right of the rows, top-aligned
+//   mainRowHeight  the main row's height (ruler and strips), for `trailing`
 Rectangle {
     id: line
     color: Theme.raised
@@ -35,6 +50,27 @@ Rectangle {
     property string phase: ""
     // The window's player: its clock (transport), who leads and what is shown.
     property var player: null
+    // A row a track (see above); empty: `entries` on one row.
+    property var tracks: []
+    property alias trailing: trailingSlot.data
+    readonly property real mainRowHeight: track.height
+    readonly property var mainEntries: tracks.length ? (tracks[0].entries || []).filter(e => (e.track || 0) === 0) : entries
+    // The aux tracks' rows: { spec, player, clips, total }, laid out as the main one's.
+    readonly property var auxRows: tracks.slice(1).map(t => {
+        const p = t.player || null
+        const live = p ? p.entry : null
+        let at = 0
+        const clips = (t.entries || []).filter(e => e.enabled !== false || (!!live && e.id === live.id)).map((e, i) => {
+            const clip = { entry: e, n: i + 1, start: at, length: Math.max(1, e.duration) }
+            at += clip.length
+            return clip
+        })
+        return { spec: t, player: p, clips: clips, total: at }
+    })
+    // Names and keys in a column at the left once there is more than one row.
+    readonly property int gutter: auxRows.length ? 112 : 0
+    readonly property var emptyClip: ({ entry: { id: "", path: "", title: "", duration: 0, video: false }, n: 0, start: 0, length: 0 })
+    readonly property var noRow: ({ spec: {}, player: null, clips: [], total: 0 })
 
     readonly property bool manual: !!player && player.manual
     // The speed is the player's (对速 paused), play and seeking are (跳转 paused).
@@ -55,7 +91,7 @@ Rectangle {
     readonly property int bending: speed > tempo + 1e-6 ? 1 : speed < tempo - 1e-6 ? -1 : 0
     readonly property var match: player && player.aiPicture && !parked ? player.match : null
     // The entry on the screen stays until the picture has left it.
-    readonly property var lanes: entries.filter(e => e.enabled !== false || (!parked && !!live && e.id === live.id))
+    readonly property var lanes: mainEntries.filter(e => e.enabled !== false || (!parked && !!live && e.id === live.id))
 
     // The entries end to end: { entry, n (its number), start, length } in seconds along the strip.
     readonly property var clips: {
@@ -66,7 +102,9 @@ Rectangle {
             return clip
         })
     }
-    readonly property real total: clips.length ? clips[clips.length - 1].start + clips[clips.length - 1].length : 0
+    readonly property real mainTotal: clips.length ? clips[clips.length - 1].start + clips[clips.length - 1].length : 0
+    // The view spans the longest row.
+    readonly property real total: Math.max(mainTotal, ...auxRows.map(r => r.total))
 
     // The view: pixels a second (0 = the whole Set fits) and the second at the left edge.
     property real zoom: 0
@@ -232,6 +270,413 @@ Rectangle {
     function jump() {
         if (manualSeek && markClip)
             player.play(markClip.entry, markAt)
+    }
+
+    // One entry on a row: its tempo a block a section, its frames over its
+    // sound, its name. `view` is the timeline (its pps and viewLeft).
+    component Piece: Item {
+        id: piece
+        property var view
+        property var clip
+        property real stripWidth
+        property int tempoHeight: 18
+        property int filmHeight: 64
+        property int waveHeight: 42
+        property string playingId
+        property real position
+        // Dimmed: entries that are off, and silent ones.
+        property bool dimOff
+        property bool dimSilent
+        property bool numbered
+        property bool small
+        readonly property var modelData: clip || view.emptyClip
+        readonly property var entry: modelData.entry
+        readonly property real cx: (modelData.start - view.viewLeft) * view.pps
+        readonly property real cw: modelData.length * view.pps
+        readonly property bool playing: entry.id === playingId
+        x: Math.max(0, cx)
+        width: Math.max(0, Math.min(cx + cw, stripWidth) - x)
+        height: tempoHeight + filmHeight + 1 + waveHeight
+        visible: width > 0
+
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.inset
+        }
+        // The entry's tempo, a block a section; its label stays
+        // in view while any of the block is.
+        Item {
+            id: tempoLane
+            width: parent.width
+            height: piece.tempoHeight
+            Repeater {
+                model: wave.tempo
+                Item {
+                    required property var modelData
+                    readonly property bool beat: modelData.bpm !== null && modelData.bpm !== undefined
+                    x: (modelData.start - wave.from) * piece.view.pps
+                    width: (modelData.end - modelData.start) * piece.view.pps
+                    height: tempoLane.height
+                    visible: x + width > 0 && x < tempoLane.width
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.topMargin: 2
+                        anchors.bottomMargin: 2
+                        anchors.leftMargin: 1
+                        anchors.rightMargin: 1
+                        radius: 3
+                        color: piece.view.tempoColor(parent.modelData.bpm)
+                        // A tempo its beats hardly fit is told with less ink.
+                        opacity: !parent.beat || parent.modelData.confidence >= 0.15 ? 1 : 0.6
+                    }
+                    Text {
+                        id: bpmLabel
+                        readonly property string full: parent.beat ? Math.round(parent.modelData.bpm) + " BPM" : "无拍"
+                        readonly property string brief: parent.beat ? "" + Math.round(parent.modelData.bpm) : ""
+                        text: parent.width >= fullMetrics.width + 12 ? full : parent.width >= briefMetrics.width + 8 ? brief : ""
+                        x: Math.max(5, Math.min(-parent.x + 5, parent.width - implicitWidth - 5))
+                        anchors.verticalCenter: parent.verticalCenter
+                        font.pixelSize: 10
+                        font.weight: Font.DemiBold
+                        font.features: { "tnum": 1 }
+                        color: parent.beat ? Theme.text : Theme.faint
+                        TextMetrics { id: fullMetrics; font: bpmLabel.font; text: bpmLabel.full }
+                        TextMetrics { id: briefMetrics; font: bpmLabel.font; text: bpmLabel.brief }
+                    }
+                }
+            }
+            Text {
+                visible: wave.findingTempo && wave.tempo.length === 0 && piece.width > 120
+                x: Math.max(6, -piece.cx + 6)
+                anchors.verticalCenter: parent.verticalCenter
+                text: wave.analysing ? "" : "分析速度…"
+                font.pixelSize: 10
+                color: Theme.faint
+            }
+        }
+        FilmStrip {
+            y: piece.tempoHeight
+            width: parent.width
+            height: piece.filmHeight
+            // Upright strips of each frame's middle: enough to
+            // know the picture, and many more of them.
+            cellAspect: 0.5
+            visible: piece.entry.video
+            source: visible ? piece.entry.path : ""
+            duration: piece.entry.duration
+            from: (piece.x - piece.cx) / piece.view.pps
+            pxPerSec: piece.view.pps
+            gap: Theme.inset
+        }
+        WaveStrip {
+            id: wave
+            y: piece.tempoHeight + piece.filmHeight + 1
+            width: parent.width
+            height: piece.waveHeight
+            // A silent entry has no waveform and no tempo to find.
+            source: piece.entry.silent ? "" : piece.entry.path
+            from: (piece.x - piece.cx) / piece.view.pps
+            pxPerSec: piece.view.pps
+            background: Theme.inset
+            // What has played of the entry on the screen, dimmed as in KDJ.
+            Rectangle {
+                visible: piece.playing
+                width: Math.max(0, Math.min(parent.width, (piece.position - wave.from) * piece.view.pps))
+                height: parent.height
+                color: Theme.dark ? "#8c000000" : "#7dffffff"
+            }
+            Rectangle {
+                visible: !wave.ready
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width
+                height: 1
+                color: Theme.line
+            }
+            Text {
+                visible: wave.analysing && piece.width > 120
+                anchors.centerIn: parent
+                text: "分析波形…"
+                font.pixelSize: 11
+                color: Theme.faint
+            }
+            Text {
+                visible: !!piece.entry.silent && piece.width > 80
+                x: Math.max(6, -piece.cx + 6)
+                anchors.verticalCenter: parent.verticalCenter
+                text: "无声音"
+                font.pixelSize: 11
+                color: Theme.faint
+            }
+        }
+        // Between the picture and the sound: the panel's tone.
+        Rectangle {
+            y: piece.tempoHeight + piece.filmHeight
+            width: parent.width
+            height: 1
+            color: Theme.raised
+        }
+        // Where the tempo changes, down through the frames and the sound.
+        Repeater {
+            model: wave.tempo.slice(1)
+            Rectangle {
+                required property var modelData
+                x: (modelData.start - wave.from) * piece.view.pps - 1.5
+                visible: x > 0 && x < piece.width
+                y: piece.tempoHeight
+                width: 3
+                height: piece.height - y
+                color: "#59000000"
+                Rectangle {
+                    x: 1
+                    width: 1
+                    height: parent.height
+                    color: "#d9ffffff"
+                }
+            }
+        }
+        // Entries following does not watch are dimmed.
+        Rectangle {
+            anchors.fill: parent
+            visible: (piece.dimOff && piece.entry.enabled === false) || (piece.dimSilent && !!piece.entry.silent)
+            color: Theme.raised
+            opacity: 0.6
+        }
+        // Where one entry ends and the next begins: a step of the panel's tone.
+        Rectangle {
+            visible: piece.cx >= 0 && piece.modelData.start > 0
+            width: 3
+            height: parent.height
+            color: Theme.raised
+        }
+        Rectangle {
+            x: 6
+            y: piece.tempoHeight + (piece.small ? 3 : 5)
+            width: Math.min(name.implicitWidth + 12, piece.width - 12)
+            height: piece.small ? 16 : 18
+            radius: 4
+            visible: width > 24
+            color: "#99000000"
+            Text {
+                id: name
+                anchors.fill: parent
+                anchors.leftMargin: 6
+                anchors.rightMargin: 6
+                verticalAlignment: Text.AlignVCenter
+                text: (piece.numbered ? piece.modelData.n + "  " : "") + piece.entry.title
+                font.pixelSize: piece.small ? 10 : 11
+                font.weight: piece.playing ? Font.DemiBold : Font.Normal
+                color: "white"
+                elide: Text.ElideRight
+            }
+        }
+    }
+
+    // An aux track's row: its name and keys at the left, its entries end to
+    // end on its own clock with its own playhead, lower than the main row. A
+    // press or drag moves its picture there at once, playing or paused as it
+    // was; the wheel and a pinch move and zoom the shared view.
+    component AuxRow: RowLayout {
+        id: aux
+        property var view
+        property var row: ({ spec: {}, player: null, clips: [], total: 0 })
+        readonly property var player: row.player
+        readonly property var clips: row.clips
+        readonly property string name: row.spec.name || ("画面 " + ((row.spec.track || 0) + 1))
+        readonly property string playingId: player && player.entry ? player.entry.id : ""
+        readonly property var playClip: clips.find(c => c.entry.id === playingId) || null
+        readonly property real position: player ? player.playhead : 0
+        readonly property real playT: playClip ? playClip.start + Math.min(position, playClip.length) : -1
+        readonly property real speedShown: player ? player.effectiveSpeed : 1
+        // Nothing laid out: no entries, or none of them on.
+        readonly property string emptyText: (row.spec.entries || []).length ? "素材都关着" : "空"
+        readonly property int tempoHeight: 16
+        readonly property int filmHeight: 40
+        readonly property int waveHeight: 28
+        spacing: 0
+
+        function seekAt(x) {
+            if (!player || !clips.length)
+                return
+            const t = Math.max(0, Math.min(row.total - 0.001, view.viewLeft + x / view.pps))
+            for (const c of clips) {
+                if (t < c.start + c.length) {
+                    player.seek(c.entry, Math.max(0, Math.min(c.entry.duration, t - c.start)))
+                    break
+                }
+            }
+            view.touch()
+        }
+
+        // Its name, where it is and how fast; play, loop and the speed's menu.
+        Item {
+            Layout.preferredWidth: aux.view.gutter
+            Layout.preferredHeight: lane.height
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.rightMargin: 8
+                spacing: 0
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    Text {
+                        Layout.fillWidth: true
+                        text: aux.name
+                        font.pixelSize: Theme.sizeSm
+                        font.weight: Font.DemiBold
+                        color: aux.clips.length ? Theme.text : Theme.muted
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        visible: !!aux.player && (aux.player.followMain || Math.abs(aux.speedShown - 1) > 1e-4)
+                        text: "×" + aux.speedShown.toFixed(2)
+                        font.pixelSize: Theme.sizeXs
+                        font.features: { "tnum": 1 }
+                        color: aux.player && aux.player.followMain ? Theme.body : Theme.warn
+                    }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: !aux.clips.length ? aux.emptyText
+                          : aux.playClip ? aux.view.clock(aux.position, false) + " / " + aux.view.clock(aux.playClip.entry.duration, false)
+                                           + (aux.player && aux.player.followMain ? " · 跟主轨" : "")
+                          : "—"
+                    font.pixelSize: Theme.sizeXs
+                    font.features: { "tnum": 1 }
+                    color: Theme.muted
+                    elide: Text.ElideRight
+                }
+                Item { Layout.fillHeight: true }
+                RowLayout {
+                    spacing: 0
+                    IconButton {
+                        iconName: aux.player && aux.player.playing ? "pause" : "play"
+                        tip: aux.player && aux.player.playing ? "暂停" + aux.name : "播放" + aux.name
+                        enabled: !!aux.player && aux.clips.length > 0
+                        active: !!aux.player && aux.player.playing
+                        onClicked: aux.player.toggle()
+                    }
+                    IconButton {
+                        iconName: "refresh"
+                        active: !!aux.player && aux.player.loop
+                        enabled: !!aux.player
+                        tip: aux.player && aux.player.loop ? "循环播放：放完这条轨道的最后一个素材后从第一个重来；点一下改为播完即停"
+                                                           : "播完即停：放完这条轨道的最后一个素材后停在最后一帧；点一下改为循环播放"
+                        onClicked: aux.player.loop = !aux.player.loop
+                    }
+                    IconButton {
+                        iconName: "ellipsis"
+                        tip: "速度"
+                        enabled: !!aux.player
+                        onClicked: speedMenu.popup()
+                        PopMenu {
+                            id: speedMenu
+                            PopAction {
+                                text: aux.player && aux.player.followMain ? "不再跟随主轨速度" : "跟随主轨速度"
+                                onTriggered: aux.player.followMain = !aux.player.followMain
+                            }
+                            MenuSeparator {}
+                            PopAction {
+                                text: "快 1%"
+                                enabled: !!aux.player && aux.player.speed < aux.player.maxSpeed
+                                onTriggered: aux.player.setSpeed(aux.player.speed + 0.01)
+                            }
+                            PopAction {
+                                text: "慢 1%"
+                                enabled: !!aux.player && aux.player.speed > aux.player.minSpeed
+                                onTriggered: aux.player.setSpeed(aux.player.speed - 0.01)
+                            }
+                            PopAction {
+                                text: "原速"
+                                enabled: !!aux.player && aux.player.speed !== 1
+                                onTriggered: aux.player.setSpeed(1)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Item {
+            id: lane
+            Layout.fillWidth: true
+            Layout.preferredHeight: aux.tempoHeight + aux.filmHeight + 1 + aux.waveHeight
+            clip: true
+
+            Rectangle {
+                anchors.fill: parent
+                visible: !aux.clips.length
+                color: Theme.inset
+                Text {
+                    x: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: aux.name + "（" + aux.emptyText + "）"
+                    font.pixelSize: Theme.sizeXs
+                    color: Theme.faint
+                }
+            }
+            // By place, as on the main row.
+            Repeater {
+                model: aux.clips.length
+                Piece {
+                    required property int index
+                    view: aux.view
+                    clip: aux.clips[index]
+                    stripWidth: lane.width
+                    tempoHeight: aux.tempoHeight
+                    filmHeight: aux.filmHeight
+                    waveHeight: aux.waveHeight
+                    playingId: aux.playingId
+                    position: aux.position
+                    dimOff: true
+                    dimSilent: false
+                    numbered: aux.clips.length > 1
+                    small: true
+                }
+            }
+            Rectangle {
+                visible: laneArea.containsMouse && !laneArea.pressed
+                x: laneArea.mouseX
+                width: 1
+                height: lane.height
+                color: "#80ffffff"
+            }
+            Item {
+                visible: aux.playT >= aux.view.viewLeft && aux.playT <= aux.view.viewLeft + aux.view.span
+                x: (aux.playT - aux.view.viewLeft) * aux.view.pps
+                height: lane.height
+                Rectangle {
+                    x: -2
+                    width: 4
+                    height: lane.height
+                    radius: 1
+                    color: "#99000000"
+                    Rectangle {
+                        x: 1
+                        width: 2
+                        height: parent.height
+                        color: Theme.text
+                    }
+                }
+            }
+            MouseArea {
+                id: laneArea
+                anchors.fill: parent
+                hoverEnabled: true
+                preventStealing: true
+                enabled: aux.clips.length > 0
+                cursorShape: Qt.PointingHandCursor
+                onPressed: mouse => aux.seekAt(mouse.x)
+                onPositionChanged: mouse => {
+                    if (pressed)
+                        aux.seekAt(Math.max(0, Math.min(width, mouse.x)))
+                }
+                onWheel: wheel => aux.view.scroll(wheel, wheel.x)
+            }
+            PinchHandler {
+                target: null
+                onScaleChanged: delta => aux.view.zoomAt(centroid.position.x, delta)
+            }
+        }
     }
 
     // Tick marks in each entry's own time, at least 70 px apart. A label that
@@ -550,6 +995,9 @@ Rectangle {
             id: seekBar
             Layout.fillWidth: true
             Layout.topMargin: 6
+            // Over the strip: from the rows' names to what waits at their right.
+            Layout.leftMargin: line.gutter
+            Layout.rightMargin: trailingSlot.visible ? trailingSlot.width + Theme.gap : 0
             Layout.preferredHeight: 22
             readonly property real share: line.total > 0 && line.playT >= 0 ? Math.max(0, Math.min(1, line.playT / line.total)) : 0
             readonly property bool framed: line.total > 0 && line.pps > line.fitScale + 1e-6
@@ -721,324 +1169,215 @@ Rectangle {
             }
         }
 
-        // The strip: a ruler in each entry's own time over the frames.
-        Item {
-            id: track
+        // The rows, a track each, and what waits at their right.
+        RowLayout {
             Layout.fillWidth: true
             Layout.topMargin: 6
-            Layout.preferredHeight: ruler.height + strips.height
-            clip: true
+            spacing: Theme.gap
 
-            Item {
-                id: ruler
-                width: parent.width
-                height: 18
-                // By place too: panning makes the ticks afresh every frame.
-                Repeater {
-                    model: line.ticks.length
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
+                spacing: 4
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 0
+
+                    // The main track's name, once there are more rows.
                     Item {
-                        required property int index
-                        readonly property var modelData: line.ticks[index] || { x: 0, label: "" }
-                        x: modelData.x
-                        height: ruler.height
-                        Rectangle {
-                            y: ruler.height - height
-                            width: 1
-                            height: 5
-                            color: Theme.faint
-                        }
-                        Text {
-                            x: 3
-                            y: 0
-                            text: parent.modelData.label
-                            font.pixelSize: 10
-                            font.features: { "tnum": 1 }
-                            color: Theme.faint
+                        visible: line.gutter > 0
+                        Layout.preferredWidth: line.gutter
+                        Layout.preferredHeight: track.height
+                        Column {
+                            y: ruler.height + 2
+                            width: parent.width - 8
+                            spacing: 1
+                            Text {
+                                width: parent.width
+                                text: line.tracks.length && line.tracks[0].name ? line.tracks[0].name : "画面 1"
+                                font.pixelSize: Theme.sizeSm
+                                font.weight: Font.DemiBold
+                                color: Theme.text
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                width: parent.width
+                                text: "主轨"
+                                font.pixelSize: Theme.sizeXs
+                                color: Theme.muted
+                            }
                         }
                     }
-                }
-            }
 
-            Item {
-                id: strips
-                y: ruler.height
-                width: parent.width
-                height: tempoHeight + filmHeight + 1 + waveHeight
-                readonly property int tempoHeight: 18
-                readonly property int filmHeight: 64
-                readonly property int waveHeight: 42
-                // By place, not by clip: the clips are made afresh whenever the
-                // Set or the entry on the screen changes (every cut), and a
-                // model of them would build every strip anew each time.
-                Repeater {
-                    model: line.clips.length
+                    // The strip: a ruler in each entry's own time over the frames.
                     Item {
-                        id: piece
-                        required property int index
-                        readonly property var modelData: line.clips[index]
-                                                         || { entry: { id: "", path: "", title: "", duration: 0, video: false }, n: 0, start: 0, length: 0 }
-                        readonly property var entry: modelData.entry
-                        readonly property real cx: (modelData.start - line.viewLeft) * line.pps
-                        readonly property real cw: modelData.length * line.pps
-                        readonly property bool playing: entry.id === line.playingId
-                        x: Math.max(0, cx)
-                        width: Math.max(0, Math.min(cx + cw, strips.width) - x)
-                        height: strips.height
-                        visible: width > 0
+                        id: track
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: ruler.height + strips.height
+                        clip: true
 
-                        Rectangle {
-                            anchors.fill: parent
-                            color: Theme.inset
-                        }
-                        // The entry's tempo, a block a section; its label stays
-                        // in view while any of the block is.
                         Item {
-                            id: tempoLane
+                            id: ruler
                             width: parent.width
-                            height: strips.tempoHeight
+                            height: 18
+                            // By place too: panning makes the ticks afresh every frame.
                             Repeater {
-                                model: wave.tempo
+                                model: line.ticks.length
                                 Item {
-                                    required property var modelData
-                                    readonly property bool beat: modelData.bpm !== null && modelData.bpm !== undefined
-                                    x: (modelData.start - wave.from) * line.pps
-                                    width: (modelData.end - modelData.start) * line.pps
-                                    height: tempoLane.height
-                                    visible: x + width > 0 && x < tempoLane.width
+                                    required property int index
+                                    readonly property var modelData: line.ticks[index] || { x: 0, label: "" }
+                                    x: modelData.x
+                                    height: ruler.height
                                     Rectangle {
-                                        anchors.fill: parent
-                                        anchors.topMargin: 2
-                                        anchors.bottomMargin: 2
-                                        anchors.leftMargin: 1
-                                        anchors.rightMargin: 1
-                                        radius: 3
-                                        color: line.tempoColor(parent.modelData.bpm)
-                                        // A tempo its beats hardly fit is told with less ink.
-                                        opacity: !parent.beat || parent.modelData.confidence >= 0.15 ? 1 : 0.6
+                                        y: ruler.height - height
+                                        width: 1
+                                        height: 5
+                                        color: Theme.faint
                                     }
                                     Text {
-                                        id: bpmLabel
-                                        readonly property string full: parent.beat ? Math.round(parent.modelData.bpm) + " BPM" : "无拍"
-                                        readonly property string brief: parent.beat ? "" + Math.round(parent.modelData.bpm) : ""
-                                        text: parent.width >= fullMetrics.width + 12 ? full : parent.width >= briefMetrics.width + 8 ? brief : ""
-                                        x: Math.max(5, Math.min(-parent.x + 5, parent.width - implicitWidth - 5))
-                                        anchors.verticalCenter: parent.verticalCenter
+                                        x: 3
+                                        y: 0
+                                        text: parent.modelData.label
                                         font.pixelSize: 10
-                                        font.weight: Font.DemiBold
                                         font.features: { "tnum": 1 }
-                                        color: parent.beat ? Theme.text : Theme.faint
-                                        TextMetrics { id: fullMetrics; font: bpmLabel.font; text: bpmLabel.full }
-                                        TextMetrics { id: briefMetrics; font: bpmLabel.font; text: bpmLabel.brief }
+                                        color: Theme.faint
                                     }
                                 }
                             }
-                            Text {
-                                visible: wave.findingTempo && wave.tempo.length === 0 && piece.width > 120
-                                x: Math.max(6, -piece.cx + 6)
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: wave.analysing ? "" : "分析速度…"
-                                font.pixelSize: 10
-                                color: Theme.faint
-                            }
                         }
-                        FilmStrip {
-                            y: strips.tempoHeight
+
+                        Item {
+                            id: strips
+                            y: ruler.height
                             width: parent.width
-                            height: strips.filmHeight
-                            // Upright strips of each frame's middle: enough to
-                            // know the picture, and many more of them.
-                            cellAspect: 0.5
-                            visible: piece.entry.video
-                            source: visible ? piece.entry.path : ""
-                            duration: piece.entry.duration
-                            from: (piece.x - piece.cx) / line.pps
-                            pxPerSec: line.pps
-                            gap: Theme.inset
-                        }
-                        WaveStrip {
-                            id: wave
-                            y: strips.tempoHeight + strips.filmHeight + 1
-                            width: parent.width
-                            height: strips.waveHeight
-                            // A silent entry has no waveform and no tempo to find.
-                            source: piece.entry.silent ? "" : piece.entry.path
-                            from: (piece.x - piece.cx) / line.pps
-                            pxPerSec: line.pps
-                            background: Theme.inset
-                            // What has played of the entry on the screen, dimmed as in KDJ.
-                            Rectangle {
-                                visible: piece.playing
-                                width: Math.max(0, Math.min(parent.width, (line.position - wave.from) * line.pps))
-                                height: parent.height
-                                color: Theme.dark ? "#8c000000" : "#7dffffff"
-                            }
-                            Rectangle {
-                                visible: !wave.ready
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: parent.width
-                                height: 1
-                                color: Theme.line
-                            }
-                            Text {
-                                visible: wave.analysing && piece.width > 120
-                                anchors.centerIn: parent
-                                text: "分析波形…"
-                                font.pixelSize: 11
-                                color: Theme.faint
-                            }
-                            Text {
-                                visible: !!piece.entry.silent && piece.width > 80
-                                x: Math.max(6, -piece.cx + 6)
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "无声音"
-                                font.pixelSize: 11
-                                color: Theme.faint
+                            height: tempoHeight + filmHeight + 1 + waveHeight
+                            readonly property int tempoHeight: 18
+                            readonly property int filmHeight: 64
+                            readonly property int waveHeight: 42
+                            // By place, not by clip: the clips are made afresh whenever the
+                            // Set or the entry on the screen changes (every cut), and a
+                            // model of them would build every strip anew each time.
+                            Repeater {
+                                model: line.clips.length
+                                Piece {
+                                    required property int index
+                                    view: line
+                                    clip: line.clips[index]
+                                    stripWidth: strips.width
+                                    tempoHeight: strips.tempoHeight
+                                    filmHeight: strips.filmHeight
+                                    waveHeight: strips.waveHeight
+                                    playingId: line.playingId
+                                    position: line.position
+                                    dimOff: !line.manual
+                                    dimSilent: !line.manual
+                                    numbered: line.clips.length > 1
+                                }
                             }
                         }
-                        // Between the picture and the sound: the panel's tone.
+
+                        // Where the pointer is, the mark and the playhead.
                         Rectangle {
-                            y: strips.tempoHeight + strips.filmHeight
-                            width: parent.width
-                            height: 1
-                            color: Theme.raised
+                            visible: hover.containsMouse && !hover.pressed
+                            x: hover.mouseX
+                            width: 1
+                            height: track.height
+                            color: "#80ffffff"
                         }
-                        // Where the tempo changes, down through the frames and the sound.
-                        Repeater {
-                            model: wave.tempo.slice(1)
+                        Item {
+                            visible: line.markT >= line.viewLeft && line.markT <= line.viewLeft + line.span
+                            x: (line.markT - line.viewLeft) * line.pps
+                            height: track.height
                             Rectangle {
-                                required property var modelData
-                                x: (modelData.start - wave.from) * line.pps - 1.5
-                                visible: x > 0 && x < piece.width
-                                y: strips.tempoHeight
+                                x: -1.5
+                                y: ruler.height
                                 width: 3
-                                height: piece.height - y
-                                color: "#59000000"
+                                height: strips.height
+                                color: "#99000000"
                                 Rectangle {
                                     x: 1
                                     width: 1
                                     height: parent.height
-                                    color: "#d9ffffff"
+                                    color: "white"
                                 }
                             }
-                        }
-                        // Entries following does not watch are dimmed.
-                        Rectangle {
-                            anchors.fill: parent
-                            visible: !line.manual && (piece.entry.enabled === false || !!piece.entry.silent)
-                            color: Theme.raised
-                            opacity: 0.6
-                        }
-                        // Where one entry ends and the next begins: a step of the panel's tone.
-                        Rectangle {
-                            visible: piece.cx >= 0 && piece.modelData.start > 0
-                            width: 3
-                            height: parent.height
-                            color: Theme.raised
-                        }
-                        Rectangle {
-                            x: 6
-                            y: strips.tempoHeight + 5
-                            width: Math.min(name.implicitWidth + 12, piece.width - 12)
-                            height: 18
-                            radius: 4
-                            visible: width > 24
-                            color: "#99000000"
-                            Text {
-                                id: name
-                                anchors.fill: parent
-                                anchors.leftMargin: 6
-                                anchors.rightMargin: 6
-                                verticalAlignment: Text.AlignVCenter
-                                text: (line.clips.length > 1 ? piece.modelData.n + "  " : "") + piece.entry.title
-                                font.pixelSize: 11
-                                font.weight: piece.playing ? Font.DemiBold : Font.Normal
-                                color: "white"
-                                elide: Text.ElideRight
+                            Rectangle {
+                                x: -5
+                                y: ruler.height - 9
+                                width: 10
+                                height: 10
+                                rotation: 45
+                                color: Theme.muted
                             }
                         }
+                        Item {
+                            visible: line.playT >= line.viewLeft && line.playT <= line.viewLeft + line.span
+                            x: (line.playT - line.viewLeft) * line.pps
+                            height: track.height
+                            Rectangle {
+                                x: -2
+                                y: ruler.height
+                                width: 4
+                                height: strips.height
+                                radius: 1
+                                color: "#99000000"
+                                Rectangle {
+                                    x: 1
+                                    width: 2
+                                    height: parent.height
+                                    color: line.parked ? Theme.muted : Theme.text
+                                }
+                            }
+                            Rectangle {
+                                x: -6
+                                y: 2
+                                width: 12
+                                height: ruler.height - 2
+                                radius: 3
+                                color: line.parked ? Theme.muted : Theme.text
+                            }
+                        }
+
+                        // Press or drag: the cursor, never the picture; 跳至光标处 or Enter plays from it.
+                        MouseArea {
+                            id: hover
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            preventStealing: true
+                            onPressed: mouse => line.setMark(mouse.x)
+                            onPositionChanged: mouse => {
+                                if (pressed)
+                                    line.setMark(Math.max(0, Math.min(width, mouse.x)))
+                            }
+                            onWheel: wheel => line.scroll(wheel, wheel.x)
+                        }
+                        // Trackpad pinch.
+                        PinchHandler {
+                            target: null
+                            onScaleChanged: delta => line.zoomAt(centroid.position.x, delta)
+                        }
+                    }
+                }
+
+                Repeater {
+                    model: line.auxRows.length
+                    AuxRow {
+                        required property int index
+                        Layout.fillWidth: true
+                        view: line
+                        row: line.auxRows[index] || line.noRow
                     }
                 }
             }
 
-            // Where the pointer is, the mark and the playhead.
-            Rectangle {
-                visible: hover.containsMouse && !hover.pressed
-                x: hover.mouseX
-                width: 1
-                height: track.height
-                color: "#80ffffff"
-            }
+            // The audio-alignment strip, or whatever the host puts here.
             Item {
-                visible: line.markT >= line.viewLeft && line.markT <= line.viewLeft + line.span
-                x: (line.markT - line.viewLeft) * line.pps
-                height: track.height
-                Rectangle {
-                    x: -1.5
-                    y: ruler.height
-                    width: 3
-                    height: strips.height
-                    color: "#99000000"
-                    Rectangle {
-                        x: 1
-                        width: 1
-                        height: parent.height
-                        color: "white"
-                    }
-                }
-                Rectangle {
-                    x: -5
-                    y: ruler.height - 9
-                    width: 10
-                    height: 10
-                    rotation: 45
-                    color: Theme.muted
-                }
-            }
-            Item {
-                visible: line.playT >= line.viewLeft && line.playT <= line.viewLeft + line.span
-                x: (line.playT - line.viewLeft) * line.pps
-                height: track.height
-                Rectangle {
-                    x: -2
-                    y: ruler.height
-                    width: 4
-                    height: strips.height
-                    radius: 1
-                    color: "#99000000"
-                    Rectangle {
-                        x: 1
-                        width: 2
-                        height: parent.height
-                        color: line.parked ? Theme.muted : Theme.text
-                    }
-                }
-                Rectangle {
-                    x: -6
-                    y: 2
-                    width: 12
-                    height: ruler.height - 2
-                    radius: 3
-                    color: line.parked ? Theme.muted : Theme.text
-                }
-            }
-
-            // Press or drag: the cursor, never the picture; 跳至光标处 or Enter plays from it.
-            MouseArea {
-                id: hover
-                anchors.fill: parent
-                hoverEnabled: true
-                preventStealing: true
-                onPressed: mouse => line.setMark(mouse.x)
-                onPositionChanged: mouse => {
-                    if (pressed)
-                        line.setMark(Math.max(0, Math.min(width, mouse.x)))
-                }
-                onWheel: wheel => line.scroll(wheel, wheel.x)
-            }
-            // Trackpad pinch.
-            PinchHandler {
-                target: null
-                onScaleChanged: delta => line.zoomAt(centroid.position.x, delta)
+                id: trailingSlot
+                visible: children.length > 0
+                Layout.alignment: Qt.AlignTop
+                implicitWidth: childrenRect.width
+                implicitHeight: childrenRect.height
             }
         }
     }

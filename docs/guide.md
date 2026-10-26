@@ -85,6 +85,35 @@ on one low-priority thread and kept up to 48 MB. At the end of an entry the next
 one that is on follows. Seeks aim ahead by what passes while the decoder gets
 there, and a paused seek lands on the exact frame.
 
+The strip has a row a track. The main track (画面 1) is the row described
+above; under it each aux track that has entries (画面 2, 3, 4) has a lower row
+of the same kind: the tempo blocks with their BPM, the frames, the waveform,
+its entries end to end. An aux track plays on its own clock, beside the main
+one: at its left are its name, where it is, its play key, its loop key
+(循环播放, or 播完即停 on its last frame, kept per track) and a menu with its
+speed (a percent at a time, 原速) and **跟随主轨速度**, which plays it at its
+own speed times the main track's, so it keeps pace when the main track's tempo
+changes. A press or drag on an aux row moves that track's picture there at
+once, playing or paused as it was (the main row only sets the cursor, as
+before). All rows share one view: zooming or scrolling over any of them moves
+them all, and the whole bar above spans the longest row. Aux tracks are never
+followed unless chosen for it (below), and never identified otherwise.
+
+At the right end of the rows sits **音频对位** pressed into a strip as tall as
+the main row: what following does (未监听, 监听中 or 跟随中, and the title), the
+input's level, the ear (开始监听 / 停止监听), **跟随** (开始跟随; 暂停 while it
+leads), the crosshair (跳至此处), the input, which track is followed, and the
+two helpers as small keys, **对速** with its swinging dot and **跳转** with its
+ring and a line to the jump threshold; a press pauses or resumes one, and the
+pointer over one tells how it is doing. ⋯ opens the rest: the channels,
+现场模式, 画面偏移, both helpers in full with the threshold, the Bluetooth DJs
+and the last error (a dot on ⋯ says a DJ asks to pair). Following works on one
+track at a time, the main one by default; only tracks with an entry that has
+sound are offered (a camera, a stream or a track of silent entries is not),
+and the choice is fixed while listening. While following runs, its small
+picture stands at the strip's left, in the panel's tone until it has found the
+music; stopped, it is gone and the rows take the room.
+
 With **快捷键** on (it is by default), ← / → or A / D
 nudge the picture back or ahead without a jump, as a pitch bend does: while
 held, the picture plays at 0.7 or 1.5 of its speed, and let go it is back at
@@ -102,9 +131,9 @@ the picture by steering its speed a little, and seeks only on a jump. The
 sticker gallery runs in a row under the reactions; the effects have the column
 beside the desk.
 
-**音频对位** on the right takes the picture from the player while it
+**音频对位** takes the picture from the player while it
 is on: the player's keys grey out and the timeline shows where following is.
-At its foot two helpers show their work: **对速** keeps the speed with the music
+Its two helpers show their work: **对速** keeps the speed with the music
 (its dot swings at the followed speed), **跳转监测** watches how far the music is
 from the picture against the jump threshold (2.5 s, or 2 s without a
 confirmation) and ripples in amber once it is passed or the music goes quiet.
