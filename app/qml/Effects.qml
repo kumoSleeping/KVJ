@@ -9,6 +9,10 @@ import KVJ
 Card {
     id: card
 
+    // Editing shows each row's grip to change the order, and the key that
+    // forgets kept strengths; otherwise the rows keep that room for their bars.
+    property bool editing: false
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Theme.pad
@@ -24,7 +28,7 @@ Card {
                 implicitHeight: 24
                 iconName: "info"
                 iconSize: 14
-                tip: "点名字开关（推荐强度），按住上下拖一起开关\n拖条微调，双击数字关掉\n拖 ⠿ 换顺序，上面的先作用\n"
+                tip: "点名字开关（推荐强度），按住上下拖一起开关\n拖条微调，双击数字关掉\n「编辑」里拖 ⠿ 换顺序，上面的先作用\n"
                      + "快捷键：1–9、0（小键盘也行）开关前十个；, / . 把最后操作的效果减弱 / 加强 5%\n"
                      + "用 , / . 调过再关掉，这个强度就记成它的推荐强度（名字上有小点）；「重置」恢复默认"
             }
@@ -41,7 +45,8 @@ Card {
                 implicitHeight: 26
                 flat: true
                 text: "重置"
-                visible: Live.customized
+                visible: card.editing
+                enabled: Live.customized
                 onClicked: Live.resetPresets()
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
@@ -50,6 +55,16 @@ Card {
             TextButton {
                 implicitHeight: 26
                 flat: true
+                text: card.editing ? "完成" : "编辑"
+                onClicked: card.editing = !card.editing
+                ToolTip.visible: hovered && !card.editing
+                ToolTip.delay: 600
+                ToolTip.text: "调整顺序、重置记住的强度"
+            }
+            TextButton {
+                implicitHeight: 26
+                flat: true
+                visible: !card.editing
                 text: "全部关闭"
                 enabled: Live.effectsOn
                 onClicked: Live.resetEffects()
@@ -57,12 +72,12 @@ Card {
         }
         // Each effect: its key turns it on at the strength it looks best
         // at, or off; the bar fine-tunes it (double-click the number for
-        // off). They apply top first: drag one by its grip to change the
-        // order. The list scrolls only when it must, so a bar dragged a
+        // off). They apply top first: while editing, drag one by its grip to
+        // change the order. The list scrolls only when it must, so a bar dragged a
         // little up or down is never taken for a scroll.
         ListView {
             id: effectList
-            readonly property int rowHeight: 38
+            readonly property int rowHeight: 34
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
@@ -91,11 +106,12 @@ Card {
                 }
                 RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 2
-                    anchors.rightMargin: 8
-                    spacing: 6
+                    anchors.leftMargin: card.editing ? 0 : 4
+                    anchors.rightMargin: 6
+                    spacing: 5
                     Item {
-                        implicitWidth: 18
+                        visible: card.editing
+                        implicitWidth: 16
                         implicitHeight: effectList.rowHeight
                         ColorImage {
                             anchors.centerIn: parent
@@ -132,8 +148,8 @@ Card {
                     }
                     // On at its best strength, or off.
                     Rectangle {
-                        implicitWidth: 80
-                        implicitHeight: 28
+                        implicitWidth: 76
+                        implicitHeight: 26
                         radius: Theme.radius
                         color: effect.on ? (switchTap.pressed ? Theme.body : Theme.text)
                                          : switchTap.pressed ? Theme.selected : switchTap.containsMouse ? Theme.hover : "transparent"

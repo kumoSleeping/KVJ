@@ -4,9 +4,10 @@ import QtQuick
 
 // KDJ's design tokens (src/design.css): neutral ink on quiet surfaces, dark or
 // light as the operator chooses with the key at the top right (the system's
-// until then). The window is a canvas of cards: the canvas (`bg`), the cards
-// and side bars on it (`raised`), the controls in them (`inset`). Red only for
-// what is about to cut the projected picture.
+// until then). The window is a canvas of flat cards: the canvas (`bg`), the
+// cards and what floats over them (`raised`), the controls in them (`inset`,
+// barely off the card so nothing reads as sunk in). Space, not lines, keeps
+// groups apart. Red only for what is about to cut the projected picture.
 QtObject {
     id: theme
 
@@ -31,17 +32,19 @@ QtObject {
 
     readonly property color bg: dark ? "#0b0d11" : "#f2f2f4"
     readonly property color raised: dark ? "#14171d" : "#ffffff"
-    readonly property color inset: dark ? "#1c2027" : "#f0f0f3"
+    readonly property color inset: dark ? "#1a1e25" : "#f6f6f8"
     readonly property color text: dark ? "#e4e7ec" : "#1c1c1e"
     readonly property color body: dark ? "#c3c8d0" : "#3a3a3c"
     readonly property color muted: dark ? "#8b929c" : "#6e6e73"
     readonly property color faint: dark ? "#5c636d" : "#a1a1a6"
-    readonly property color line: dark ? "#262b33" : "#e3e3e8"
-    readonly property color hover: dark ? "#20252d" : "#ebebef"
+    readonly property color line: dark ? "#262b33" : "#e6e6ea"
+    readonly property color hover: dark ? "#20252d" : "#efeff2"
     // A chosen row: a touch deeper than hover.
-    readonly property color selected: dark ? "#262c35" : "#e6e6eb"
+    readonly property color selected: dark ? "#262c35" : "#e8e8ed"
     readonly property color warn: "#f59e0b"
     readonly property color danger: "#e5484d"
+    // Under what floats over the canvas (the Sets drawer, popups).
+    readonly property color shadow: dark ? "#8c000000" : "#24000000"
 
     readonly property int size: 14
     readonly property int sizeSm: 13
@@ -49,8 +52,11 @@ QtObject {
     readonly property int sizeLg: 15
     readonly property int row: 34
     readonly property int control: 30
-    readonly property int radius: 6
-    readonly property int radiusLg: 8
+    readonly property int radius: 7
+    readonly property int radiusLg: 12
     readonly property int gap: 12
     readonly property int pad: 14
+    // Motion: a press or hover answers at once, a panel moves in a breath.
+    readonly property int quick: 160
+    readonly property int calm: 360
 }
