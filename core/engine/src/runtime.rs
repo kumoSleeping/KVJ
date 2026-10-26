@@ -273,6 +273,7 @@ pub fn run(
     cancel: Arc<AtomicBool>,
     prepare_only: bool,
     input: super::audio_input::Selection,
+    track: u8,
 ) {
     let _background = super::qos::prefer_background();
     // A panic (a decoder library on a damaged file) fails the session, which
@@ -294,7 +295,7 @@ pub fn run(
             publish(&engine, &session, |v| v.phase = "prepared".into());
             return Ok(());
         }
-        run_inner(&engine, &session, &ready, &cancel, &input)
+        run_inner(&engine, &session, &ready, &cancel, &input, track)
     }))
     .unwrap_or_else(|_| Err(anyhow::anyhow!("引擎内部错误，请重新开始")));
     if cancel.load(Ordering::Relaxed) {
@@ -315,7 +316,7 @@ pub fn run(
         });
     }
 }
-fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &AtomicBool, input: &super::audio_input::Selection) -> Result<()> {
+fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &AtomicBool, input: &super::audio_input::Selection, track: u8) -> Result<()> {
     {
         if set.recordings.is_empty() {
             bail!("Set 没有素材")
@@ -505,7 +506,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                 set.recordings
                     .iter()
                     .enumerate()
-                    .map(|(i, r)| !off.contains(&r.entry.id) && !unavailable[i] && !unreadable[i])
+                    .map(|(i, r)| followed(&r.entry, &off, track) && !unavailable[i] && !unreadable[i])
                     .collect()
             };
             if current.is_some_and(|c| !on[c.recording]) {
@@ -933,5 +934,33 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
             }
         }
         Ok(())
+    }
+}
+/// Whether following looks for an entry: turned on and on the followed track.
+/// The other tracks' entries stay in the index; they are never matched.
+fn followed(entry: &super::Entry, off: &std::collections::HashSet<String>, track: u8) -> bool {
+    entry.track == track && !off.contains(&entry.id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_followed_tracks_entries_on_are_followed() {
+        let set: Set = serde_json::from_value(serde_json::json!({
+            "id": "s", "name": "Set 1",
+            "entries": [
+                {"id": "a", "path": "/a.mp4", "title": "a", "duration": 60.0, "video": true, "presentation": "video"},
+                {"id": "b", "path": "/b.mp4", "title": "b", "duration": 60.0, "video": true, "presentation": "video", "track": 1},
+                {"id": "c", "path": "/c.mp4", "title": "c", "duration": 60.0, "video": true, "presentation": "video", "track": 1},
+            ]
+        }))
+        .unwrap();
+        let off: std::collections::HashSet<String> = ["c".to_string()].into();
+        let mask = |track| set.entries.iter().map(|e| followed(e, &off, track)).collect::<Vec<_>>();
+        assert_eq!(mask(0), [true, false, false]);
+        assert_eq!(mask(1), [false, true, false]);
+        assert_eq!(mask(2), [false, false, false]);
     }
 }

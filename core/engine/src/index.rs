@@ -51,11 +51,12 @@ pub fn signature(path: &Path) -> Result<String> {
     ))
 }
 fn key(set: &Set) -> Result<String> {
-    // Every entry is indexed whether it is on or not, so turning one on or off
-    // keeps the index.
+    // Every entry is indexed whether it is on or not, and whatever track it is
+    // on, so turning one on or off or moving it to another track keeps the index.
     let mut indexed = set.clone();
     for e in &mut indexed.entries {
         e.enabled = true;
+        e.track = 0;
     }
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (
@@ -338,7 +339,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn turning_entries_off_keeps_the_index() {
+    fn turning_entries_off_or_moving_them_keeps_the_index() {
         let dir = std::env::temp_dir().join(format!("kvj-index-key-{}", super::super::document::id()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("a.mp4");
@@ -350,6 +351,8 @@ mod tests {
         .unwrap();
         let on = key(&set).unwrap();
         set.entries[0].enabled = false;
+        assert_eq!(key(&set).unwrap(), on);
+        set.entries[0].track = 2;
         assert_eq!(key(&set).unwrap(), on);
         let disk = disk_key(&set).unwrap();
         set.entries[0].title = "renamed".into();

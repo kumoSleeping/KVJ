@@ -29,7 +29,14 @@ unsafe impl Sync for Callback {}
 enum Request {
     Document,
     Edit { revision: u64, edit: Edit },
-    Import { set_id: String, revision: u64, paths: Vec<String> },
+    Import {
+        set_id: String,
+        revision: u64,
+        paths: Vec<String>,
+        /// The track the new entries go on.
+        #[serde(default)]
+        track: u8,
+    },
     Enable { set_id: String, entry_ids: Vec<String>, on: bool },
     Devices,
     Start {
@@ -42,6 +49,9 @@ enum Request {
         prepare_only: bool,
         #[serde(default)]
         room: bool,
+        /// The track followed: only its entries are matched.
+        #[serde(default)]
+        track: u8,
     },
     Stop,
     Status { after_log_id: Option<u64> },
@@ -77,11 +87,13 @@ impl KvjEngine {
         Ok(match request {
             Request::Document => json!(e.document()?),
             Request::Edit { revision, edit } => json!(e.edit(revision, edit)?),
-            Request::Import { set_id, revision, paths } => json!(e.import(&set_id, revision, &paths)?),
+            Request::Import { set_id, revision, paths, track } => {
+                json!(e.import(&set_id, revision, &paths, track)?)
+            }
             Request::Enable { set_id, entry_ids, on } => json!(e.enable(&set_id, &entry_ids, on)?),
             Request::Devices => json!(e.devices()?),
-            Request::Start { set_id, device, channel_start, prepare_only, room } => {
-                json!(e.start(&set_id, Selection { device, channel_start, room }, prepare_only)?)
+            Request::Start { set_id, device, channel_start, prepare_only, room, track } => {
+                json!(e.start(&set_id, Selection { device, channel_start, room }, prepare_only, track)?)
             }
             Request::Stop => json!(e.stop()),
             Request::Status { after_log_id } => json!(e.status(after_log_id)),

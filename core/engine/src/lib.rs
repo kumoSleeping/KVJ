@@ -82,6 +82,8 @@ pub struct View {
     pub revision: u64,
     pub clock_ms: f64,
     pub set_id: String,
+    /// The track followed (0 the main one): only its entries are matched.
+    pub track: u8,
     pub phase: String,
     pub error: String,
     pub indexed: usize,
@@ -249,8 +251,9 @@ impl Engine {
         }
         Ok(document)
     }
-    /// Files and folders (searched recursively) become entries of one Set.
-    pub fn import(&self, set_id: &str, revision: u64, paths: &[String]) -> Result<Document> {
+    /// Files and folders (searched recursively) become entries of one Set, on `track`.
+    pub fn import(&self, set_id: &str, revision: u64, paths: &[String], track: u8) -> Result<Document> {
+        anyhow::ensure!(track <= document::LAST_TRACK, "轨道不存在");
         let _gate = self.gate.lock().unwrap();
         if self.running() {
             bail!("请先停止跟随再导入素材");
@@ -286,6 +289,7 @@ impl Engine {
                 let video = extension(path).is_some_and(|e| VIDEO.contains(&e.as_str()));
                 let mut entry = Entry::new(path, video, 0., duration)?;
                 entry.silent = !probe.audio;
+                entry.track = track;
                 Ok(entry)
             })
             .collect::<Result<Vec<_>>>()?;
@@ -322,8 +326,10 @@ impl Engine {
             let _ = s.worker.join();
         }
     }
-    /// Index the Set (reusing caches) and, unless `prepare_only`, start listening.
-    pub fn start(self: &Arc<Self>, set_id: &str, input: Selection, prepare_only: bool) -> Result<View> {
+    /// Index the Set (reusing caches) and, unless `prepare_only`, start listening
+    /// for the entries on `track`.
+    pub fn start(self: &Arc<Self>, set_id: &str, input: Selection, prepare_only: bool, track: u8) -> Result<View> {
+        anyhow::ensure!(track <= document::LAST_TRACK, "轨道不存在");
         // Bluetooth is an explicit, mutually exclusive source with nothing to open yet.
         if !prepare_only && input.device != "bluetooth" {
             input.validate()?;
@@ -343,6 +349,12 @@ impl Engine {
         })?;
         anyhow::ensure!(!set.entries.is_empty(), "Set 没有素材");
         anyhow::ensure!(set.entries.iter().any(|e| !e.silent), "Set 里的素材都没有声音，无从跟随");
+        // Every entry is indexed, but only the followed track's are listened for.
+        anyhow::ensure!(
+            set.entries.iter().any(|e| e.track == track && !e.silent),
+            "{}上的素材都没有声音，无从跟随",
+            track_name(track)
+        );
         *self.off.lock().unwrap() = set
             .entries
             .iter()
@@ -364,6 +376,7 @@ impl Engine {
             input_device: input.device.clone(),
             input_channel_start: input.channel_start,
             set_id: set_id.into(),
+            track,
             phase: "indexing".into(),
             total: set.entries.len(),
             ..Default::default()
@@ -375,10 +388,12 @@ impl Engine {
             Level::Info,
             Stage::Session,
             format!(
-                "会话开始 · {} · {} 个素材 · {} 个启用",
+                "会话开始 · {} · {} 个素材 · 跟随{}（{} 个，{} 个启用）",
                 set.name,
                 set.entries.len(),
-                set.entries.iter().filter(|e| e.enabled).count()
+                track_name(track),
+                set.entries.iter().filter(|e| e.track == track).count(),
+                set.entries.iter().filter(|e| e.track == track && e.enabled).count()
             ),
         );
         let cancel = Arc::new(AtomicBool::new(false));
@@ -388,7 +403,7 @@ impl Engine {
             let cache = self.data_dir.join("cache").join("live");
             std::thread::Builder::new()
                 .name("kvj-follow".into())
-                .spawn(move || runtime::run(&engine, session, set, cache, cancel, prepare_only, input))?
+                .spawn(move || runtime::run(&engine, session, set, cache, cancel, prepare_only, input, track))?
         };
         *self.session.lock().unwrap() = Some(Session { cancel, worker });
         Ok(view)
@@ -437,6 +452,14 @@ impl Engine {
             let _ = s.worker.join();
         }
         self.connections.shutdown();
+    }
+}
+/// What the app calls a track: the main one, then 画面 2..4.
+fn track_name(track: u8) -> String {
+    if track == 0 {
+        "主轨".into()
+    } else {
+        format!("画面 {}", track + 1)
     }
 }
 fn extension(path: &Path) -> Option<String> {
