@@ -1,15 +1,16 @@
 #include "VideoSurface.h"
 
 #include "FrameNode.h"
-#include "PreviewSurface.h"
 #include "VideoPlayer.h"
 #include "kvj.h"
 
+#include <QDebug>
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
 #include <QThreadPool>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <utility>
 
@@ -28,10 +29,13 @@ void retire(std::unique_ptr<VideoPlayer> player)
     if (player)
         QThreadPool::globalInstance()->start([gone = player.release()] { delete gone; });
 }
+
+// A dissolve was cut for the decoder budget and not logged since.
+std::atomic<bool> g_budgetTold{false};
 } // namespace
 
 VideoSurface::VideoSurface(QQuickItem *parent)
-    : QQuickItem(parent)
+    : PictureSource(parent)
 {
     setFlag(ItemHasContents, true);
     m_timer.setSingleShot(true);
@@ -46,55 +50,27 @@ VideoSurface::VideoSurface(QQuickItem *parent)
 
 VideoSurface::~VideoSurface()
 {
-    const QList<PreviewSurface *> previews = std::exchange(m_previews, {});
-    for (PreviewSurface *preview : previews)
-        preview->setSource(nullptr);
     retire(std::move(m_player));
     retire(std::move(m_outgoing));
 }
 
-void VideoSurface::attachPreview(PreviewSurface *preview)
-{
-    if (!m_previews.contains(preview))
-        m_previews.append(preview);
-}
-
-void VideoSurface::detachPreview(PreviewSurface *preview)
-{
-    m_previews.removeAll(preview);
-}
-
-// A reduced copy for each preview that is due one. Sampled down to twice the
-// size and halved smoothly: a soft picture for a fraction of a millisecond. The
-// first frame after a jump goes to every preview, so each dissolves with it,
-// and the old picture's frames keep the dissolving one moving there too.
-void VideoSurface::feedPreviews(const QImage &image, Layer layer)
-{
-    if (m_previews.isEmpty() || image.isNull())
-        return;
-    const double now = kvj_clock_ms();
-    const bool jump = layer == Layer::Jump;
-    QImage small;
-    for (PreviewSurface *preview : std::as_const(m_previews)) {
-        if (layer == Layer::Previous ? !preview->wantsPrevious(now) : !preview->wantsFrame(now, jump))
-            continue;
-        const int height = preview->frameHeight();
-        if (small.isNull() || small.height() != height) {
-            const QImage sampled = image.height() > height * 2
-                ? image.scaledToHeight(height * 2, Qt::FastTransformation)
-                : image;
-            small = sampled.scaledToHeight(height, Qt::SmoothTransformation);
-        }
-        if (layer == Layer::Previous)
-            preview->setPreviousFrame(small, now);
-        else
-            preview->setFrame(small, now, jump ? m_fadeMs : 0);
-    }
-}
-
 bool VideoSurface::fadeable() const
 {
-    return m_fadeMs > 0 && m_hasFrame && m_player && m_lastTickAt >= 0;
+    return m_fadeMs > 0 && hasFrame() && m_player && m_lastTickAt >= 0;
+}
+
+// Room for the second decoder a dissolve keeps. Players still stopping count:
+// their threads are still there.
+bool VideoSurface::withinBudget()
+{
+    const int live = VideoPlayer::live();
+    if (live < VideoPlayer::kBudget) {
+        g_budgetTold = false;
+        return true;
+    }
+    if (!g_budgetTold.exchange(true))
+        qInfo().noquote() << QStringLiteral("picture: %1 decoders open, a jump cuts instead of dissolving").arg(live);
+    return false;
 }
 
 // A jump that dissolves: the player that drew the picture so far plays on
@@ -139,7 +115,7 @@ void VideoSurface::tickOutgoing(double nowMs, int *wait)
             m_outNew = true;
             // Still the picture until the new player has its first frame.
             m_outShown = m_outHolding;
-            feedPreviews(m_outPending, m_outHolding ? Layer::Shown : Layer::Previous);
+            feedPreviews(m_outPending, m_outHolding ? Layer::Shown : Layer::Previous, m_fadeMs);
             update();
         }
     }
@@ -178,7 +154,9 @@ void VideoSurface::restart()
     m_timer.stop();
     // The old picture stays up until the new player has a frame for the target;
     // with a dissolve it plays on meanwhile.
-    if (!m_source.isEmpty() && fadeable())
+    const bool dissolve = !m_source.isEmpty() && fadeable();
+    const bool cut = dissolve && !withinBudget();
+    if (dissolve && !cut)
         keepPlaying(kvj_clock_ms());
     else
         dropOutgoing();
@@ -186,25 +164,18 @@ void VideoSurface::restart()
     m_lastPts = -1;
     m_lastTickAt = -1;
     // Another file is a jump too: its first frame dissolves from the old one.
-    m_jumped = m_hasFrame;
+    m_jumped = hasFrame() && !cut;
     if (m_source.isEmpty()) {
         m_clear = true;
         m_newFrame = false;
         m_pending = QImage();
-        if (m_hasFrame) {
-            m_hasFrame = false;
-            emit hasFrameChanged();
-        }
-        for (PreviewSurface *preview : std::as_const(m_previews))
-            preview->clearFrame();
+        setHasFrame(false);
+        clearPreviews();
         update();
     } else {
         m_timer.start(0);
     }
-    if (!m_error.isEmpty()) {
-        m_error.clear();
-        emit errorChanged();
-    }
+    setError(QString());
 }
 
 void VideoSurface::tick()
@@ -215,8 +186,13 @@ void VideoSurface::tick()
     const double target = m_position + (now - m_clockAtMs + m_offsetMs) / 1000.0 * m_rate;
     if (m_lastTickAt >= 0 && std::abs(target - (m_lastTarget + (now - m_lastTickAt) / 1000.0 * m_rate)) > kJump) {
         m_jumped = true;
-        if (fadeable() && keepPlaying(now))
+        if (fadeable() && !withinBudget()) {
+            // No room for a second decoder: the jump cuts.
+            dropOutgoing();
+            m_jumped = false;
+        } else if (fadeable() && keepPlaying(now)) {
             m_player = std::make_unique<VideoPlayer>(m_source, m_options);
+        }
     }
     m_lastTarget = target;
     m_lastTickAt = now;
@@ -238,11 +214,8 @@ void VideoSurface::tick()
                 m_outHolding = false;
                 m_fadeFrom = now;
             }
-            feedPreviews(m_pending, m_fadeNext ? Layer::Jump : Layer::Shown);
-            if (!m_hasFrame) {
-                m_hasFrame = true;
-                emit hasFrameChanged();
-            }
+            feedPreviews(m_pending, m_fadeNext ? Layer::Jump : Layer::Shown, m_fadeMs);
+            setHasFrame(true);
             update();
         }
     }
@@ -252,11 +225,7 @@ void VideoSurface::tick()
         m_sourceFps = m_player->sourceFps();
         emit sourceInfoChanged();
     }
-    const QString error = m_player->error();
-    if (error != m_error) {
-        m_error = error;
-        emit errorChanged();
-    }
+    setError(m_player->error());
     // Sleep until the next decoded frame is due (in wall time), polling briefly
     // while the decoder catches up.
     const double ahead = m_player->untilNext(target);

@@ -1,11 +1,12 @@
 #pragma once
 
-// A small, cheap copy of a VideoSurface's picture for the operator's window.
-// It decodes nothing: the projected surface hands it a reduced copy of a frame
-// it already has, at most `fps` times a second and only while the preview is on
-// screen, so the preview costs a few small uploads a second.
+// A small, cheap copy of a picture source's picture (a VideoSurface, a
+// CameraSurface) for the operator's window. It decodes nothing: the source
+// hands it a reduced copy of a frame it already has, at most `fps` times a
+// second and only while the preview is on screen, so the preview costs a few
+// small uploads a second.
 
-#include "VideoSurface.h"
+#include "PictureSource.h"
 
 #include <QImage>
 #include <QPointer>
@@ -15,7 +16,7 @@ class PreviewSurface : public QQuickItem
 {
     Q_OBJECT
     QML_ELEMENT
-    Q_PROPERTY(VideoSurface *source READ source WRITE setSource NOTIFY sourceChanged)
+    Q_PROPERTY(PictureSource *source READ source WRITE setSource NOTIFY sourceChanged)
     Q_PROPERTY(int fps MEMBER m_fps NOTIFY fpsChanged)
     Q_PROPERTY(bool hasFrame READ hasFrame NOTIFY hasFrameChanged)
 
@@ -23,9 +24,11 @@ public:
     explicit PreviewSurface(QQuickItem *parent = nullptr);
     ~PreviewSurface() override;
 
-    VideoSurface *source() const { return m_source; }
-    void setSource(VideoSurface *source);
+    PictureSource *source() const { return m_source; }
+    void setSource(PictureSource *source);
     bool hasFrame() const { return m_hasFrame; }
+    int fps() const { return m_fps; }
+    bool onScreen() const;
 
     // Called by the source on the GUI thread. The first frame after a jump is
     // `urgent`: it is taken whenever the preview is up, and dissolves in over
@@ -47,9 +50,7 @@ protected:
     QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override;
 
 private:
-    bool onScreen() const;
-
-    QPointer<VideoSurface> m_source;
+    QPointer<PictureSource> m_source;
     int m_fps = 12;
     double m_lastAt = -1e9;
     QImage m_pending;

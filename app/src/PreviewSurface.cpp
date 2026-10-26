@@ -21,7 +21,7 @@ PreviewSurface::~PreviewSurface()
         m_source->detachPreview(this);
 }
 
-void PreviewSurface::setSource(VideoSurface *source)
+void PreviewSurface::setSource(PictureSource *source)
 {
     if (m_source == source)
         return;

@@ -3,7 +3,9 @@
 // Decodes one file ahead of a moving target time on its own thread. The picture
 // asks for the frame due at a time; the player seeks when that time jumps away
 // from what it has decoded and drops frames that are already late. Only a few
-// frames are held, and their buffers are reused.
+// frames are held, and their buffers are reused. Each player is a decoder of
+// its own; the process keeps count of them, and dissolves (which want a second
+// one) stay within `kBudget`.
 
 #include "Decoder.h"
 
@@ -20,6 +22,10 @@ public:
     ~VideoPlayer();
     VideoPlayer(const VideoPlayer &) = delete;
     VideoPlayer &operator=(const VideoPlayer &) = delete;
+
+    static constexpr int kBudget = 6;
+    // Players in the process, counting ones still stopping.
+    static int live();
 
     // The frame due at `target` seconds, if it differs from the one returned
     // last. `rate` is how fast the target moves (0 while paused): seeks aim

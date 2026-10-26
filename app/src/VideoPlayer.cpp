@@ -1,6 +1,7 @@
 #include "VideoPlayer.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 
 namespace {
@@ -11,12 +12,20 @@ constexpr double kAheadLimit = 2.0;
 // enough to keep memory small next to the DJ software.
 constexpr int kAhead = 3;
 constexpr size_t kSpare = 3;
+
+std::atomic<int> g_live{0};
 } // namespace
+
+int VideoPlayer::live()
+{
+    return g_live.load();
+}
 
 VideoPlayer::VideoPlayer(const QString &path, const DecodeOptions &options)
     : m_path(path)
     , m_options(options)
 {
+    ++g_live;
     m_thread = std::thread([this] { run(); });
 }
 
@@ -28,6 +37,7 @@ VideoPlayer::~VideoPlayer()
     }
     m_wake.notify_all();
     m_thread.join();
+    --g_live;
 }
 
 QString VideoPlayer::error() const
