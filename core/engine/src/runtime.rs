@@ -434,6 +434,9 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                     (last_notice, notices) = (Some(Instant::now()), 0);
                 }
             }
+            if let Some(report) = polled.report {
+                log(engine, session, Level::Info, Stage::Input, report);
+            }
             let feature_ms = polled.feature_ms;
             let packet = polled.observation;
             publish(engine, session, |v| v.bluetooth = polled.bluetooth);

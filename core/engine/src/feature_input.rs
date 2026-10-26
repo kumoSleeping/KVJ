@@ -31,6 +31,8 @@ pub struct Poll {
     pub epoch: u64,
     /// Capture continuity break reported by the audio backend since the last poll.
     pub notice: Option<String>,
+    /// Now and then, how the capture timeline is holding up.
+    pub report: Option<String>,
 }
 impl Input {
     pub fn start(engine: &Arc<Engine>, selection: &Selection) -> Result<Self> {
@@ -100,17 +102,18 @@ impl Input {
                 feature_ms: 0.,
                 epoch: inbox.epoch,
                 notice: None,
+                report: None,
             });
         }
         let Some((_, ring)) = &self.local else {
             bail!("没有声音输入");
         };
-        let (packet, status, notice) = {
+        let (packet, status, notice, report) = {
             let mut ring = ring.lock().unwrap();
             if let Some(error) = &ring.error {
                 bail!("{error}");
             }
-            (ring.take(), ring.status(), ring.notice.take())
+            (ring.take(), ring.status(), ring.notice.take(), ring.report())
         };
         let started = Instant::now();
         let mut observation = None;
@@ -138,6 +141,7 @@ impl Input {
             feature_ms: started.elapsed().as_secs_f64() * 1000.,
             epoch: 0,
             notice,
+            report,
         })
     }
 }

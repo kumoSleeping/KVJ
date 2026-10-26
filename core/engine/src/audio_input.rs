@@ -28,6 +28,23 @@ pub struct Ring {
     filter: Vec<f32>,
     cursor: usize,
     phase: u32,
+    stats: Stats,
+}
+/// Why the evidence window keeps restarting, for one diagnostics line now and then:
+/// a level meter moves on every packet even when no query is ever completed.
+#[derive(Default)]
+struct Stats {
+    since: Option<Instant>,
+    reported: u32,
+    packets: u64,
+    frames: u64,
+    jumps: u64,
+    overflows: u64,
+    interrupts: u64,
+    stale: u64,
+    taken: u64,
+    arrival_timed: u64,
+    latency_ms: Option<(f64, f64)>,
 }
 impl Ring {
     pub fn new(source: String, sample_rate: u32) -> Self {
@@ -47,7 +64,7 @@ impl Ring {
         Self { samples: VecDeque::with_capacity(48000), end: Instant::now(), sequence: 0, error: None, notice: None, untimed: false,
             source, sample_rate, generation: 0, received_at: Instant::now(), expected: None,
             buffered: 0, channels: vec![], rms_dbfs: None, peak_dbfs: None, gaps: 0,
-            history: vec![0.; taps + 1], filter, cursor: 0, phase: 0 }
+            history: vec![0.; taps + 1], filter, cursor: 0, phase: 0, stats: Stats::default() }
     }
     pub fn status(&self) -> InputStatus {
         let state = if self.sequence == 0 { InputState::Waiting }
@@ -60,8 +77,34 @@ impl Ring {
             packets: self.sequence, gaps: self.gaps }
     }
     pub fn take(&mut self) -> Option<(Vec<f32>, Instant, u64)> {
-        (!self.samples.is_empty() && self.end.elapsed() < Duration::from_secs(1))
-            .then(|| (self.samples.drain(..).collect(), self.end, self.generation))
+        if self.samples.is_empty() { return None; }
+        if self.end.elapsed() >= Duration::from_secs(1) { self.stats.stale += 1; return None; }
+        self.stats.taken += 1;
+        Some((self.samples.drain(..).collect(), self.end, self.generation))
+    }
+    /// One line about the capture timeline: 3 s after the first packet, then every 30 s.
+    pub fn report(&mut self) -> Option<String> {
+        let since = self.stats.since?;
+        let due = if self.stats.reported == 0 { 3 } else { 30 };
+        if since.elapsed() < Duration::from_secs(due) { return None; }
+        let s = std::mem::take(&mut self.stats);
+        self.stats = Stats { since: Some(Instant::now()), reported: s.reported + 1, ..Stats::default() };
+        let latency = s.latency_ms.map_or("—".into(), |(lo, hi)| format!("{lo:.1}–{hi:.1} ms"));
+        Some(format!(
+            "采集时间线 · {:.0} 秒内 {} 包 · 每包 {} 帧 · 延迟 {latency} · 按到达计时 {} · 跳变重来 {} · 溢出重来 {} · 驱动中断 {} · 过期未取 {} · 已取 {}",
+            since.elapsed().as_secs_f64(), s.packets, if s.packets > 0 { s.frames / s.packets } else { 0 },
+            s.arrival_timed, s.jumps, s.overflows, s.interrupts, s.stale, s.taken))
+    }
+    /// Where an untrusted packet starts: right after the previous one unless that is
+    /// in the future or more than 200 ms behind its arrival.
+    fn continued(&self, arrived: Instant) -> Instant {
+        self.expected.filter(|&expected| expected <= arrived + Duration::from_millis(5)
+            && arrived.saturating_duration_since(expected) < Duration::from_millis(200)).unwrap_or(arrived)
+    }
+    fn latency(&mut self, latency: Duration, arrival_timed: bool) {
+        let ms = latency.as_secs_f64() * 1000.;
+        self.stats.latency_ms = Some(self.stats.latency_ms.map_or((ms, ms), |(lo, hi)| (lo.min(ms), hi.max(ms))));
+        self.stats.arrival_timed += u64::from(arrival_timed);
     }
     fn restart(&mut self) {
         self.gaps += 1; self.generation += 1; self.buffered = 0;
@@ -72,7 +115,7 @@ impl Ring {
     /// generation; the next packet starts it without being compared to the old timeline.
     /// Several notices before that packet count as one gap.
     pub fn interrupt(&mut self, reason: String) {
-        if self.expected.take().is_some() { self.restart(); }
+        if self.expected.take().is_some() { self.restart(); self.stats.interrupts += 1; }
         self.notice = Some(reason);
     }
     /// Route a backend stream error. The vendored CPAL WASAPI patch
@@ -100,9 +143,19 @@ impl Ring {
         if values.is_empty() { return Ok(()); }
         anyhow::ensure!(values.len() <= self.sample_rate as usize && values.iter().all(|v| v.is_finite()), "捕获音频包无效");
         let rate = self.sample_rate as f64;
-        if self.expected.is_some_and(|expected| {
-            first.saturating_duration_since(expected).max(expected.saturating_duration_since(first)) > Duration::from_millis(5)
-        }) || self.samples.len() + (self.phase as usize + values.len() * 8000) / self.sample_rate as usize > 48000 {
+        self.stats.since.get_or_insert_with(Instant::now);
+        self.stats.packets += 1;
+        self.stats.frames += values.len() as u64;
+        // A packet's own clock may wander by part of its length (WASAPI loopback
+        // stamps packets by the render engine's pass), never by a whole packet.
+        let tolerance = Duration::from_millis(5).max(Duration::from_secs_f64(values.len() as f64 / rate / 2.));
+        let jumped = self.expected.is_some_and(|expected| {
+            first.saturating_duration_since(expected).max(expected.saturating_duration_since(first)) > tolerance
+        });
+        let overflow = self.samples.len() + (self.phase as usize + values.len() * 8000) / self.sample_rate as usize > 48000;
+        if jumped || overflow {
+            self.stats.jumps += u64::from(jumped);
+            self.stats.overflows += u64::from(overflow && !jumped);
             self.restart();
         }
         self.expected = Some(first + Duration::from_secs_f64(values.len() as f64 / rate));
@@ -183,7 +236,12 @@ pub fn devices() -> Result<Vec<InputDevice>> {
     let host = cpal::default_host();
     #[cfg(target_os = "macos")]
     let automatic = InputDevice { id: "auto".into(), label: "自动 · 系统混音".into(), channels: 2, kind: "system", resolved_id: Some("system".into()), error: None };
-    #[cfg(not(target_os = "macos"))]
+    // 自动 hears what the computer plays, as on macOS: a DJ computer's default
+    // input is usually a silent or missing microphone.
+    #[cfg(windows)]
+    let automatic = InputDevice { resolved_id: Some("system".into()), ..InputDevice::native("auto".into(),
+        "自动 · 默认播放设备 · WASAPI 回环".into(), host.default_output_device().context("没有可用系统声音输出设备"), true) };
+    #[cfg(not(any(target_os = "macos", windows)))]
     let automatic = InputDevice::native("auto".into(), "自动 · 默认声音输入".into(),
         host.default_input_device().context("没有可用声音输入设备"), false);
     let mut choices = vec![automatic];
@@ -241,6 +299,10 @@ impl Selection {
             let automatic = devices()?.into_iter().find(|d| d.id == "auto").context("自动捕获设备不可用")?;
             if let Some(error) = automatic.error { bail!("{error}"); }
             return Ok(Self { device: automatic.resolved_id.context("自动捕获设备不可用")?, channel_start: self.channel_start, room: self.room });
+        }
+        #[cfg(windows)]
+        if self.device == "auto" {
+            return Ok(Self { device: "system".into(), channel_start: self.channel_start, room: self.room });
         }
         Ok(Self { device: self.device.clone(), channel_start: self.channel_start, room: self.room })
     }
@@ -401,9 +463,12 @@ impl Capture {
         Ok((Self::Device { _stream: stream }, ring))
     }
 }
+/// Longer than any shared-mode buffer a capture packet can have waited in.
+const MAX_LATENCY: Duration = Duration::from_millis(500);
 fn stream<T>(device: &cpal::Device, config: cpal::StreamConfig, selected: std::ops::Range<usize>, ring: Arc<Mutex<Ring>>) -> Result<cpal::Stream>
 where T: cpal::SizedSample, f32: cpal::FromSample<T> {
     let channels = config.channels as usize;
+    let rate = config.sample_rate as f64;
     let selected_count = selected.len();
     let errors = ring.clone();
     Ok(device.build_input_stream::<T, _, _>(config, move |data, info| {
@@ -434,8 +499,18 @@ where T: cpal::SizedSample, f32: cpal::FromSample<T> {
             // A flagged WASAPI timestamp is not usable for latency validation either.
             // push() continues the previous timeline, or drops the packet if none exists.
             let first = if ring.untimed { received } else {
-                anyhow::ensure!(latency <= Duration::from_secs(5), "声音输入时钟无效");
-                received.checked_sub(latency).context("声音输入时钟无效")?
+                // A capture clock that claims the packet is older than any real
+                // buffering (seen as "levels move, nothing is ever recognised") is
+                // not trusted: the packet continues the timeline, or is timed by its
+                // arrival when there is none or it has drifted away.
+                let implausible = latency > MAX_LATENCY;
+                ring.latency(latency, implausible);
+                if implausible {
+                    let arrived = received.checked_sub(Duration::from_secs_f64(frames as f64 / rate)).context("声音输入时钟无效")?;
+                    ring.continued(arrived)
+                } else {
+                    received.checked_sub(latency).context("声音输入时钟无效")?
+                }
             };
             ring.push(&mono, levels, first, received)
         })();
@@ -468,6 +543,21 @@ mod tests {
         ring.push(&packet, vec![], start + Duration::from_secs(3), start).unwrap();
         assert_eq!((ring.generation, ring.gaps), (1, 1));
         assert_eq!(ring.take().map(|(_, _, generation)| generation), Some(1));
+    }
+
+    #[test]
+    fn packet_clock_jitter_within_half_a_packet_keeps_the_window() {
+        let mut ring = Ring::new("test".into(), 48000);
+        let packet = vec![0.25f32; 480]; // 10 ms
+        let start = Instant::now();
+        ring.push(&packet, vec![], start, start).unwrap();
+        // 4 ms late, then 4 ms early: loopback stamps wander, the timeline goes on.
+        ring.push(&packet, vec![], start + Duration::from_millis(14), start).unwrap();
+        ring.push(&packet, vec![], start + Duration::from_millis(20), start).unwrap();
+        assert_eq!((ring.generation, ring.stats.jumps), (0, 0));
+        // A whole packet off is a break.
+        ring.push(&packet, vec![], start + Duration::from_millis(50), start).unwrap();
+        assert_eq!((ring.generation, ring.stats.jumps), (1, 1));
     }
 
     #[test]
