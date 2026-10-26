@@ -542,6 +542,7 @@ Rectangle {
             readonly property var entry: info ? info.entry : null
             readonly property bool on: !!entry && entry.enabled !== false
             readonly property bool playing: !!entry && bar.playingId === entry.id
+            readonly property int track: entry ? entry.track || 0 : 0
             height: Theme.row
             topPadding: 0
             bottomPadding: 0
@@ -570,6 +571,13 @@ Rectangle {
                     font.weight: row.playing ? Font.DemiBold : Font.Normal
                     color: row.playing ? Theme.text : row.on ? Theme.body : Theme.faint
                     elide: Text.ElideRight
+                }
+                // Which picture it plays in, when not the main one (Live tracks).
+                Text {
+                    visible: row.track > 0
+                    text: "画面 " + (row.track + 1)
+                    font.pixelSize: Theme.sizeXs
+                    color: Theme.muted
                 }
                 ColorImage {
                     visible: row.playing || (!!row.entry && (!row.entry.video || !!row.entry.silent))
@@ -620,6 +628,42 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     radius: 1.5
                     color: Theme.text
+                }
+            }
+            // A right press puts it on another track: the main one is followed
+            // and played by the player, the others play side by side with it.
+            TapHandler {
+                acceptedButtons: Qt.RightButton
+                enabled: bar.editable && !!row.entry
+                onTapped: trackMenu.popup()
+            }
+            PopMenu {
+                id: trackMenu
+                onAboutToShow: bar.openMenu = trackMenu
+                onClosed: {
+                    bar.menuClosedAt = Date.now()
+                    if (bar.openMenu === trackMenu)
+                        bar.openMenu = null
+                }
+                PopAction {
+                    text: (row.track === 0 ? "✓ " : "") + "放到主轨（画面 1）"
+                    enabled: row.track !== 0
+                    onTriggered: Engine.setTrack(row.info.set.id, [row.entry.id], 0)
+                }
+                PopAction {
+                    text: (row.track === 1 ? "✓ " : "") + "放到画面 2"
+                    enabled: row.track !== 1
+                    onTriggered: Engine.setTrack(row.info.set.id, [row.entry.id], 1)
+                }
+                PopAction {
+                    text: (row.track === 2 ? "✓ " : "") + "放到画面 3"
+                    enabled: row.track !== 2
+                    onTriggered: Engine.setTrack(row.info.set.id, [row.entry.id], 2)
+                }
+                PopAction {
+                    text: (row.track === 3 ? "✓ " : "") + "放到画面 4"
+                    enabled: row.track !== 3
+                    onTriggered: Engine.setTrack(row.info.set.id, [row.entry.id], 3)
                 }
             }
             DropArea {

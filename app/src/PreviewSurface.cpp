@@ -61,7 +61,7 @@ void PreviewSurface::setPreviousFrame(const QImage &image, double nowMs)
 int PreviewSurface::frameHeight() const
 {
     const qreal ratio = window() ? window()->effectiveDevicePixelRatio() : 1.0;
-    return std::clamp(int(height() * ratio), 72, 360);
+    return std::max(std::clamp(int(height() * ratio), 72, 360), std::min(m_rows, 720));
 }
 
 void PreviewSurface::setFrame(const QImage &image, double nowMs, int fadeMs)

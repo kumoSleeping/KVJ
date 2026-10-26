@@ -18,6 +18,10 @@ class PreviewSurface : public QQuickItem
     QML_ELEMENT
     Q_PROPERTY(PictureSource *source READ source WRITE setSource NOTIFY sourceChanged)
     Q_PROPERTY(int fps MEMBER m_fps NOTIFY fpsChanged)
+    // Frames at least this tall whatever the item's own size (0 = as tall as
+    // it is drawn): a small tile whose picture is also shown larger elsewhere
+    // in the window, through a ShaderEffectSource.
+    Q_PROPERTY(int rows MEMBER m_rows NOTIFY fpsChanged)
     Q_PROPERTY(bool hasFrame READ hasFrame NOTIFY hasFrameChanged)
 
 public:
@@ -52,6 +56,7 @@ protected:
 private:
     QPointer<PictureSource> m_source;
     int m_fps = 12;
+    int m_rows = 0;
     double m_lastAt = -1e9;
     QImage m_pending;
     bool m_newFrame = false;
