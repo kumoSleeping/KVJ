@@ -848,7 +848,8 @@ Rectangle {
                             y: strips.tempoHeight + strips.filmHeight + 1
                             width: parent.width
                             height: strips.waveHeight
-                            source: piece.entry.path
+                            // A silent entry has no waveform and no tempo to find.
+                            source: piece.entry.silent ? "" : piece.entry.path
                             from: (piece.x - piece.cx) / line.pps
                             pxPerSec: line.pps
                             background: Theme.inset
@@ -870,6 +871,14 @@ Rectangle {
                                 visible: wave.analysing && piece.width > 120
                                 anchors.centerIn: parent
                                 text: "分析波形…"
+                                font.pixelSize: 11
+                                color: Theme.faint
+                            }
+                            Text {
+                                visible: !!piece.entry.silent && piece.width > 80
+                                x: Math.max(6, -piece.cx + 6)
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "无声音"
                                 font.pixelSize: 11
                                 color: Theme.faint
                             }
@@ -903,7 +912,7 @@ Rectangle {
                         // Entries following does not watch are dimmed.
                         Rectangle {
                             anchors.fill: parent
-                            visible: !line.manual && piece.entry.enabled === false
+                            visible: !line.manual && (piece.entry.enabled === false || !!piece.entry.silent)
                             color: Theme.raised
                             opacity: 0.6
                         }

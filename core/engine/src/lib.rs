@@ -267,11 +267,14 @@ impl Engine {
         let entries = files
             .iter()
             .map(|path| {
-                let duration = decode::probe_duration(path)
-                    .with_context(|| format!("无法读取：{}", path.display()))?
+                let probe = decode::probe(path).with_context(|| format!("无法读取：{}", path.display()))?;
+                let duration = probe
+                    .duration
                     .with_context(|| format!("无法读取时长：{}", path.display()))?;
                 let video = extension(path).is_some_and(|e| VIDEO.contains(&e.as_str()));
-                Entry::new(path, video, 0., duration)
+                let mut entry = Entry::new(path, video, 0., duration)?;
+                entry.silent = !probe.audio;
+                Ok(entry)
             })
             .collect::<Result<Vec<_>>>()?;
         let document = self.with_store(|s| {
@@ -327,6 +330,7 @@ impl Engine {
                 .clone())
         })?;
         anyhow::ensure!(!set.entries.is_empty(), "Set 没有素材");
+        anyhow::ensure!(set.entries.iter().any(|e| !e.silent), "Set 里的素材都没有声音，无从跟随");
         *self.off.lock().unwrap() = set
             .entries
             .iter()

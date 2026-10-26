@@ -95,8 +95,10 @@ fn block_path(cache: &Path, entry: &Entry, signature: &str, start: f64, end: f64
     cache.join(format!("{:016x}.afp", h.finish()))
 }
 /// Blocks of about five minutes, overlapping by eight seconds: (start, end).
+/// None for a silent entry: there is nothing to hear it by.
 fn blocks(entry: &Entry) -> impl Iterator<Item = (f64, f64)> + '_ {
-    (0..entry.duration.ceil() as usize).step_by(300).map(|core| {
+    let heard = if entry.silent { 0 } else { entry.duration.ceil() as usize };
+    (0..heard).step_by(300).map(|core| {
         ((core as f64 - 8.).max(0.), (core as f64 + 308.).min(entry.duration))
     })
 }

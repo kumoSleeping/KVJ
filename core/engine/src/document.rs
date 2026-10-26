@@ -24,6 +24,10 @@ pub struct Entry {
     /// so this may change while a session runs and never touches the index.
     #[serde(default = "on")]
     pub enabled: bool,
+    /// A picture with no sound the engine reads: it plays without one, has no
+    /// waveform or tempo, and following never looks for it.
+    #[serde(default)]
+    pub silent: bool,
     #[serde(flatten)]
     extra: BTreeMap<String, Value>,
 }
@@ -47,6 +51,7 @@ impl Entry {
             audio_offset,
             presentation: if video { "video" } else { "audio" }.into(),
             enabled: true,
+            silent: false,
             extra: BTreeMap::new(),
         })
     }

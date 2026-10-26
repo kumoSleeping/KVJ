@@ -560,13 +560,13 @@ Rectangle {
                     elide: Text.ElideRight
                 }
                 ColorImage {
-                    visible: row.playing || (!!row.entry && !row.entry.video)
-                    source: row.playing ? "icons/play.svg" : "icons/music.svg"
+                    visible: row.playing || (!!row.entry && (!row.entry.video || !!row.entry.silent))
+                    source: row.playing ? "icons/play.svg" : row.entry && row.entry.silent ? "icons/volume-x.svg" : "icons/music.svg"
                     sourceSize: Qt.size(12, 12)
                     color: row.playing ? Theme.text : Theme.faint
                     ToolTip.visible: hoverTip.hovered
                     ToolTip.delay: 400
-                    ToolTip.text: row.playing ? "正在投放" : "只有声音"
+                    ToolTip.text: row.playing ? "正在投放" : row.entry && row.entry.silent ? "没有声音：只放画面，不跟随" : "只有声音"
                     HoverHandler { id: hoverTip }
                 }
                 Item {

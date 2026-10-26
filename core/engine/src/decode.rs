@@ -57,11 +57,22 @@ fn track_duration(params: &symphonia::core::codecs::CodecParameters) -> Option<f
         .map(|(frames, rate)| frames as f64 / rate as f64)
 }
 
+/// What importing needs from a file's header: how long it is, and whether it
+/// has sound this engine decodes.
+pub struct Probe {
+    pub duration: Option<f64>,
+    pub audio: bool,
+}
+
 /// 只读容器头拿总时长，不解 PCM、不重采样。
 ///
 /// 分析窗要从 15% 处起跳，必须先知道全曲多长。旧实现为此先解 50ms 再 sinc，
 /// 等于每首歌多打开一次解码器。时长在 Xing/容器头里，probe 就够了。
-pub fn probe_duration(path: &Path) -> Result<Option<f64>> {
+///
+/// A file with no audio track, or one no decoder here reads, is still told:
+/// its length is then the longest track's (the picture's) by the container's
+/// clock, and `audio` is false.
+pub fn probe(path: &Path) -> Result<Probe> {
     let file = File::open(path).with_context(|| format!("打开音频失败：{}", path.display()))?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
@@ -79,13 +90,29 @@ pub fn probe_duration(path: &Path) -> Result<Option<f64>> {
             &MetadataOptions::default(),
         )
         .with_context(|| format!("无法识别音频格式：{}", path.display()))?;
-    let track = probed
-        .format
-        .tracks()
+    let tracks = probed.format.tracks();
+    // The track every decode here takes, and only if it can be decoded.
+    let audio = tracks
         .iter()
         .find(|track| track.codec_params.codec != CODEC_TYPE_NULL)
-        .context("文件里没有可解码的音轨")?;
-    Ok(track_duration(&track.codec_params))
+        .filter(|track| {
+            symphonia::default::get_codecs()
+                .make(&track.codec_params, &DecoderOptions::default())
+                .is_ok()
+        });
+    let clock = tracks
+        .iter()
+        .filter_map(|track| {
+            let params = &track.codec_params;
+            let time = params.time_base?.calc_time(params.n_frames?);
+            Some(time.seconds as f64 + time.frac)
+        })
+        .filter(|seconds| seconds.is_finite() && *seconds > 0.)
+        .reduce(f64::max);
+    Ok(Probe {
+        duration: audio.and_then(|track| track_duration(&track.codec_params)).or(clock),
+        audio: audio.is_some(),
+    })
 }
 
 #[derive(Debug)]
@@ -750,11 +777,13 @@ mod tests {
     }
 
     #[test]
-    fn probe_duration_reads_the_header_without_decoding_pcm() {
+    fn probe_reads_the_header_without_decoding_pcm() {
         let path =
             std::env::temp_dir().join(format!("kdj-probe-duration-{}.wav", std::process::id()));
         write_silence_wav(&path, 22_050, 22_050 * 8);
-        let duration = probe_duration(&path).unwrap().expect("wav 头应有时长");
+        let probed = probe(&path).unwrap();
+        assert!(probed.audio);
+        let duration = probed.duration.expect("wav 头应有时长");
         assert!(
             (duration - 8.0).abs() < 0.02,
             "probe 时长 {duration}，期望 8s"

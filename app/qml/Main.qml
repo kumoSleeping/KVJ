@@ -70,7 +70,8 @@ ApplicationWindow {
     // play and seeking while 跳转 is.
     readonly property bool manualTempo: manual || tempoPaused
     readonly property bool manualSeek: manual || jumpPaused
-    readonly property bool canStart: !running && !!currentSet && entries.some(e => e.enabled !== false) && !Engine.importing
+    // Something on to follow that can be heard: a silent entry is never followed.
+    readonly property bool canStart: !running && !!currentSet && entries.some(e => e.enabled !== false && !e.silent) && !Engine.importing
     // The engine's rule (core/engine/src/runtime.rs): further than this from the
     // followed position is a jump, closer is followed by speed.
     readonly property real jumpSeconds: 2.5
@@ -457,7 +458,7 @@ ApplicationWindow {
     AudioFollower {
         id: sound
         enabled: desk.soundOn
-        source: app.shownEntry ? app.shownEntry.path : ""
+        source: app.shownEntry && !app.shownEntry.silent ? app.shownEntry.path : ""
         position: projection.position
         rate: projection.rate
         clockAtMs: projection.clockAtMs

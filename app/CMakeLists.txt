@@ -80,6 +80,7 @@ qt_add_qml_module(KVJ
         qml/icons/send.svg
         qml/icons/square.svg
         qml/icons/trash.svg
+        qml/icons/volume-x.svg
         qml/icons/x.svg
         qml/emoji/1f389.webp
         qml/emoji/1f44f.webp
