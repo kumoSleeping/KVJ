@@ -77,11 +77,15 @@ public:
     Q_INVOKABLE void createSet(const QString &name);
     Q_INVOKABLE void deleteSet(const QString &setId);
     Q_INVOKABLE void removeEntry(const QString &setId, const QString &entryId);
-    Q_INVOKABLE void importUrls(const QString &setId, const QList<QUrl> &urls);
+    // `track`: 0 the main track, 1..3 the aux ones (画面 2..4).
+    Q_INVOKABLE void importUrls(const QString &setId, const QList<QUrl> &urls, int track = 0);
     // On or off for following; also while following, for the next round.
     Q_INVOKABLE void enableEntries(const QString &setId, const QStringList &entryIds, bool on);
+    // Moves entries to a track (0..3); like other edits, only while not following.
+    Q_INVOKABLE void setTrack(const QString &setId, const QStringList &entryIds, int track);
     // `room`: 现场模式, the input hears a reverberant room through a microphone.
-    Q_INVOKABLE void start(const QString &setId, const QString &device, int channelStart, bool room);
+    // `track`: only that track's entries are followed; `view.track` says which.
+    Q_INVOKABLE void start(const QString &setId, const QString &device, int channelStart, bool room, int track = 0);
     Q_INVOKABLE void stop();
     // Bluetooth Low Energy: nearby KVJ receivers, advertising as one, standby
     // connections to receivers, the current DJ, and sender-only sessions.

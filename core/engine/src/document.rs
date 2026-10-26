@@ -28,9 +28,15 @@ pub struct Entry {
     /// waveform or tempo, and following never looks for it.
     #[serde(default)]
     pub silent: bool,
+    /// The track it plays on: 0 the main one, 1..=3 the aux ones. A session
+    /// follows one track; entries on the others are indexed but never matched.
+    #[serde(default)]
+    pub track: u8,
     #[serde(flatten)]
     extra: BTreeMap<String, Value>,
 }
+/// Tracks are 0 (main) to this.
+pub const LAST_TRACK: u8 = 3;
 fn on() -> bool {
     true
 }
@@ -52,6 +58,7 @@ impl Entry {
             presentation: if video { "video" } else { "audio" }.into(),
             enabled: true,
             silent: false,
+            track: 0,
             extra: BTreeMap::new(),
         })
     }
@@ -264,6 +271,12 @@ pub enum Edit {
         entry_id: String,
         before_id: Option<String>,
     },
+    /// Puts entries of one Set on a track.
+    Track {
+        set_id: String,
+        entry_ids: Vec<String>,
+        track: u8,
+    },
 }
 #[cfg(not(windows))]
 pub(crate) fn replace(tmp: &Path, target: &Path) -> std::io::Result<()> {
@@ -320,6 +333,7 @@ impl Document {
                     || !entry.audio_offset.is_finite()
                     || entry.audio_offset.abs() > 21600.
                     || entry.presentation != if entry.video { "video" } else { "audio" }
+                    || entry.track > LAST_TRACK
                 {
                     bail!("素材数据或表现形式不支持，原文件未修改")
                 }
@@ -363,6 +377,21 @@ impl Document {
                 };
                 entries.insert(target, item);
             }
+            Edit::Track {
+                set_id,
+                entry_ids,
+                track,
+            } => {
+                anyhow::ensure!(track <= LAST_TRACK, "轨道不存在");
+                let set = self.set_mut(&set_id)?;
+                for id in &entry_ids {
+                    set.entries
+                        .iter_mut()
+                        .find(|e| &e.id == id)
+                        .context("素材不存在")?
+                        .track = track;
+                }
+            }
         }
         Ok(())
     }
@@ -403,5 +432,53 @@ mod tests {
         let back: Document = serde_json::from_value(serde_json::to_value(&doc).unwrap()).unwrap();
         assert!(!back.sets[0].entries[1].enabled);
         assert!(doc.enable("s", &["missing".into()], true).is_err());
+    }
+
+    #[test]
+    fn entries_are_on_the_main_track_unless_moved() {
+        let raw = r#"{"version":1,"revision":3,"sets":[{"id":"s","name":"Set 1","entries":[
+            {"id":"a","path":"/a.mp4","title":"a","duration":60,"video":true,"presentation":"video"},
+            {"id":"b","path":"/b.mp4","title":"b","duration":60,"video":true,"presentation":"video"}]}]}"#;
+        let mut doc: Document = serde_json::from_str(raw).unwrap();
+        assert!(doc.sets[0].entries.iter().all(|e| e.track == 0));
+        doc.validate().unwrap();
+        doc.edit(Edit::Track { set_id: "s".into(), entry_ids: vec!["b".into()], track: 2 }).unwrap();
+        assert_eq!((doc.sets[0].entries[0].track, doc.sets[0].entries[1].track), (0, 2));
+        let back: Document = serde_json::from_value(serde_json::to_value(&doc).unwrap()).unwrap();
+        assert_eq!(back.sets[0].entries[1].track, 2);
+        // The edit arrives as JSON from the host.
+        let edit: Edit = serde_json::from_str(r#"{"kind":"track","set_id":"s","entry_ids":["a","b"],"track":3}"#).unwrap();
+        doc.edit(edit).unwrap();
+        assert!(doc.sets[0].entries.iter().all(|e| e.track == 3));
+        assert!(doc.edit(Edit::Track { set_id: "s".into(), entry_ids: vec!["a".into()], track: 4 }).is_err());
+        assert!(doc.edit(Edit::Track { set_id: "s".into(), entry_ids: vec!["missing".into()], track: 1 }).is_err());
+        // A document from a newer build with a fifth track is not taken.
+        doc.sets[0].entries[0].track = 4;
+        assert!(doc.validate().is_err());
+    }
+
+    #[test]
+    fn a_store_round_trips_tracks_without_losing_keys() {
+        let dir = std::env::temp_dir().join(format!("kvj-track-store-{}", id()));
+        fs::create_dir_all(&dir).unwrap();
+        // Written before tracks existed, then with one.
+        for raw in [
+            r#"{"version":1,"revision":1,"sets":[{"id":"s","name":"Set 1","entries":[
+            {"id":"a","path":"/a.mp4","title":"a","duration":60,"video":true,"presentation":"video"}]}]}"#,
+            r#"{"version":1,"revision":1,"sets":[{"id":"s","name":"Set 1","entries":[
+            {"id":"a","path":"/a.mp4","title":"a","duration":60,"video":true,"presentation":"video","track":0}]}]}"#,
+        ] {
+            fs::write(dir.join("kvj-sets.json"), raw).unwrap();
+            let mut store = Store::open(&dir).unwrap();
+            let mut next = store.doc.clone();
+            next.edit(Edit::Track { set_id: "s".into(), entry_ids: vec!["a".into()], track: 1 }).unwrap();
+            let saved = store.commit(next).unwrap();
+            assert_eq!(saved.revision, 2);
+            assert_eq!(Store::open(&dir).unwrap().doc.sets[0].entries[0].track, 1);
+        }
+        fs::write(dir.join("kvj-sets.json"), r#"{"version":1,"revision":1,"sets":[{"id":"s","name":"Set 1","entries":[
+            {"id":"a","path":"/a.mp4","title":"a","duration":60,"video":true,"presentation":"video","track":7}]}]}"#).unwrap();
+        assert!(Store::open(&dir).is_err());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

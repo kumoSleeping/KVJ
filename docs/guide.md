@@ -51,6 +51,15 @@ outside it, Esc or its key answers no first. The canvas, across the whole
 width, is the live desk with the player, then smart following
 (**音频对位**) and the effects at the right.
 
+Every entry is on one of four **tracks**: the main track, where entries go
+unless told otherwise and which the player and the timeline play, and three aux
+tracks (画面 2, 3 and 4) for pictures shown beside it. Following listens for one
+track only, the main one unless another is chosen: entries on the others are
+never matched, however alike their sound, though they stay in the index, so
+moving an entry to another track (while not following, like other changes to a
+Set) never waits for indexing. Following can start once the followed track has
+an entry with sound that is on.
+
 Under the preview are the output (screen, resolution, frame rate, full screen)
 and **开始投放**. Resolution and frame rate start on **推荐**: as sharp as the
 chosen screen shows and the video holds (480p, 720p, 1080p, or the source past
