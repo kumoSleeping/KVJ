@@ -75,13 +75,19 @@ fn main() -> anyhow::Result<()> {
             }
         }
         // Advertise as a receiver until interrupted, printing who connects.
-        // With `--select`, the first connected sender becomes the current DJ.
+        // With `--select`, senders asking to pair are allowed and the first
+        // connected one becomes the current DJ.
         "listen" => {
             let select = args.iter().any(|a| a == "--select");
-            engine.bluetooth_listen(true)?;
+            engine.bluetooth_listen(true, true)?;
             loop {
                 std::thread::sleep(Duration::from_secs(1));
                 let c = engine.status(None).view.connections;
+                if select {
+                    for p in c.incoming.iter().filter(|p| p.link.state == "asking") {
+                        let _ = engine.bluetooth_pair(p.link.peer.as_deref().unwrap_or_default(), true);
+                    }
+                }
                 if select && c.selected.is_none() {
                     if let Some(p) = c.incoming.iter().find(|p| p.link.state == "connected") {
                         let _ = engine.bluetooth_select(p.link.peer.clone());

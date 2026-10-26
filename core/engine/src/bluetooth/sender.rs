@@ -34,6 +34,9 @@ pub(crate) struct Shared {
     pub status: PeerStatus,
     lease: u64,
     stream: Option<Stream>,
+    /// Why this connection gave up for good (refused, or not the remembered
+    /// computer); it is not retried.
+    pub ended: Option<String>,
 }
 pub struct Sender {
     pub(super) shared: Arc<Mutex<Shared>>,
@@ -41,7 +44,9 @@ pub struct Sender {
     worker: Option<std::thread::JoinHandle<()>>,
 }
 impl Sender {
-    pub fn connect(engine: Weak<Engine>, device: Device) -> Result<Self> {
+    /// `remembered_only`: connecting by itself to a receiver found by name or
+    /// address; anything but the remembered computer is left alone.
+    pub fn connect(engine: Weak<Engine>, device: Device, remembered_only: bool) -> Result<Self> {
         let shared = Arc::new(Mutex::new(Shared {
             status: PeerStatus {
                 device: device.clone(),
@@ -51,9 +56,12 @@ impl Sender {
                     peer: Some(device.name.clone()),
                     ..Default::default()
                 },
+                token: String::new(),
+                known: false,
             },
             lease: 0,
             stream: None,
+            ended: None,
         }));
         let stop = Arc::new(AtomicBool::new(false));
         let cancel = stop.clone();
@@ -64,27 +72,31 @@ impl Sender {
                 let mut delay = 2;
                 while !cancel.load(Ordering::Relaxed) {
                     let connected_at = Instant::now();
-                    let result = connection_loop(&device, &state, &cancel);
+                    let result = connection_loop(&engine, &device, &state, &cancel, remembered_only);
                     if connected_at.elapsed() > Duration::from_secs(30) {
                         delay = 2;
                     }
                     let message = result.err().map(|e| format!("{e:#}")).unwrap_or_default();
                     // A sending session keeps capturing through the outage.
-                    let session = {
+                    let (session, ended) = {
                         let mut s = state.lock().unwrap();
                         s.status.selected = false;
-                        s.status.link.state = if cancel.load(Ordering::Relaxed) {
-                            "disconnected"
+                        s.status.link.state = if let Some(state) = &s.ended {
+                            state.clone()
+                        } else if cancel.load(Ordering::Relaxed) {
+                            "disconnected".into()
                         } else {
-                            "reconnecting"
-                        }
-                        .into();
+                            "reconnecting".into()
+                        };
                         s.status.link.error = message.clone();
-                        s.stream.as_ref().map(|stream| stream.session.clone())
+                        (s.stream.as_ref().map(|stream| stream.session.clone()), s.ended.is_some())
                     };
                     if let Some(session) = session {
                         let link = state.lock().unwrap().status.link.clone();
                         update(&engine, &session, |v| v.bluetooth = Some(link));
+                    }
+                    if ended {
+                        break;
                     }
                     let deadline = Instant::now() + Duration::from_secs(delay);
                     while !cancel.load(Ordering::Relaxed) && Instant::now() < deadline {
@@ -123,25 +135,46 @@ impl Drop for Sender {
         }
     }
 }
-fn connection_loop(device: &Device, shared: &Mutex<Shared>, cancel: &AtomicBool) -> Result<()> {
+fn connection_loop(
+    engine: &Weak<Engine>,
+    device: &Device,
+    shared: &Mutex<Shared>,
+    cancel: &AtomicBool,
+    remembered_only: bool,
+) -> Result<()> {
+    let hub = |engine: &Weak<Engine>| engine.upgrade().context("引擎已关闭");
+    let own = hub(engine)?.connections.token();
     let mut connection = Connection::new(Native::connect(&device.id, cancel)?);
-    connection.send(HELLO, &hello(1), cancel)?;
+    connection.send(HELLO, &hello(1, &own), cancel)?;
     let start = Instant::now();
-    loop {
+    let (token, name) = loop {
         canceled(cancel)?;
         anyhow::ensure!(start.elapsed() < Duration::from_secs(6), "KVJ 蓝牙握手超时");
         if let Some((kind, body)) = connection.receive()? {
             anyhow::ensure!(kind == HELLO, "对方不是 KVJ 接收端");
-            check_hello(&body, 2)?;
-            break;
+            break check_hello(&body, 2)?;
         }
+    };
+    let known = hub(engine)?.connections.knows(&token, "receiver");
+    if remembered_only && !known {
+        let engine = hub(engine)?;
+        engine.connections.strangers.lock().unwrap().insert(super::device_key(&device.id));
+        shared.lock().unwrap().ended = Some("stranger".into());
+        bail!("不是记住的接收电脑");
     }
     {
         let mut s = shared.lock().unwrap();
-        s.status.link.state = "connected".into();
+        // Paired once the receiver says so (at once for a remembered computer).
+        s.status.link.state = "asking".into();
         s.status.link.error.clear();
         s.status.selected = false;
+        s.status.token = token.clone();
+        s.status.known = known;
+        if !name.is_empty() {
+            s.status.device.name = name.clone();
+        }
     }
+    let mut paired = false;
     let mut seen = Instant::now();
     // Feature packets in flight, oldest first. A window rather than stop-and-wait:
     // one BLE round trip is about as long as the 50 ms between packets.
@@ -173,7 +206,23 @@ fn connection_loop(device: &Device, shared: &Mutex<Shared>, cancel: &AtomicBool)
                     );
                     pending.pop_front();
                 }
+                PAIR => {
+                    anyhow::ensure!(body.len() == 1 && body[0] <= 1, "配对消息无效");
+                    if body[0] == 0 {
+                        shared.lock().unwrap().ended = Some("refused".into());
+                        bail!("对方拒绝了连接");
+                    }
+                    if !paired {
+                        paired = true;
+                        let label = if name.is_empty() { device.name.as_str() } else { name.as_str() };
+                        hub(engine)?.connections.remember(&token, label, "receiver", &device.id);
+                        let mut s = shared.lock().unwrap();
+                        s.status.known = true;
+                        s.status.link.state = "connected".into();
+                    }
+                }
                 SELECT => {
+                    anyhow::ensure!(paired, "尚未配对就收到 DJ 选择");
                     anyhow::ensure!(body.len() == 9 && body[0] <= 1, "DJ 选择消息无效");
                     let mut s = shared.lock().unwrap();
                     s.status.selected = body[0] == 1;

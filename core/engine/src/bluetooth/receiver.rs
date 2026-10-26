@@ -28,7 +28,10 @@ pub struct Receiver {
 impl Receiver {
     pub fn start(engine: Weak<Engine>) -> Result<Self> {
         let inbox = engine.upgrade().context("引擎已关闭")?.connections.inbox.clone();
-        *inbox.lock().unwrap() = Inbox::default();
+        {
+            let mut inbox = inbox.lock().unwrap();
+            *inbox = Inbox { receiving: inbox.receiving, ..Inbox::default() };
+        }
         let stop = Arc::new(AtomicBool::new(false));
         let cancel = stop.clone();
         let shared = inbox.clone();
@@ -92,6 +95,12 @@ struct Peer {
     next: Option<(u64, u64)>,
     endpoint: Option<f64>,
     generation: u64,
+    /// From its HELLO: the sender's pairing token and name.
+    token: String,
+    name: String,
+    /// Remembered, or allowed by the operator: only then can it be chosen.
+    paired: bool,
+    forgotten: u64,
 }
 impl Peer {
     fn new(id: String, native: Native) -> Self {
@@ -110,7 +119,48 @@ impl Peer {
             next: None,
             endpoint: None,
             generation: 1,
+            token: String::new(),
+            name: String::new(),
+            paired: false,
+            forgotten: 0,
         }
+    }
+    /// Paired: tell the sender, remember it, keep it the chosen DJ if it was so
+    /// under an old id, and choose it when nobody is chosen while receiving.
+    fn pair(&mut self, engine: &Weak<Engine>, shared: &Mutex<Inbox>, cancel: &AtomicBool) -> Result<bool> {
+        self.connection.send(PAIR, &[1], cancel)?;
+        self.connection.send(SELECT, &[0; 9], cancel)?;
+        self.paired = true;
+        if let Some(engine) = engine.upgrade() {
+            engine.connections.remember(&self.token, &self.name, "dj", &self.id);
+            self.forgotten = engine.connections.forgotten.load(Ordering::Relaxed);
+        }
+        let mut inbox = shared.lock().unwrap();
+        let peer = inbox.peers.get_mut(&self.id).context("设备已移除")?;
+        peer.known = true;
+        peer.link.state = "connected".into();
+        // A Mac reconnecting under a new private address comes back with a new
+        // id: the chosen DJ, gone under its old one, is this computer again.
+        let moved = inbox.selected.clone().filter(|chosen| {
+            *chosen != self.id
+                && inbox.peers.get(chosen).is_some_and(|old| old.link.state == "disconnected" && old.token == self.token)
+        });
+        if let Some(old) = moved {
+            inbox.selected = Some(self.id.clone());
+            inbox.peers.remove(&old);
+            drop(inbox);
+            note(engine, format!("蓝牙：{} 以新 id 回来（{old} → {}），仍是当前 DJ", self.name, self.id));
+            return Ok(false);
+        }
+        if inbox.receiving && inbox.selected.is_none() {
+            inbox.reset_source();
+            inbox.lease = super::random_lease();
+            inbox.selected = Some(self.id.clone());
+            drop(inbox);
+            note(engine, format!("蓝牙：{} 是记住的 DJ，已设为当前 DJ", self.name));
+            return Ok(true);
+        }
+        Ok(false)
     }
     fn reset(&mut self) {
         self.window = LiveFeatures::default();
@@ -123,11 +173,34 @@ impl Peer {
             self.seen.elapsed() < Duration::from_secs(6),
             "蓝牙设备心跳超时"
         );
+        if self.ready && !self.paired {
+            let decision = shared.lock().unwrap().decisions.remove(&self.id);
+            match decision {
+                Some(true) => {
+                    note(engine, format!("蓝牙：已允许 {} 连接并记住", self.name));
+                    return self.pair(engine, shared, cancel);
+                }
+                Some(false) => {
+                    self.connection.send(PAIR, &[0], cancel)?;
+                    bail!("已拒绝这台电脑");
+                }
+                None => {}
+            }
+        }
+        if self.paired {
+            if let Some(engine) = engine.upgrade() {
+                let epoch = engine.connections.forgotten.load(Ordering::Relaxed);
+                if epoch != self.forgotten {
+                    self.forgotten = epoch;
+                    anyhow::ensure!(engine.connections.knows(&self.token, "dj"), "已删除这台电脑的配对");
+                }
+            }
+        }
         let (selected, lease) = {
             let inbox = shared.lock().unwrap();
             (inbox.selected.as_deref() == Some(&self.id), inbox.lease)
         };
-        if self.ready && (self.selected != selected || selected && self.lease != lease) {
+        if self.ready && self.paired && (self.selected != selected || selected && self.lease != lease) {
             let mut grant = vec![u8::from(selected)];
             grant.extend(if selected { lease } else { 0 }.to_le_bytes());
             self.connection.send(SELECT, &grant, cancel)?;
@@ -156,30 +229,26 @@ impl Peer {
         self.seen = Instant::now();
         if !self.ready {
             anyhow::ensure!(kind == HELLO, "蓝牙握手失败");
-            let name = check_hello(&body, 1)?;
-            note(engine, format!("蓝牙：{} 握手完成（{name}）", self.id));
-            self.connection.send(HELLO, &hello(2), cancel)?;
-            self.connection.send(SELECT, &[0; 9], cancel)?;
+            let (token, name) = check_hello(&body, 1)?;
+            let engine_ = engine.upgrade().context("引擎已关闭")?;
+            self.connection.send(HELLO, &hello(2, &engine_.connections.token()), cancel)?;
+            let known = engine_.connections.knows(&token, "dj");
+            drop(engine_);
             self.ready = true;
-            let mut inbox = shared.lock().unwrap();
-            let peer = inbox.peers.get_mut(&self.id).context("设备已移除")?;
-            if !name.is_empty() {
-                peer.device.name = name.clone();
+            self.name = if name.is_empty() { "KVJ".into() } else { name.clone() };
+            self.token = token.clone();
+            {
+                let mut inbox = shared.lock().unwrap();
+                let peer = inbox.peers.get_mut(&self.id).context("设备已移除")?;
+                peer.device.name = self.name.clone();
+                peer.token = token;
+                peer.link.error.clear();
+                // Not paired yet: the operator is asked (Allow / Refuse).
+                peer.link.state = if known { "connected" } else { "asking" }.into();
             }
-            peer.link.state = "connected".into();
-            peer.link.error.clear();
-            // A Mac reconnecting under a new private address comes back with a new
-            // id: the chosen DJ, gone under its old one, is this computer again.
-            let moved = inbox.selected.clone().filter(|chosen| {
-                *chosen != self.id
-                    && !name.is_empty()
-                    && inbox.peers.get(chosen).is_some_and(|old| old.link.state == "disconnected" && old.device.name == name)
-            });
-            if let Some(old) = moved {
-                inbox.selected = Some(self.id.clone());
-                inbox.peers.remove(&old);
-                drop(inbox);
-                note(engine, format!("蓝牙：{name} 以新 id 回来（{old} → {}），仍是当前 DJ", self.id));
+            note(engine, format!("蓝牙：{} 握手完成（{}）{}", self.id, self.name, if known { "" } else { "，请求连接" }));
+            if known {
+                return self.pair(engine, shared, cancel);
             }
             return Ok(false);
         }
@@ -328,6 +397,22 @@ impl Peer {
         Ok(false)
     }
 }
+/// Bluetooth became the input: a remembered DJ already connected is chosen
+/// when nobody is.
+pub(super) fn choose_remembered(engine: &Arc<Engine>) {
+    let mut inbox = engine.connections.inbox.lock().unwrap();
+    if !inbox.receiving || inbox.selected.is_some() {
+        return;
+    }
+    let Some(id) = inbox.peers.iter().find(|(_, p)| p.known && p.link.state == "connected").map(|(id, _)| id.clone()) else {
+        return;
+    };
+    inbox.reset_source();
+    inbox.lease = super::random_lease();
+    inbox.selected = Some(id);
+    drop(inbox);
+    super::route_changed(engine);
+}
 /// A line in the running session's log (none without a session).
 fn note(engine: &Weak<Engine>, message: String) {
     if let Some(engine) = engine.upgrade() {
@@ -396,6 +481,8 @@ fn run(engine: &Weak<Engine>, shared: &Mutex<Inbox>, cancel: &AtomicBool) -> Res
                     PeerStatus {
                         device,
                         selected: false,
+                        token: String::new(),
+                        known: false,
                         link: LinkStatus {
                             state: "connecting".into(),
                             peer: Some(id.clone()),

@@ -129,6 +129,7 @@ const VIDEO: &[&str] = &["mp4", "m4v", "mkv", "mov", "webm"];
 
 impl Engine {
     pub fn new(data_dir: PathBuf, notify: Notify) -> Arc<Self> {
+        let connections = bluetooth::Hub::open(&data_dir);
         Arc::new(Self {
             data_dir,
             store: Mutex::new(None),
@@ -138,7 +139,7 @@ impl Engine {
             off: Mutex::new(Default::default()),
             session: Mutex::new(None),
             gate: Mutex::new(()),
-            connections: bluetooth::Hub::default(),
+            connections,
             notify,
         })
     }

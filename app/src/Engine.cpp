@@ -305,10 +305,20 @@ void Engine::selectBluetooth(const QString &id)
     call({{"cmd", "bluetooth_select"}, {"id", id.isEmpty() ? QJsonValue() : QJsonValue(id)}}, nullptr, false);
 }
 
-void Engine::listenBluetooth(bool on)
+void Engine::listenBluetooth(bool on, bool receiving)
 {
     // In the order asked: a quick off and on again must end listening.
-    call({{"cmd", "bluetooth_listen"}, {"on", on}}, nullptr, true, {}, &m_edits);
+    call({{"cmd", "bluetooth_listen"}, {"on", on}, {"receiving", receiving}}, nullptr, true, {}, &m_edits);
+}
+
+void Engine::pairBluetooth(const QString &id, bool allow)
+{
+    call({{"cmd", "bluetooth_pair"}, {"id", id}, {"allow", allow}}, nullptr, false);
+}
+
+void Engine::forgetBluetooth(const QString &token)
+{
+    call({{"cmd", "bluetooth_forget"}, {"token", token}}, nullptr, true);
 }
 
 void Engine::startSending(const QString &peer, const QString &device, int channelStart)

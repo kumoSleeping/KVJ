@@ -82,11 +82,19 @@ ApplicationWindow {
     readonly property var device: devices.length ? devices[Math.min(deviceBox.currentIndex, devices.length - 1)] : null
     // Adding never waits for a Set: the first files make "Set 1".
     readonly property bool editable: !running && !Engine.importing
-    // Receiving over Bluetooth (an input among the others): advertise for as
-    // long as it is the chosen input, so the DJ's computer can find this one
-    // before following starts.
+    // Receiving over Bluetooth (an input among the others). This computer
+    // advertises while it is the chosen input, and otherwise too while it may be
+    // found (可被发现), so a DJ can pair or come back at any time; never while
+    // it is itself the sender.
     readonly property bool receiving: !sender.visible && !!device && device.id === "bluetooth"
-    onReceivingChanged: Engine.listenBluetooth(receiving)
+    property bool discoverable: true
+    readonly property bool advertising: receiving || (discoverable && !sender.visible)
+    onReceivingChanged: Engine.listenBluetooth(advertising, receiving)
+    onAdvertisingChanged: Engine.listenBluetooth(advertising, receiving)
+    readonly property var incoming: (view.connections && view.connections.incoming) || []
+    readonly property var knownDjs: ((view.connections && view.connections.known) || []).filter(k => k.role === "dj")
+    // Paired DJs not connected now, so they can be forgotten from here too.
+    readonly property var awayDjs: knownDjs.filter(k => !incoming.some(p => p.token === k.token && p.link.state !== "disconnected"))
     // A recording input (a microphone) hears the room: 现场模式 starts on for it
     // and off for captured or received audio; the operator may switch it either way.
     readonly property bool microphone: !!device && device.kind === "input"
@@ -478,6 +486,10 @@ ApplicationWindow {
         property alias offset: offset.value
     }
     Settings {
+        category: "bluetooth"
+        property alias discoverable: app.discoverable
+    }
+    Settings {
         category: "player"
         property alias fade: app.fadeOn
         property alias fadeMs: app.fadeMs
@@ -807,14 +819,26 @@ ApplicationWindow {
                                 }
                             }
 
-                            // Receiving over Bluetooth: the operator picks the current DJ.
-                            // Below everything that is always there, so nothing moves.
+                            // Bluetooth DJs: the operator picks the current DJ, allows a
+                            // new one asking to pair, and forgets paired ones. Below
+                            // everything that is always there, so nothing moves.
                             ColumnLayout {
                                 id: djList
                                 Layout.fillWidth: true
                                 spacing: 4
-                                visible: app.receiving
-                                Caption { text: "DJ" }
+                                visible: app.receiving || app.incoming.some(p => p.link.state === "asking")
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Caption { text: "DJ"; Layout.fillWidth: true }
+                                    Toggle {
+                                        text: "可被发现"
+                                        checked: app.discoverable
+                                        onToggled: app.discoverable = checked
+                                        ToolTip.visible: hovered
+                                        ToolTip.delay: 500
+                                        ToolTip.text: "开着时 DJ 电脑随时能找到这台并请求连接；记住的 DJ 回来会自动连上"
+                                    }
+                                }
                                 // The chosen DJ is let go only on a second press
                                 // (within 4 s): one stray click must not cut the music off.
                                 property string letGoId: ""
@@ -824,18 +848,23 @@ ApplicationWindow {
                                     onTriggered: djList.letGoId = ""
                                 }
                                 Repeater {
-                                    model: (app.view.connections && app.view.connections.incoming) || []
+                                    // A refused or forgotten computer that left is not listed.
+                                    model: app.incoming.filter(p => p.link.state !== "disconnected" || p.selected || p.known)
                                     ItemDelegate {
                                         id: dj
                                         required property var modelData
+                                        readonly property bool asking: modelData.link.state === "asking"
                                         Layout.fillWidth: true
                                         implicitHeight: 32
                                         topPadding: 0
                                         bottomPadding: 0
                                         leftPadding: 8
+                                        rightPadding: 2
                                         readonly property bool lettingGo: modelData.selected && djList.letGoId === modelData.link.peer
                                         onClicked: {
-                                            if (!modelData.selected) {
+                                            if (asking || modelData.link.state === "disconnected") {
+                                                return
+                                            } else if (!modelData.selected) {
                                                 djList.letGoId = ""
                                                 Engine.selectBluetooth(modelData.link.peer)
                                             } else if (lettingGo) {
@@ -851,26 +880,84 @@ ApplicationWindow {
                                         ToolTip.delay: 400
                                         ToolTip.text: modelData.link.error || ""
                                         contentItem: RowLayout {
+                                            spacing: 6
                                             Text {
                                                 Layout.fillWidth: true
                                                 text: dj.modelData.device.name
                                                 font.pixelSize: Theme.size
-                                                font.weight: dj.modelData.selected ? Font.DemiBold : Font.Normal
-                                                color: dj.modelData.selected ? Theme.text : Theme.muted
+                                                font.weight: dj.modelData.selected || dj.asking ? Font.DemiBold : Font.Normal
+                                                color: dj.modelData.selected || dj.asking ? Theme.text : Theme.muted
                                                 elide: Text.ElideRight
                                             }
                                             Text {
+                                                visible: !dj.asking
                                                 text: dj.lettingGo ? "再点一下取消"
                                                     : dj.modelData.link.state === "receiving" ? "发送中"
-                                                    : dj.modelData.link.state === "connected" ? "待命"
+                                                    : dj.modelData.link.state === "connected" ? (dj.modelData.selected ? "当前 DJ" : "待命")
                                                     : dj.modelData.selected ? "已断开 · 回来后自动恢复" : "已断开"
                                                 font.pixelSize: Theme.sizeXs
                                                 color: Theme.muted
                                             }
+                                            TextButton {
+                                                visible: dj.asking
+                                                primary: true
+                                                text: "允许"
+                                                onClicked: Engine.pairBluetooth(dj.modelData.link.peer, true)
+                                            }
+                                            TextButton {
+                                                visible: dj.asking
+                                                text: "拒绝"
+                                                onClicked: Engine.pairBluetooth(dj.modelData.link.peer, false)
+                                            }
+                                            IconButton {
+                                                visible: !dj.asking && dj.modelData.known && dj.hovered
+                                                iconName: "x"
+                                                tip: "忘记这台 DJ 电脑（下次需重新允许）"
+                                                onClicked: Engine.forgetBluetooth(dj.modelData.token)
+                                            }
                                         }
                                         background: Rectangle {
                                             radius: Theme.radius
-                                            color: dj.hovered ? Theme.hover : "transparent"
+                                            color: dj.asking ? Theme.inset : dj.hovered ? Theme.hover : "transparent"
+                                        }
+                                    }
+                                }
+                                // Remembered DJs that are not here now.
+                                Repeater {
+                                    model: app.receiving ? app.awayDjs : []
+                                    ItemDelegate {
+                                        id: away
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        implicitHeight: 28
+                                        topPadding: 0
+                                        bottomPadding: 0
+                                        leftPadding: 8
+                                        rightPadding: 2
+                                        contentItem: RowLayout {
+                                            spacing: 6
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: away.modelData.name
+                                                font.pixelSize: Theme.sizeSm
+                                                color: Theme.faint
+                                                elide: Text.ElideRight
+                                            }
+                                            Text {
+                                                text: "已记住 · 不在附近"
+                                                font.pixelSize: Theme.sizeXs
+                                                color: Theme.faint
+                                            }
+                                            IconButton {
+                                                visible: away.hovered
+                                                iconName: "x"
+                                                tip: "忘记这台 DJ 电脑"
+                                                onClicked: Engine.forgetBluetooth(away.modelData.token)
+                                            }
+                                        }
+                                        background: Rectangle {
+                                            radius: Theme.radius
+                                            color: away.hovered ? Theme.hover : "transparent"
                                         }
                                     }
                                 }
@@ -929,6 +1016,8 @@ ApplicationWindow {
 
     // `--add <file or folder>` adds it at start, the same way the add keys do.
     Component.onCompleted: {
+        if (advertising)
+            Engine.listenBluetooth(true, receiving)
         const args = Qt.application.arguments
         for (let i = 0; i + 1 < args.length; ++i)
             if (args[i] === "--add")

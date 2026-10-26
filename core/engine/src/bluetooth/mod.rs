@@ -3,8 +3,12 @@
 //! projector advertises the KVJ service while 蓝牙接收 is chosen; senders list
 //! only such receivers and need no system pairing.
 //! Connection preparation is separate from audio capture and from following.
-//! The operator, never discovery or reconnection, owns the active DJ selection.
+//! The operator owns the active DJ selection; the only automatic choice is a
+//! remembered DJ when nobody is chosen yet. Pairing is confirmed once on the
+//! receiver (`pairing`); remembered computers reconnect and are let in by
+//! themselves.
 //! Ported from KDJ's Live VJ (`src-tauri/src/live_vj/bluetooth` at 00f377a).
+mod pairing;
 mod protocol;
 mod receiver;
 mod sender;
@@ -15,10 +19,16 @@ use kvj_recognize::LiveFeatures;
 pub use receiver::Receiver;
 use serde::Serialize;
 use std::{
-    collections::BTreeMap,
-    sync::{atomic::AtomicBool, Arc, Mutex},
+    collections::{BTreeMap, HashSet},
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     time::Instant,
 };
+pub use pairing::Known;
+use pairing::Pairing;
 pub use transport::Device;
 #[derive(Clone, Default, Serialize)]
 pub struct LinkStatus {
@@ -37,6 +47,12 @@ pub struct PeerStatus {
     pub device: Device,
     pub selected: bool,
     pub link: LinkStatus,
+    /// The other install's pairing token, once its HELLO came.
+    #[serde(default)]
+    pub token: String,
+    /// Remembered: it is let in (or connected to) without asking.
+    #[serde(default)]
+    pub known: bool,
 }
 #[derive(Clone, Default, Serialize)]
 pub struct ConnectionStatus {
@@ -45,6 +61,8 @@ pub struct ConnectionStatus {
     pub incoming: Vec<PeerStatus>,
     pub outgoing: Vec<PeerStatus>,
     pub error: String,
+    /// Paired computers, newest first.
+    pub known: Vec<Known>,
 }
 pub struct Observation {
     pub query: LiveFeatures,
@@ -64,6 +82,10 @@ pub struct Inbox {
     pub latest: Option<Observation>,
     pub received_at: Option<Instant>,
     pub captured_at: Option<Instant>,
+    /// Bluetooth is the chosen input: a remembered DJ may be chosen by itself.
+    pub receiving: bool,
+    /// The operator's answers to pairing requests, by peer id.
+    pub decisions: BTreeMap<String, bool>,
 }
 impl Inbox {
     pub fn reset_source(&mut self) {
@@ -75,14 +97,45 @@ impl Inbox {
         self.captured_at = None;
     }
 }
-#[derive(Default)]
 pub struct Hub {
     pub inbox: Arc<Mutex<Inbox>>,
     senders: Mutex<BTreeMap<String, sender::Sender>>,
     /// Advertising and accepting senders, independent of any session.
     listener: Mutex<Option<Receiver>>,
+    dir: PathBuf,
+    pairing: Mutex<Pairing>,
+    /// Bumped when a computer is forgotten, so live links check again.
+    pub(super) forgotten: AtomicU64,
+    /// Receivers not connected to by themselves again this run: found by name
+    /// but another computer, or disconnected by hand.
+    strangers: Mutex<HashSet<String>>,
 }
 impl Hub {
+    pub fn open(dir: &Path) -> Self {
+        Self {
+            inbox: Arc::default(),
+            senders: Mutex::default(),
+            listener: Mutex::default(),
+            dir: dir.to_owned(),
+            pairing: Mutex::new(Pairing::open(dir)),
+            forgotten: AtomicU64::new(0),
+            strangers: Mutex::default(),
+        }
+    }
+    pub(super) fn token(&self) -> String {
+        self.pairing.lock().unwrap().token.clone()
+    }
+    pub(super) fn knows(&self, token: &str, role: &str) -> bool {
+        self.pairing.lock().unwrap().knows(token, role)
+    }
+    /// Remember a computer that was just paired (or refresh its name and id).
+    pub(super) fn remember(&self, token: &str, name: &str, role: &str, id: &str) {
+        let mut pairing = self.pairing.lock().unwrap();
+        pairing.remember(Known { token: token.into(), name: name.into(), role: role.into(), id: id.into(), at_ms: crate::clock_ms() });
+        if let Err(error) = pairing.save(&self.dir) {
+            tracing::warn!("saving the Bluetooth pairing failed: {error:#}");
+        }
+    }
     pub fn snapshot(&self) -> ConnectionStatus {
         let inbox = self.inbox.lock().unwrap();
         let mut incoming: Vec<_> = inbox.peers.values().cloned().collect();
@@ -95,6 +148,7 @@ impl Hub {
             selected: inbox.selected.clone(),
             incoming,
             error: inbox.error.clone(),
+            known: self.pairing.lock().unwrap().known.clone(),
             ..Default::default()
         };
         drop(inbox);
@@ -105,6 +159,8 @@ impl Hub {
                 .unwrap()
                 .values()
                 .map(|s| s.shared.lock().unwrap().status.clone())
+                // Found by name but another computer: not listed as a connection.
+                .filter(|status| status.link.state != "stranger")
                 .collect(),
             ..result
         }
@@ -124,7 +180,7 @@ impl Hub {
         sender.ready()
     }
 }
-fn device_key(id: &str) -> String {
+pub(super) fn device_key(id: &str) -> String {
     id.replace([':', '-'], "").to_ascii_uppercase()
 }
 /// The selected DJ changed: drop what the previous source presented.
@@ -162,19 +218,38 @@ impl Engine {
             inbox.latest.is_some()
         )
     }
-    /// KVJ receivers advertising nearby (a three-second listen; nothing else is listed).
-    pub fn bluetooth_scan(&self) -> Result<Vec<Device>> {
+    /// KVJ receivers advertising nearby (a three-second listen; nothing else is
+    /// listed). Remembered receivers among them are connected to by themselves.
+    pub fn bluetooth_scan(self: &Arc<Self>) -> Result<Vec<Device>> {
         let _scan = SCAN_GATE
             .try_lock()
             .map_err(|_| anyhow::anyhow!("蓝牙扫描正在进行"))?;
-        transport::receivers()
+        let found = transport::receivers()?;
+        let known: Vec<Known> = self.connections.pairing.lock().unwrap().known.iter()
+            .filter(|k| k.role == "receiver").cloned().collect();
+        for device in &found {
+            let remembered = known.iter().any(|k| device_key(&k.id) == device_key(&device.id) || k.name == device.name);
+            let stranger = self.connections.strangers.lock().unwrap().contains(&device_key(&device.id));
+            if remembered && !stranger && !self.connections.senders.lock().unwrap().contains_key(&device_key(&device.id)) {
+                if let Err(error) = self.connect_to(device.clone(), true) {
+                    tracing::debug!("reconnecting to a remembered receiver failed: {error:#}");
+                }
+            }
+        }
+        Ok(found)
     }
     /// On the projecting computer: advertise and accept senders, or stop.
-    pub fn bluetooth_listen(self: &Arc<Self>, on: bool) -> Result<()> {
+    /// `receiving`: Bluetooth is the chosen input, so a remembered DJ that is
+    /// connected may become the current DJ when nobody is.
+    pub fn bluetooth_listen(self: &Arc<Self>, on: bool, receiving: bool) -> Result<()> {
         anyhow::ensure!(!on || cfg!(any(target_os = "macos", windows)), "此平台不支持蓝牙接收");
         let mut listener = self.connections.listener.lock().unwrap();
+        self.connections.inbox.lock().unwrap().receiving = on && receiving;
         if on && listener.is_none() {
             *listener = Some(Receiver::start(Arc::downgrade(self))?);
+        } else if on {
+            drop(listener);
+            receiver::choose_remembered(self);
         } else if !on {
             let stopped = listener.take();
             drop(listener);
@@ -184,8 +259,13 @@ impl Engine {
         }
         Ok(())
     }
-    /// Prepares a standby connection to a receiving computer (at most eight).
+    /// Prepares a standby connection to a receiving computer (at most eight). A
+    /// computer not paired yet asks its operator to allow this one.
     pub fn bluetooth_connect(self: &Arc<Self>, device: Device) -> Result<()> {
+        self.connections.strangers.lock().unwrap().remove(&device_key(&device.id));
+        self.connect_to(device, false)
+    }
+    fn connect_to(self: &Arc<Self>, device: Device, remembered_only: bool) -> Result<()> {
         let key = device_key(&device.id);
         anyhow::ensure!(
             (1..=64).contains(&key.len()) && key.bytes().all(|b| b.is_ascii_alphanumeric()) && device.name.len() <= 512,
@@ -193,14 +273,64 @@ impl Engine {
         );
         let _gate = self.gate.lock().unwrap();
         let mut senders = self.connections.senders.lock().unwrap();
+        // One that gave up (refused, or another computer) may be tried again by hand.
+        if senders.get(&key).is_some_and(|s| s.shared.lock().unwrap().ended.is_some()) {
+            if remembered_only {
+                return Ok(());
+            }
+            let ended = senders.remove(&key);
+            drop(senders);
+            drop(ended);
+            senders = self.connections.senders.lock().unwrap();
+        }
         if senders.contains_key(&key) {
             return Ok(());
         }
         anyhow::ensure!(senders.len() < 8, "最多准备 8 台设备连接");
-        senders.insert(key, sender::Sender::connect(Arc::downgrade(self), device)?);
+        senders.insert(key, sender::Sender::connect(Arc::downgrade(self), device, remembered_only)?);
         Ok(())
     }
+    /// On the receiving computer: allow (and remember) or refuse a DJ asking to pair.
+    pub fn bluetooth_pair(&self, id: &str, allow: bool) -> Result<()> {
+        let mut inbox = self.connections.inbox.lock().unwrap();
+        anyhow::ensure!(
+            inbox.peers.get(id).is_some_and(|p| p.link.state == "asking"),
+            "这台设备没有在请求连接"
+        );
+        inbox.decisions.insert(id.to_owned(), allow);
+        Ok(())
+    }
+    /// Forget a paired computer on this side: its link ends and it has to be
+    /// allowed (or connected to) again.
+    pub fn bluetooth_forget(self: &Arc<Self>, token: &str) -> Result<()> {
+        let hub = &self.connections;
+        {
+            let mut pairing = hub.pairing.lock().unwrap();
+            pairing.forget(token);
+            pairing.save(&hub.dir)?;
+        }
+        hub.forgotten.fetch_add(1, Ordering::Relaxed);
+        let ids: Vec<String> = hub.senders.lock().unwrap().iter()
+            .filter(|(_, s)| s.shared.lock().unwrap().status.token == token)
+            .map(|(id, _)| id.clone()).collect();
+        for id in ids {
+            self.bluetooth_disconnect(&id);
+        }
+        let mut inbox = hub.inbox.lock().unwrap();
+        let chosen = inbox.selected.as_ref().and_then(|id| inbox.peers.get(id)).is_some_and(|p| p.token == token);
+        inbox.peers.retain(|_, p| p.token != token || p.link.state != "disconnected");
+        if chosen {
+            inbox.selected = None;
+            inbox.reset_source();
+            drop(inbox);
+            route_changed(self);
+        }
+        Ok(())
+    }
+    /// Ends a connection; a remembered receiver is then not connected to by
+    /// itself again until connected to by hand.
     pub fn bluetooth_disconnect(&self, id: &str) {
+        self.connections.strangers.lock().unwrap().insert(device_key(id));
         let _gate = self.gate.lock().unwrap();
         let sender = self.connections.senders.lock().unwrap().remove(&device_key(id));
         // Joins the connection worker.

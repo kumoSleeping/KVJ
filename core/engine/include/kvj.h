@@ -25,7 +25,8 @@ void kvj_engine_free(KvjEngine *engine);
  * {"cmd":"enable","set_id":"..","entry_ids":[..],"on":true} (also while following)
  * {"cmd":"start","set_id":"..","device":"auto","channel_start":0,"prepare_only":false}
  * {"cmd":"stop"} {"cmd":"status","after_log_id":null}
- * Bluetooth (BLE): {"cmd":"bluetooth_scan"} {"cmd":"bluetooth_listen","on":true}
+ * Bluetooth (BLE): {"cmd":"bluetooth_scan"} {"cmd":"bluetooth_listen","on":true,"receiving":true}
+ * {"cmd":"bluetooth_pair","id":"..","allow":true} {"cmd":"bluetooth_forget","token":".."}
  * {"cmd":"bluetooth_connect","device":{"id":"..","name":".."}} {"cmd":"bluetooth_disconnect","id":".."}
  * {"cmd":"bluetooth_select","id":".."|null} {"cmd":"send_start","peer":"<id>","device":"auto","channel_start":0}.
  * Free the reply with kvj_string_free. */

@@ -266,11 +266,11 @@ pub enum Edit {
     },
 }
 #[cfg(not(windows))]
-fn replace(tmp: &Path, target: &Path) -> std::io::Result<()> {
+pub(crate) fn replace(tmp: &Path, target: &Path) -> std::io::Result<()> {
     fs::rename(tmp, target)
 }
 #[cfg(windows)]
-fn replace(tmp: &Path, target: &Path) -> std::io::Result<()> {
+pub(crate) fn replace(tmp: &Path, target: &Path) -> std::io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{
         MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,

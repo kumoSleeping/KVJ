@@ -14,16 +14,21 @@ pub(super) const FEATURES: u8 = 4;
 pub(super) const ACK: u8 = 5;
 pub(super) const SELECT: u8 = 6;
 pub(super) const STREAM: u8 = 7;
+/// Receiver → sender: [1] paired (remembered or just allowed), [0] refused.
+pub(super) const PAIR: u8 = 8;
+/// Contract 3: HELLO carries the install's pairing token; PAIR confirms it.
 fn contract(role: u8) -> Vec<u8> {
     let mut bytes = b"KVJF".to_vec();
-    bytes.extend(2u32.to_le_bytes());
+    bytes.extend(3u32.to_le_bytes());
     bytes.extend(LIVE_FEATURE_REVISION.to_le_bytes());
     bytes.push(role);
     bytes
 }
-/// The versioned contract, then this computer's name for the other side's list.
-pub(super) fn hello(role: u8) -> Vec<u8> {
+/// The versioned contract, this install's pairing token, then this computer's
+/// name for the other side's list.
+pub(super) fn hello(role: u8, token: &str) -> Vec<u8> {
     let mut bytes = contract(role);
+    bytes.extend(token.as_bytes());
     let name = super::transport::host_name();
     let mut end = name.len().min(128);
     while !name.is_char_boundary(end) {
@@ -32,14 +37,17 @@ pub(super) fn hello(role: u8) -> Vec<u8> {
     bytes.extend(name[..end].as_bytes());
     bytes
 }
-/// Checks the contract and returns the peer's name.
-pub(super) fn check_hello(bytes: &[u8], role: u8) -> Result<String> {
+/// Checks the contract and returns the peer's pairing token and name.
+pub(super) fn check_hello(bytes: &[u8], role: u8) -> Result<(String, String)> {
     let expected = contract(role);
+    let start = expected.len() + 32;
     anyhow::ensure!(
-        bytes.len() <= expected.len() + 128 && bytes.starts_with(&expected),
+        bytes.len() >= start && bytes.len() <= start + 128 && bytes.starts_with(&expected),
         "KVJ 蓝牙协议或特征版本不一致，请更新两端"
     );
-    Ok(String::from_utf8_lossy(&bytes[expected.len()..]).trim().to_owned())
+    let token = std::str::from_utf8(&bytes[expected.len()..start]).unwrap_or_default();
+    anyhow::ensure!(super::pairing::valid_token(token), "KVJ 蓝牙配对信息无效，请更新两端");
+    Ok((token.to_owned(), String::from_utf8_lossy(&bytes[start..]).trim().to_owned()))
 }
 pub(super) fn number(bytes: &[u8]) -> Result<f64> {
     let value = f64::from_le_bytes(bytes.try_into()?);

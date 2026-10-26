@@ -38,7 +38,7 @@ impl Input {
     pub fn start(engine: &Arc<Engine>, selection: &Selection) -> Result<Self> {
         let (local, remote) = if selection.device == "bluetooth" {
             anyhow::ensure!(cfg!(any(target_os = "macos", windows)), "此平台不支持蓝牙接收");
-            engine.bluetooth_listen(true)?;
+            engine.bluetooth_listen(true, true)?;
             (None, Some(engine.connections.inbox.clone()))
         } else {
             (Some(Capture::start(selection)?), None)
