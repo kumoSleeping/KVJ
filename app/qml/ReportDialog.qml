@@ -8,7 +8,8 @@ import KVJ
 // Editing the description throws the preview (and the agreement) away.
 Popup {
     id: dialog
-    anchors.centerIn: Overlay.overlay
+    // Centred on the window (KVJ's own Overlay type hides Qt's attached one).
+    anchors.centerIn: parent
     width: Math.min(760, parent ? parent.width * 0.9 : 760)
     height: Math.min(implicitHeight, parent ? parent.height * 0.85 : 600)
     padding: 18
@@ -57,7 +58,6 @@ Popup {
         border.width: 1
         border.color: Theme.line
     }
-    Overlay.modal: Rectangle { color: "#77000000" }
 
     contentItem: ColumnLayout {
         spacing: 10

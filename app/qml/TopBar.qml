@@ -147,6 +147,6 @@ Rectangle {
 
     ReportDialog {
         id: report
-        parent: Overlay.overlay
+        parent: top.Window.window ? top.Window.window.contentItem : top
     }
 }
