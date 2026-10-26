@@ -54,6 +54,8 @@ qt_add_qml_module(KVJ
         qml/LiveBar.qml
         qml/Sidebar.qml
         qml/Timeline.qml
+        qml/TrackPlayer.qml
+        qml/FollowStrip.qml
         qml/Card.qml
         qml/Heading.qml
         qml/PopMenu.qml
@@ -65,6 +67,8 @@ qt_add_qml_module(KVJ
         qml/icons/check.svg
         qml/icons/chevron-down.svg
         qml/icons/chevron-right.svg
+        qml/icons/crosshair.svg
+        qml/icons/ear.svg
         qml/icons/ellipsis.svg
         qml/icons/folder.svg
         qml/icons/folder-open.svg
