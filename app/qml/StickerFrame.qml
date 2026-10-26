@@ -14,6 +14,10 @@ Sticker {
     // The id of the chosen sticker, and the way to choose one.
     property string chosen: ""
     property bool editing: false
+    // Where its centre may go, in shares of the picture: off it too, on the
+    // stage around it, where it waits unseen by the audience.
+    property rect bounds: Qt.rect(0, 0, 1, 1)
+    readonly property bool offstage: px < 0 || px > 1 || py < 0 || py > 1
     signal choose(string sid)
     signal resized(real size)
 
@@ -28,6 +32,7 @@ Sticker {
     size: model.size
     angle: model.angle
     lite: true
+    opacity: offstage ? 0.55 : 1
 
     function centre() {
         return area.mapFromItem(frame, frame.width / 2, frame.height / 2)
@@ -53,8 +58,8 @@ Sticker {
         onPositionChanged: mouse => {
             const p = frame.area.mapFromItem(grab, mouse.x, mouse.y)
             frame.change({
-                px: Math.max(0, Math.min(1, fromX + (p.x - start.x) / frame.area.width)),
-                py: Math.max(0, Math.min(1, fromY + (p.y - start.y) / frame.area.height))
+                px: Math.max(frame.bounds.x, Math.min(frame.bounds.x + frame.bounds.width, fromX + (p.x - start.x) / frame.area.width)),
+                py: Math.max(frame.bounds.y, Math.min(frame.bounds.y + frame.bounds.height, fromY + (p.y - start.y) / frame.area.height))
             })
         }
     }

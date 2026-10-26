@@ -69,8 +69,8 @@ This is a preview (pre-release) build; every version is listed under [Releases](
 ### Live desk
 
 - A light preview of the projection; the whole show runs in one window, and nothing moves when following starts.
-- Danmaku (scrolling or large in the middle) and Google Meet–style reactions (Noto's animated emoji; hold to send a stream, sweep to change the emoji).
-- A sticker gallery of images, GIFs and words: drag one onto the preview to post it, then move, size, turn or take it down there; the projection follows.
+- Danmaku (scrolling, at the top or at the foot, in three sizes, laid out in lanes as on Bilibili; or large in the middle) and Google Meet–style reactions (Noto's animated emoji; hold to send a stream, sweep to change the emoji).
+- A sticker gallery of images, GIFs and words: drag one onto the preview to post it, then move, size, turn or take it down there; the projection follows. Around the preview is an offstage band where stickers can wait unseen and be dragged in.
 - A dozen picture effects (glitch, RGB split, zoom blur, halftone, posterize, video wall, wave, scanlines, mosaic, black and white, lens…), each keyed on at its best strength and reordered by dragging. Effects touch only the video, never the words or stickers.
 
 ### Built for the show

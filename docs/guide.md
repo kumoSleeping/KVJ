@@ -146,7 +146,11 @@ has a point at each corner that sizes it, a point above that turns it (Shift:
 steps of 15°, double-click: upright); Delete takes it down. **编辑** (next to the
 size bar) puts the stickers in edit mode: every posted one shows a × on its top
 right corner that takes it down, and every one in the gallery a × that takes it
-out of the gallery; **完成** or Esc ends it.
+out of the gallery; **完成** or Esc ends it. The preview has the projection's
+shape (its window's, or the screen it fills) and sits on a stage that reaches
+half the picture again on every side, as far as the desk has room: a sticker
+let go or dragged there stays offstage (faint on the preview, unseen by the
+audience) until it is dragged into the picture.
 The size bar works on the chosen sticker, or else on the one posted last, and
 sets the size of the next. Each effect (mosaic, RGB split, video wall, lens,
 zoom blur, wave, glitch, scanlines, halftone, posterize, hue, black and
@@ -154,9 +158,10 @@ white) has a key that turns it on at the strength it looks best at (or off;
 dragged on over the other keys, it switches them the same way) and a bar that
 fine-tunes it; they apply from the
 top down, each to the picture the ones above made, and a grip at the left of
-each drags it to another place in that order (kept between runs). The number
+each drags it to another place in that order (kept between runs) while the
+effects panel's **编辑** is on. The number
 keys 1–9 and 0 (on the number pad too) switch the first ten effects in the list,
-whose rows show their key; , and . make the last effect switched (or tuned)
+whose rows show their key; the effects are the column at the window's right edge; , and . make the last effect switched (or tuned)
 5 % weaker or stronger. An effect tuned that way and then switched off keeps that
 strength as its own (a dot on its key); 重置 gives every effect back the strength
 it came with. The effects panel's own 快捷键 turns these keys off. Effects touch

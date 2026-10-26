@@ -27,6 +27,15 @@ Window {
     // The operator's preview is up: keep decoding even while this is put away.
     property bool previewing: false
     readonly property alias surface: surface
+    // The picture's shape as the audience sees it: the window's while it is
+    // up, else the screen it would fill or the 16:9 window it would open as.
+    // The operator's preview takes the same shape, so a sticker sits in the
+    // same place on both.
+    property bool fullscreenNext: false
+    property var screenNext: null
+    readonly property real aspect: visible && height > 0 ? width / height
+                                   : fullscreenNext && screenNext && screenNext.height > 0 ? screenNext.width / screenNext.height
+                                   : 16 / 9
     // Closed by the system (its key, Alt+F4): it stays up and asks (Main.qml);
     // closeOutput() puts it away.
     signal closeAsked()

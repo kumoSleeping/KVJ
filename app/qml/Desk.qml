@@ -76,8 +76,28 @@ Item {
     property var carrying: null
     property point carryPoint
     readonly property point carryOnScreen: screen.mapFromItem(desk, carryPoint.x, carryPoint.y)
-    readonly property bool carryOver: !!carrying && carryOnScreen.x >= 0 && carryOnScreen.y >= 0
-                                      && carryOnScreen.x <= screen.width && carryOnScreen.y <= screen.height
+    readonly property bool carryOver: !!carrying && inBounds(carryOnScreen.x / Math.max(1, screen.width),
+                                                             carryOnScreen.y / Math.max(1, screen.height))
+
+    // The picture's shape, the projection's (Projection.aspect): the preview,
+    // the stickers and the danmaku lanes all take it.
+    readonly property real aspect: projection ? projection.aspect : 16 / 9
+    // The stage: the picture and half its size again on every side, as much
+    // of it as the preview has room for. Stickers can wait there, unseen by
+    // the audience, and be dragged in. In shares of the picture.
+    readonly property rect stageBounds: {
+        const w = Math.max(1, screen.width)
+        const h = Math.max(1, screen.height)
+        const x0 = Math.max(-0.5, -screen.x / w)
+        const y0 = Math.max(-0.5, -screen.y / h)
+        const x1 = Math.min(1.5, (box.width - screen.x) / w)
+        const y1 = Math.min(1.5, (box.height - screen.y) / h)
+        return Qt.rect(x0, y0, x1 - x0, y1 - y0)
+    }
+    function inBounds(px, py) {
+        const b = stageBounds
+        return px >= b.x && px <= b.x + b.width && py >= b.y && py <= b.y + b.height
+    }
 
     readonly property Item focusItem: Window.activeFocusItem
 
@@ -109,7 +129,8 @@ Item {
     // Posts `item` centred at (px, py) of the screen, at the next size.
     function postAt(item, px, py) {
         Live.post({ kind: item.kind, source: item.source, text: item.text, name: item.name,
-                    px: Math.max(0, Math.min(1, px)), py: Math.max(0, Math.min(1, py)), size: desk.placeSize })
+                    px: Math.max(stageBounds.x, Math.min(stageBounds.x + stageBounds.width, px)),
+                    py: Math.max(stageBounds.y, Math.min(stageBounds.y + stageBounds.height, py)), size: desk.placeSize })
         desk.chosenSid = ""
     }
     function letGo() {
@@ -145,6 +166,23 @@ Item {
         property alias sound: desk.soundOn
         property alias soundDevice: desk.soundDevice
         property alias soundVolume: desk.soundVolume
+    }
+    // The shape the projection will have before it opens: the chosen screen's
+    // when it fills it, else its 16:9 window.
+    Binding {
+        target: desk.projection
+        property: "fullscreenNext"
+        value: fullscreen.checked
+    }
+    Binding {
+        target: desk.projection
+        property: "screenNext"
+        value: desk.targetScreen
+    }
+    Binding {
+        target: Live
+        property: "aspect"
+        value: desk.aspect
     }
     Component.onCompleted: {
         try {
@@ -190,27 +228,47 @@ Item {
             Layout.fillHeight: true
             spacing: Theme.gap
 
-            // As tall as a 16:9 picture of this width allows.
-            Item {
+            // The stage, as tall as the picture's shape at this width allows;
+            // the picture in its middle with a band of the stage around it.
+            Rectangle {
                 id: box
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.maximumHeight: width * 9 / 16
+                Layout.maximumHeight: width / desk.aspect
                 Layout.verticalStretchFactor: 100
+                radius: Theme.radiusLg
+                color: Theme.inset
+                clip: true
+
+                // Pressing the stage away from any sticker lets the chosen one go.
+                MouseArea {
+                    anchors.fill: parent
+                    onPressed: desk.chosenSid = ""
+                }
+                Text {
+                    x: 10
+                    y: 6
+                    visible: box.height - screen.height > 30 || box.width - screen.width > 120
+                    text: "画外 · 贴图可停在这里，拖进画面才会投放"
+                    font.pixelSize: Theme.sizeXs
+                    color: Theme.faint
+                }
 
                 Rectangle {
                     id: screen
-                    width: Math.min(box.width, box.height * 16 / 9)
-                    height: width * 9 / 16
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    radius: Theme.radiusLg
+                    // A band of the stage stays in sight above and below.
+                    width: Math.min(box.width, box.height * 0.84 * desk.aspect)
+                    height: width / desk.aspect
+                    anchors.centerIn: parent
                     color: "black"
-                    clip: true
-
-                    // Pressing the picture away from any sticker lets the chosen one go.
-                    MouseArea {
+                    // The picture's edge, over what it shows.
+                    Rectangle {
                         anchors.fill: parent
-                        onPressed: desk.chosenSid = ""
+                        anchors.margins: -1
+                        z: 3
+                        color: "transparent"
+                        border.width: 1
+                        border.color: Theme.faint
                     }
                     Stage {
                         anchors.fill: parent
@@ -219,6 +277,7 @@ Item {
                         stickerDelegate: Component {
                             StickerFrame {
                                 area: screen
+                                bounds: desk.stageBounds
                                 chosen: desk.chosenSid
                                 editing: desk.editing
                                 onChoose: sid => desk.chosenSid = sid
@@ -254,16 +313,17 @@ Item {
                         opacity: 0.8
                     }
 
-                    // Images from elsewhere dropped on the picture: into the gallery and up.
-                    DropArea {
-                        anchors.fill: parent
-                        onDropped: drop => {
-                            if (!drop.hasUrls)
-                                return
-                            const added = desk.addImages(drop.urls)
-                            for (let i = 0; i < added.length; ++i)
-                                desk.postAt(added[i], drop.x / width + i * 0.04, drop.y / height + i * 0.04)
-                        }
+                }
+                // Images from elsewhere dropped on the stage: into the gallery and up.
+                DropArea {
+                    anchors.fill: parent
+                    onDropped: drop => {
+                        if (!drop.hasUrls)
+                            return
+                        const added = desk.addImages(drop.urls)
+                        const at = screen.mapFromItem(box, drop.x, drop.y)
+                        for (let i = 0; i < added.length; ++i)
+                            desk.postAt(added[i], at.x / screen.width + i * 0.04, at.y / screen.height + i * 0.04)
                     }
                 }
             }
