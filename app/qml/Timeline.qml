@@ -200,6 +200,33 @@ Rectangle {
         }
     }
     onViewsLockedChanged: if (viewsLocked) mirror(activeItem)
+    // Synced, the one view follows the playheads it shows: one outside it is
+    // let be; once one inside reaches its right end the view moves on,
+    // keeping both in sight when they fit (centred between them), else
+    // paging on with the one that reached the end. Not for a while after a
+    // row was zoomed or moved by hand.
+    function followTogether() {
+        const rows = rowItems.filter(r => !!r && !r.camera)
+        const ref = activeItem
+        if (!ref || !ref.zoomed || rows.some(r => Date.now() - r.touchedAt < 4000))
+            return
+        const left = ref.viewLeft, span = ref.span
+        const seen = rows.filter(r => r.playing && r.playT >= left && r.playT <= left + span).map(r => r.playT)
+        if (!seen.length || Math.max(...seen) <= left + span * 0.97)
+            return
+        const lo = Math.min(...seen), hi = Math.max(...seen)
+        const next = hi - lo <= span * 0.8 ? Math.max(hi - span * 0.9, (lo + hi) / 2 - span / 2)
+                                          : hi - span * 0.1
+        ref.viewStart = Math.max(0, Math.min(next, ref.extent - span))
+        ref.keep()
+        mirror(ref)
+    }
+    Timer {
+        interval: 200
+        repeat: true
+        running: line.viewsLocked && line.visible
+        onTriggered: line.followTogether()
+    }
     function setMark(x) {
         if (activeItem)
             activeItem.setMark(x)

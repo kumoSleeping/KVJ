@@ -324,7 +324,8 @@ Item {
         repeat: true
         running: row.visible && row.zoomed && row.playT >= 0 && row.playing
         onTriggered: {
-            if (Date.now() - row.touchedAt < 4000 || (row.view.viewsLocked && row.view.activeItem !== row))
+            // Synced, the rows' one view follows them all (Timeline.followTogether).
+            if (Date.now() - row.touchedAt < 4000 || row.view.viewsLocked)
                 return
             if (row.playT < row.viewLeft || row.playT > row.viewLeft + row.span * 0.97) {
                 row.viewStart = Math.max(0, row.playT - row.span * 0.1)
