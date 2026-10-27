@@ -29,8 +29,8 @@ KVJ 是一款给 DJ 现场用的 VJ 软件。它首先是一个视频播放器�
 
 <!-- release-package-size-badges:start -->
 <p>
-  <a href="https://github.com/kumoSleeping/KVJ/releases/download/v0.1.0-rc1/KVJ-macos-arm64.dmg"><img src="https://img.shields.io/badge/macOS_Apple_Silicon-24.2_MB-black?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon 24.2 MB"></a>
-  <a href="https://github.com/kumoSleeping/KVJ/releases/download/v0.1.0-rc1/KVJ-windows-x64.zip"><img src="https://img.shields.io/badge/Windows_x64-73.0_MB-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows x64 73.0 MB"></a>
+  <a href="https://github.com/kumoSleeping/KVJ/releases/download/v0.2.0/KVJ-macos-arm64.dmg"><img src="https://img.shields.io/badge/macOS_Apple_Silicon-26.7_MB-black?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon 26.7 MB"></a>
+  <a href="https://github.com/kumoSleeping/KVJ/releases/download/v0.2.0/KVJ-windows-x64.zip"><img src="https://img.shields.io/badge/Windows_x64-75.1_MB-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows x64 75.1 MB"></a>
   <a href="https://github.com/kumoSleeping/KVJ/releases"><img src="https://img.shields.io/badge/More-Releases-555555?style=for-the-badge&logo=github&logoColor=white" alt="More releases"></a>
 </p>
 <!-- release-package-size-badges:end -->
