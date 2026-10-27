@@ -148,7 +148,7 @@ ApplicationWindow {
     property real playhead: 0
     // The Set the picture comes from. Opening another Set leaves it playing
     // there, effects and speed included: the other Set's timeline is parked,
-    // paused at its start, until something of it is played (Enter, 跳至光标处
+    // paused at its start, until something of it is played (Enter, 跳至
     // or its play key), and coming back to this Set shows the player again.
     readonly property var playingSet: {
         const id = shownEntry ? shownEntry.id : ""

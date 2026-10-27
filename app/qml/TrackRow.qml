@@ -18,7 +18,7 @@ import KVJ
 // ruler) zoom and fit it; zoomed in, the overview on the bar frames what the
 // lane shows, and the lane follows its own playhead unless it was touched a
 // moment ago. A press anywhere on a track's row makes it the active row, the
-// one Enter, 跳至光标处 and the zoom keys act on (its name is inked);
+// one Enter and the zoom keys act on (its name is inked);
 // a press or drag on its timeline (the overview, the ruler, the lane) only
 // places this row's cursor: nothing a click does moves a picture. A
 // right click on an entry offers 移出轨道, elsewhere on the lane or on the
@@ -51,7 +51,7 @@ Item {
     readonly property var clips: layout.clips || []
     readonly property real total: layout.total || 0
     readonly property var entries: spec.entries || []
-    // The row Enter, 跳至光标处 and the zoom keys act on: the one pressed last.
+    // The row Enter and the zoom keys act on: the one pressed last.
     readonly property bool active: !camera && view.activeItem === row
     // A drag over the row would put what it carries on this track.
     readonly property bool dropOnto: view.dropZone.kind === "onto" && view.dropZone.index === rowIndex

@@ -9,12 +9,12 @@ import KVJ
 // editor's, as a DJ's two decks (画面 1, 画面 2), each on a clock of its
 // own, alike. On top a slim bar
 // for the active row (the track row pressed last, its name inked): its
-// cursor and 跳至光标处 (Enter does the same), its zoom keys −
+// zoom keys − (Enter plays it from its cursor)
 // 全览 + (− = \ too), then the switches and how jumps look. Then the rows
 // (TrackRow), each its own play bar (its name at the left; pressed, its
 // layer is chosen on the board), its own ruler and view (zoom and scroll
 // are a row's own) and its own cursor: a press on a row's timeline only
-// places that row's cursor, and only Enter, 跳至光标处 / 跳至, the play key
+// places that row's cursor, and only Enter, 跳至, the play key
 // or the nudge keys ever move a picture. While smart following leads a
 // player the keys its helpers at work own rest. Entries from the drawer (an
 // internal drag whose source has `entryIds` and `title`), or files, dropped
@@ -132,7 +132,7 @@ Rectangle {
             out.push(rowRepeater.itemAt(i))
         return out
     }
-    // The row Enter, 跳至光标处 and the zoom keys act on: the track row
+    // The row Enter and the zoom keys act on: the track row
     // pressed last, else the first track row.
     property string activeKey: ""
     readonly property var activeItem: rowItems.find(r => !!r && !r.camera && r.key === activeKey)
@@ -156,7 +156,7 @@ Rectangle {
     onSetIdChanged: Qt.callLater(() => line.activeKey = line.states[line.setId + "|active"] || "")
 
     // The keys, on the active row: Enter plays it from its cursor, − = \ zoom it.
-    // Enter, 跳至光标处 and a row's 跳至: played from its cursor and, with
+    // Enter and a row's 跳至: played from its cursor and, with
     // 跳转置顶 on, its layer floated to the top on the air first.
     property bool jumpRaises: false
     function jumpRow(r) {
@@ -346,16 +346,6 @@ Rectangle {
             spacing: 8
             readonly property var act: line.activeItem
             Item { Layout.fillWidth: true }
-            TextButton {
-                implicitHeight: 26
-                text: "跳至光标处"
-                outlined: true
-                enabled: line.canJump
-                onClicked: line.jump()
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "从光标处播放" + (parent.act ? parent.act.name : "") + "（也可按回车）\n点轨道的进度条、标尺或画面条只放光标，不动画面"
-            }
             Item { implicitWidth: 6 }
             // The active row's zoom.
             RowLayout {
@@ -413,7 +403,7 @@ Rectangle {
                 onToggled: line.jumpRaises = checked
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "开着时，回车、跳至光标处和轨道上的「跳至」会先把这条轨道的画面升到最上层投给观众（保留它的大小和位置），再从光标处播放"
+                ToolTip.text: "开着时，回车和轨道上的「跳至」会先把这条轨道的画面升到最上层投给观众（保留它的大小和位置），再从光标处播放"
             }
             Item { implicitWidth: 6 }
             Toggle {
