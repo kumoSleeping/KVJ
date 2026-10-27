@@ -6,18 +6,16 @@ import QtQuick.Shapes
 import QtQuick.Window
 import KVJ
 
-// The board: the one place the picture is seen and made, the projected
-// picture in the middle of a wide stage. Every picture source is a layer on
-// it; a source newly there waits on the stage at the picture's right
-// (Switcher.stack) until it is dragged in; cameras are taken in with the key at
-// the foot of that stage (+ 相机) and let go from their layer's menu. Images
-// dragged in from elsewhere are posted as stickers where they are let go on
-// the picture, or wait in 画外 beside the sources when let go there; the
-// effects, the words and the reactions on the air show on it as they do for
-// the audience. Right under the picture: 跟随 | 投放,
+// The board: the one place the picture is seen and made. Every picture
+// source is a layer on it; a source newly there waits off the picture
+// (Switcher.stack), listed in 准备 at the window's left (Library) until it
+// is brought in; cameras are taken in with + 相机 and let go from their
+// layer's menu. Images dragged in are posted as stickers where they are let
+// go on the picture; the effects, the words (文字, beside + 相机) and the
+// reactions on the air show on it as they do for the audience. Right under the picture: 跟随 | 投放,
 // the picture's sound, the output and 投放. In 跟随 every change here is on
 // the air at once; in 投放 the audience keeps what was last put out until 投放
-// (Switcher.apply, also Space); the PGM monitor above 音频对位 shows it meanwhile.
+// (Switcher.apply, also Space); the PGM monitor (输出预览) above 声学追踪 shows it meanwhile.
 //
 // A layer is chosen by pressing it, moved by dragging it (its edges snap to
 // the picture's edges and middle and to the other layers'; laid nearly over
@@ -52,11 +50,9 @@ ColumnLayout {
     // Where the keys under the picture go (the timeline's top line), and
     // how far in from the board's left edge the picture starts.
     property Item keysHost: null
-    readonly property real keysInset: screen.room
-    // 画外: the column at the picture's right where the sources not on it wait.
-    readonly property real shelfWidth: 112
-    // The view's size: 1 = the picture and 画外 as large as the room allows;
-    // less, both drawn smaller about the middle of that room, so a layer
+    readonly property real keysInset: screen.fitX
+    // The view's size: 1 = the picture as large as the room allows; less,
+    // drawn smaller about the middle of that room, so a layer
     // reaching past the picture is seen whole. Its bar is in the title bar
     // over the board's right end (`zoomHost`).
     property real zoom: 1
@@ -152,8 +148,24 @@ ColumnLayout {
         }
     }
 
+    // The sources off the picture, waiting in 准备 (Library): { source, index }.
+    readonly property var waiting: slots.map((s, i) => ({ source: s.source, index: i }))
+                                        .filter(o => !Switcher.inPicture(slots[o.index]))
+    // A layer dragged from 准备: its source, and the pointer (composer
+    // coordinates); dropLayer() lands it where the pointer is on the picture.
+    property string layerCarried: ""
+    property point layerAt
+    onWaitingChanged: if (layerCarried && !waiting.some(o => o.source === layerCarried)) layerCarried = ""
+    function dropLayer() {
+        const id = layerCarried
+        layerCarried = ""
+        const i = slots.findIndex(s => s.source === id)
+        const p = screen.mapFromItem(composer, layerAt.x, layerAt.y)
+        if (i >= 0 && p.x >= 0 && p.y >= 0 && p.x <= screen.width && p.y <= screen.height)
+            placeAt(i, p.x / screen.width, p.y / screen.height)
+    }
     // Layer `i` onto the picture centred at (cx, cy) (picture shares), a
-    // quarter wide in its own shape, chosen and on top: dropped from the shelf.
+    // quarter wide in its own shape, chosen and on top: dropped from 准备.
     function placeAt(i, cx, cy) {
         if (i < 0 || i >= slots.length)
             return
@@ -394,347 +406,35 @@ ColumnLayout {
         color: Theme.bg
         clip: true
 
-        // The picture, at the top left with a small margin on the left, top
-        // and foot (`room`), enough to reach a split line's point on its edge;
-        // at its right the shelf where sources wait. The keys that put it on
-        // the air are on the timeline's top line (keysHost). Zoomed out, the
-        // two shrink about the middle of the room they fill at full size.
+        // The picture, centred across the board with a small margin at the
+        // top and foot (`room`), enough to reach a split line's point on its
+        // edge. The keys that put it on the air are on the timeline's top
+        // line (keysHost). Zoomed out, it shrinks about the middle of the
+        // room it fills at full size.
         Rectangle {
             id: screen
             readonly property real room: 16
-            // At least one column of parked sources fits at its right.
-            readonly property real fitWidth: Math.max(1, Math.min(box.width - room - 12 - composer.shelfWidth - 8, (box.height - 2 * room) * composer.aspect))
+            readonly property real fitWidth: Math.max(1, Math.min(box.width - 2 * room, (box.height - 2 * room) * composer.aspect))
             readonly property real fitHeight: fitWidth / Math.max(0.2, composer.aspect)
+            // Where it starts at full size: centred across the board.
+            readonly property real fitX: (box.width - fitWidth) / 2
             width: fitWidth * composer.zoom
             height: width / Math.max(0.2, composer.aspect)
-            x: room + (fitWidth + 12 + composer.shelfWidth) * (1 - composer.zoom) / 2
+            x: (box.width - width) / 2
             y: room + fitHeight * (1 - composer.zoom) / 2
             color: "black"
         }
-        // —— 画外: the sources not on the picture, a column at its right ——
-        // Each a small picture with its name: a click brings it onto the
-        // picture (lower right), a drag puts it where it is let go. A layer
-        // moved wholly off the picture comes here. It is a tray drawn with a
-        // dashed edge; empty, a small drawing in it says what it holds.
-        Item {
-            id: shelf
-            z: 7
-            x: screen.x + screen.width + 12 * composer.zoom
-            y: screen.y
-            // Drawn at the view's size, all of it.
-            width: composer.shelfWidth
-            height: screen.height / composer.zoom
-            scale: composer.zoom
-            transformOrigin: Item.TopLeft
-            readonly property var waiting: composer.slots.map((s, i) => ({ source: s.source, index: i }))
-                                                          .filter(o => !Switcher.inPicture(composer.slots[o.index]))
-            // The tray.
-            Shape {
-                anchors.fill: parent
-                preferredRendererType: Shape.CurveRenderer
-                ShapePath {
-                    strokeColor: shelf.carrying ? Theme.muted : Theme.dark ? "#3a404a" : "#d4d4da"
-                    strokeWidth: 1.2
-                    strokeStyle: ShapePath.DashLine
-                    dashPattern: [4, 3]
-                    fillColor: Theme.inset
-                    PathRectangle {
-                        x: 0.6
-                        y: 0.6
-                        width: shelf.width - 1.2
-                        height: shelf.height - 1.2
-                        radius: Theme.radiusLg
-                    }
-                }
-            }
-            // Empty: pictures waiting in a tray, one sliding in from the
-            // picture at the left, and two words.
-            Column {
-                visible: shelf.waiting.length === 0 && composer.gallery.length === 0
-                anchors.centerIn: parent
-                width: parent.width - 16
-                spacing: 10
-                Item {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: 64
-                    height: 50
-                    // Two waiting, stacked.
-                    Rectangle {
-                        x: 22; y: 4
-                        width: 36; height: 22
-                        radius: 4
-                        rotation: 6
-                        color: Theme.bg
-                        border.width: 1.2
-                        border.color: Theme.faint
-                    }
-                    Rectangle {
-                        x: 18; y: 12
-                        width: 36; height: 22
-                        radius: 4
-                        rotation: -3
-                        color: Theme.bg
-                        border.width: 1.2
-                        border.color: Theme.muted
-                        // A small picture in it: a hill and a sun.
-                        Rectangle { x: 24; y: 5; width: 5; height: 5; radius: 2.5; color: Theme.faint }
-                        Shape {
-                            anchors.fill: parent
-                            preferredRendererType: Shape.CurveRenderer
-                            ShapePath {
-                                strokeColor: "transparent"
-                                fillColor: Theme.faint
-                                startX: 3; startY: 19
-                                PathLine { x: 13; y: 9 }
-                                PathLine { x: 19; y: 15 }
-                                PathLine { x: 23; y: 12 }
-                                PathLine { x: 33; y: 19 }
-                            }
-                        }
-                    }
-                    // One coming in from the left.
-                    Shape {
-                        anchors.fill: parent
-                        preferredRendererType: Shape.CurveRenderer
-                        ShapePath {
-                            strokeColor: Theme.muted
-                            strokeWidth: 1.5
-                            fillColor: "transparent"
-                            capStyle: ShapePath.RoundCap
-                            joinStyle: ShapePath.RoundJoin
-                            startX: 0; startY: 42
-                            PathLine { x: 22; y: 42 }
-                            PathMove { x: 17; y: 37.5 }
-                            PathLine { x: 22; y: 42 }
-                            PathLine { x: 17; y: 46.5 }
-                        }
-                    }
-                    Rectangle {
-                        x: 26; y: 37
-                        width: 16; height: 10
-                        radius: 2.5
-                        color: "transparent"
-                        border.width: 1.2
-                        border.color: Theme.faint
-                    }
-                }
-                Text {
-                    width: parent.width
-                    horizontalAlignment: Text.AlignHCenter
-                    text: "画外"
-                    font.pixelSize: Theme.sizeSm
-                    font.weight: Font.DemiBold
-                    color: Theme.muted
-                }
-                Text {
-                    width: parent.width
-                    horizontalAlignment: Text.AlignHCenter
-                    wrapMode: Text.Wrap
-                    text: "拖出画面的画面、拖进来的图片在这里等着"
-                    font.pixelSize: Theme.sizeXs
-                    color: Theme.faint
-                }
-            }
-            Flickable {
-                x: 6
-                y: 6
-                width: parent.width - 12
-                height: parent.height - 12
-                contentHeight: shelfColumn.implicitHeight
-                clip: true
-                boundsBehavior: Flickable.StopAtBounds
-                interactive: !shelf.carrying
-                Column {
-                    id: shelfColumn
-                    width: parent.width
-                    spacing: 8
-                    Repeater {
-                        model: shelf.waiting
-                        Item {
-                            id: tile
-                            required property var modelData
-                            width: shelfColumn.width
-                            height: thumb.height + 18
-                            Rectangle {
-                                id: thumb
-                                width: parent.width
-                                height: Math.round(width * 9 / 16)
-                                radius: Theme.radius
-                                color: "black"
-                                clip: true
-                                opacity: shelf.carrying && shelf.carried === tile.modelData.source ? 0.4 : 1
-                                Compositor {
-                                    anchors.fill: parent
-                                    layout: ({ slots: [Switcher.slot({ source: tile.modelData.source, x: 0, y: 0, w: 1, h: 1, fit: "contain" }, 0)] })
-                                    textures: composer.textures
-                                    operator: true
-                                }
-                            }
-                            Text {
-                                y: thumb.height + 3
-                                width: parent.width
-                                text: composer.sourceName(tile.modelData.source)
-                                font.pixelSize: Theme.sizeXs
-                                color: tileArea.containsMouse ? Theme.text : Theme.muted
-                                elide: Text.ElideRight
-                            }
-                            MouseArea {
-                                id: tileArea
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                preventStealing: true
-                                cursorShape: shelf.carrying ? Qt.ClosedHandCursor : Qt.PointingHandCursor
-                                property point from
-                                onPressed: mouse => from = Qt.point(mouse.x, mouse.y)
-                                onPositionChanged: mouse => {
-                                    if (!pressed)
-                                        return
-                                    if (!shelf.carrying && Math.hypot(mouse.x - from.x, mouse.y - from.y) > 6) {
-                                        shelf.carried = tile.modelData.source
-                                        shelf.carrying = true
-                                    }
-                                    if (shelf.carrying)
-                                        shelf.at = mapToItem(box, mouse.x, mouse.y)
-                                }
-                                // The drag ends before the layer moves: moved onto the
-                                // picture it leaves the shelf, and this tile with it,
-                                // so nothing of the tile is reached after that.
-                                onReleased: mouse => {
-                                    const source = tile.modelData.source
-                                    const i = composer.slots.findIndex(s => s.source === source)
-                                    const carried = shelf.carrying
-                                    const p = mapToItem(screen, mouse.x, mouse.y)
-                                    shelf.carrying = false
-                                    if (!carried)
-                                        composer.bringIn(source)
-                                    else if (p.x >= 0 && p.y >= 0 && p.x <= screen.width && p.y <= screen.height)
-                                        composer.placeAt(i, p.x / screen.width, p.y / screen.height)
-                                }
-                                onCanceled: shelf.carrying = false
-                                ToolTip.visible: containsMouse && !pressed
-                                ToolTip.delay: 600
-                                ToolTip.text: "在画外，观众看不到 · 点一下放进画面右下角，或拖进画面里"
-                            }
-                        }
-                    }
-                    // The images kept here: a click posts one in the middle,
-                    // a drag where it is let go; × lets it go from here.
-                    Repeater {
-                        model: composer.gallery
-                        Item {
-                            id: kept
-                            required property var modelData
-                            readonly property bool moving: modelData.kind === "image" && /\.(gif|webp)$/i.test(modelData.source)
-                            width: shelfColumn.width
-                            height: width * 9 / 16
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: Theme.radius
-                                color: keptArea.containsMouse ? Theme.hover : Theme.bg
-                                opacity: composer.carrying && composer.carrying.id === kept.modelData.id ? 0.4 : 1
-                                Image {
-                                    id: keptThumb
-                                    anchors.fill: parent
-                                    anchors.margins: 4
-                                    visible: kept.modelData.kind === "image" && !(kept.moving && keptArea.containsMouse)
-                                    source: kept.modelData.kind === "image" ? kept.modelData.source : ""
-                                    sourceSize.width: 160
-                                    sourceSize.height: 160
-                                    fillMode: Image.PreserveAspectFit
-                                    asynchronous: true
-                                }
-                                // A GIF plays while the pointer is on it.
-                                Loader {
-                                    anchors.fill: parent
-                                    anchors.margins: 4
-                                    active: kept.moving && keptArea.containsMouse
-                                    sourceComponent: AnimatedImage {
-                                        source: kept.modelData.source
-                                        fillMode: Image.PreserveAspectFit
-                                    }
-                                }
-                                Text {
-                                    anchors.fill: parent
-                                    anchors.margins: 4
-                                    visible: kept.modelData.kind === "text" || keptThumb.status === Image.Error
-                                    text: kept.modelData.kind === "text" ? kept.modelData.text : "无法读取"
-                                    font.pixelSize: kept.modelData.kind === "text" ? Theme.sizeSm : Theme.sizeXs
-                                    font.weight: Font.DemiBold
-                                    color: kept.modelData.kind === "text" ? Theme.text : Theme.faint
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                    wrapMode: Text.Wrap
-                                    elide: Text.ElideRight
-                                }
-                            }
-                            MouseArea {
-                                id: keptArea
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                preventStealing: true
-                                cursorShape: composer.carrying ? Qt.ClosedHandCursor : Qt.PointingHandCursor
-                                property point start
-                                onPressed: mouse => start = mapToItem(composer, mouse.x, mouse.y)
-                                onPositionChanged: mouse => {
-                                    if (!pressed)
-                                        return
-                                    const p = mapToItem(composer, mouse.x, mouse.y)
-                                    if (!composer.carrying && Math.hypot(p.x - start.x, p.y - start.y) > 6)
-                                        composer.carrying = kept.modelData
-                                    if (composer.carrying)
-                                        composer.carryPoint = p
-                                }
-                                onReleased: {
-                                    if (composer.carrying)
-                                        composer.letGo()
-                                    else
-                                        composer.postAt(kept.modelData, 0.5, 0.5)
-                                }
-                                onCanceled: composer.carrying = null
-                                ToolTip.visible: containsMouse && !pressed
-                                ToolTip.delay: 600
-                                ToolTip.text: "在画外的图片 · 点一下贴在画面中间，或拖进画面里"
-                            }
-                            IconButton {
-                                anchors.top: parent.top
-                                anchors.right: parent.right
-                                implicitWidth: 18
-                                implicitHeight: 18
-                                iconSize: 10
-                                iconName: "x"
-                                tip: "从画外拿掉"
-                                visible: keptArea.containsMouse || hovered
-                                onClicked: composer.forget(kept.modelData.id)
-                            }
-                        }
-                    }
-                }
-            }
-            // Images dropped here wait here.
-            DropArea {
-                anchors.fill: parent
-                onDropped: drop => {
-                    if (drop.hasUrls)
-                        composer.addImages(drop.urls)
-                }
-            }
-            // A drag from the shelf: where the layer would go, at the pointer.
-            // Its source gone from the shelf (put on the picture another way,
-            // a camera let go), the drag is over.
-            onWaitingChanged: if (carrying && !waiting.some(o => o.source === carried)) carrying = false
-            property bool carrying: false
-            property string carried: ""
-            property point at
-        }
-        // The layer being dragged in from the shelf, as large as it will land.
+        // A layer being dragged in from 准备 (Library), as large as it will
+        // land, while the pointer is over the board.
         Rectangle {
-            visible: shelf.carrying
+            readonly property point at: box.mapFromItem(composer, composer.layerAt.x, composer.layerAt.y)
+            visible: composer.layerCarried !== "" && at.x >= 0 && at.y >= 0 && at.x <= box.width && at.y <= box.height
             z: 9
             readonly property real w: screen.width * 0.4
             width: w
-            height: Math.min(screen.height * 0.9, w / Math.max(0.1, composer.ratio(shelf.carried)))
-            x: shelf.at.x - width / 2
-            y: shelf.at.y - height / 2
+            height: Math.min(screen.height * 0.9, w / Math.max(0.1, composer.ratio(composer.layerCarried)))
+            x: at.x - width / 2
+            y: at.y - height / 2
             radius: Theme.radius
             color: "#33ffffff"
             border.width: 1.5
@@ -787,7 +487,7 @@ ColumnLayout {
             }
         }
         // —— The view's size: − bar +, 复原 ——
-        // In the title bar (zoomHost), its right end over 画外's.
+        // In the title bar (zoomHost), its right end over the picture's.
         Row {
             parent: composer.zoomHost
             visible: !!parent
@@ -798,7 +498,7 @@ ColumnLayout {
                     return 0
                 // What moves it: the board's place and size, the window's.
                 composer.x; composer.width; h.width
-                return box.mapToItem(h, screen.room + screen.fitWidth + 12 + composer.shelfWidth, 0).x - width
+                return box.mapToItem(h, screen.fitX + screen.fitWidth, 0).x - width
             }
             spacing: 2
             IconButton {
@@ -856,14 +556,14 @@ ColumnLayout {
 
         // —— The mode, and the keys that put it on the air, then + 相机 ——
         // Shown by the host on the timeline's top line (`keys`), as wide as
-        // the picture, + 相机 over the shelf at its right.
+        // the picture, + 相机 and 文字 past it.
         RowLayout {
             id: airRow
             parent: composer.keysHost
             anchors.verticalCenter: parent ? parent.verticalCenter : undefined
             // As wide as the picture, + 相机 past it; narrower (down to the
             // keys' own widths) when the line is short of room.
-            readonly property real wanted: screen.fitWidth + 12 + cameraKey.implicitWidth
+            readonly property real wanted: screen.fitWidth + 12 + cameraKey.implicitWidth + wordsKey.implicitWidth + 8
             width: parent ? parent.width : wanted
             spacing: 8
             // 跟随 or 投放, a segmented key: the mode shown in ink on a plate.
@@ -1019,8 +719,7 @@ ColumnLayout {
                     border.color: Theme.bg
                 }
             }
-            // Over the shelf: a camera taken in comes onto the picture, at its
-            // lower right. Listed only while the menu is open (listing wakes
+            // A camera taken in comes onto the picture, at its lower right. Listed only while the menu is open (listing wakes
             // the camera stack).
             TextButton {
                 id: cameraKey
@@ -1034,6 +733,39 @@ ColumnLayout {
                 ToolTip.visible: hovered && !cameraMenu.visible
                 ToolTip.delay: 600
                 ToolTip.text: "加一个相机画面，放在画面右下角"
+            }
+            // Words for the audience: danmaku, words in the middle, a text
+            // sticker; in a popover from its key.
+            TextButton {
+                id: wordsKey
+                flat: !wordsPop.visible
+                iconName: "message-square"
+                text: "文字"
+                leftPadding: 6
+                rightPadding: 8
+                onClicked: wordsPop.visible ? wordsPop.close() : wordsPop.open()
+                ToolTip.visible: hovered && !wordsPop.visible
+                ToolTip.delay: 600
+                ToolTip.text: "弹幕、居中文字、文字贴图"
+                Popup {
+                    id: wordsPop
+                    y: -height - 6
+                    width: 300
+                    padding: 12
+                    margins: 8
+                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+                    onOpened: words.focusField()
+                    background: Rectangle {
+                        radius: Theme.radiusLg
+                        color: Theme.raised
+                        border.width: 1
+                        border.color: Theme.line
+                    }
+                    contentItem: Words {
+                        id: words
+                        composer: composer
+                    }
+                }
             }
         }
 
@@ -1130,7 +862,7 @@ ColumnLayout {
                             return { mode: "bend", line: k, piece: o.piece }
                     }
                 }
-                // Only what is on the picture: those off it wait on the shelf.
+                // Only what is on the picture: those off it wait in 准备.
                 const order = composer.slots.map((s, i) => i).filter(i => Switcher.inPicture(composer.slots[i]))
                                             .sort((a, b) => (composer.slots[b].z - composer.slots[a].z) || (b - a))
                 for (const i of order) {
@@ -1642,13 +1374,14 @@ ColumnLayout {
         }
 
 
-        // Images from elsewhere dropped on the canvas: posted where they are let go.
+        // Images dropped on the canvas, from elsewhere or from the files at
+        // the window's left: posted where they are let go (videos go to tracks).
         DropArea {
             anchors.fill: parent
             onDropped: drop => {
-                if (!drop.hasUrls)
-                    return
-                const added = composer.imagesIn(drop.urls)
+                const src = drop.source
+                const urls = src && src.fileUrls && src.fileUrls.length ? src.fileUrls : drop.hasUrls ? drop.urls : []
+                const added = composer.imagesIn(urls)
                 const at = screen.mapFromItem(box, drop.x, drop.y)
                 for (let i = 0; i < added.length; ++i)
                     composer.postAt(added[i], at.x / screen.width + i * 0.04, at.y / screen.height + i * 0.04)

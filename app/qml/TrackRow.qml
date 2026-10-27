@@ -1038,25 +1038,38 @@ Item {
                     }
                 }
             }
-            // What is dragged here takes the track's place, as a record put
-            // on a deck: the whole lane, veiled, says so.
-            Rectangle {
+            // What is dragged here: on the left half it takes the track's
+            // place, as a record put on a deck; on the right half it goes
+            // after what is on it. The half it would go to is veiled
+            // strongly, with its word; an empty track takes it whole.
+            Row {
                 visible: row.dropOnto
                 width: lane.width
                 height: lane.height
-                radius: Theme.radius
-                color: Qt.rgba(Theme.selected.r, Theme.selected.g, Theme.selected.b, 0.88)
-                border.width: 2
-                border.color: Theme.text
-                Text {
-                    x: 10
-                    y: 8
-                    width: parent.width - 20
-                    text: (row.clips.length ? "替换为：" : "放上：") + row.view.dropTitle
-                    font.pixelSize: Theme.sizeXs
-                    font.weight: Font.DemiBold
-                    color: Theme.text
-                    elide: Text.ElideRight
+                spacing: 4
+                Repeater {
+                    model: row.clips.length ? [false, true] : [false]
+                    Rectangle {
+                        required property bool modelData
+                        readonly property bool hot: row.view.dropZone.append === modelData
+                        width: row.clips.length ? (lane.width - 4) / 2 : lane.width
+                        height: lane.height
+                        radius: Theme.radius
+                        color: Qt.rgba(Theme.selected.r, Theme.selected.g, Theme.selected.b, hot ? 0.92 : 0.55)
+                        border.width: hot ? 2 : 1
+                        border.color: hot ? Theme.text : Theme.line
+                        Text {
+                            x: 10
+                            y: 8
+                            width: parent.width - 20
+                            text: !parent.hot ? (parent.modelData ? "追加" : "替换")
+                                : (!row.clips.length ? "放上：" : parent.modelData ? "追加：" : "替换为：") + row.view.dropTitle
+                            font.pixelSize: Theme.sizeXs
+                            font.weight: parent.hot ? Font.DemiBold : Font.Medium
+                            color: parent.hot ? Theme.text : Theme.muted
+                            elide: Text.ElideRight
+                        }
+                    }
                 }
             }
             // A press or drag places the cursor, never the picture (Enter or

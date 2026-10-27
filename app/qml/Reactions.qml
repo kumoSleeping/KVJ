@@ -4,39 +4,86 @@ import QtQuick.Layouts
 import KVJ
 
 // The reactions as a narrow rail beside the effects', top to bottom, as in
-// Google Meet: the pointer on one plays it, a press sends one, held it sends a
+// Google Meet, the first ten with their key (Q to P) in a corner: the pointer
+// on one plays it, a press sends one (the key bounces), held it sends a
 // stream from along the foot of the screen, and swept up or down the stream
 // changes to the one under the pointer. Swept out of the rail sideways (onto
-// the effects, say) it keeps the last one: it never reaches past its own keys.
+// the effects, say) it keeps the last one: it never reaches past its own
+// keys. The ⋯ key at the foot orders them (dragging the keys while it is on).
 Item {
     id: rail
 
-    readonly property int count: Live.emoji.length
+    // Dragging the keys changes their order while this is on.
+    property bool editing: false
+
+    readonly property int count: Live.reactions.length
     readonly property int gap: 3
     // As large as the rail's height allows, between 26 and 40, as the effects'.
-    readonly property int key: Math.max(26, Math.min(40, Math.floor((height - gap * count) / Math.max(1, count))))
+    readonly property int key: Math.max(26, Math.min(40, Math.floor((height - menuKey.height - 8 - gap * count) / Math.max(1, count))))
 
     implicitWidth: 40
     Layout.preferredWidth: key
     Layout.fillWidth: false
-    clip: true
+
+    Connections {
+        target: Live
+        function onReactionPressed(index) {
+            const k = faces.itemAt(index)
+            if (k)
+                k.pop()
+        }
+    }
 
     Column {
         id: keys
         width: parent.width
         spacing: rail.gap
         Repeater {
-            model: Live.emoji
-            Rectangle {
+            id: faces
+            model: Live.reactions
+            Item {
                 id: face
                 required property var modelData
                 required property int index
                 readonly property bool hot: sweep.hot === index
                 width: rail.key
                 height: rail.key
-                radius: Theme.radius - 1
-                color: hot && sweep.pressed ? Theme.selected : hot ? Theme.hover : Theme.inset
-                Behavior on color { ColorAnimation { duration: 90 } }
+                // Sent: a quick squeeze and a ring going out.
+                function pop() {
+                    bounce.restart()
+                    ring.restart()
+                }
+                Rectangle {
+                    id: plate
+                    anchors.fill: parent
+                    radius: Theme.radius - 1
+                    color: face.hot && sweep.pressed ? Theme.selected : face.hot ? Theme.hover : Theme.inset
+                    border.width: rail.editing ? 1 : 0
+                    border.color: Theme.line
+                    Behavior on color { ColorAnimation { duration: 90 } }
+                    SequentialAnimation on scale {
+                        id: bounce
+                        running: false
+                        NumberAnimation { to: 0.82; duration: 60; easing.type: Easing.OutQuad }
+                        NumberAnimation { to: 1; duration: 220; easing.type: Easing.OutBack; easing.overshoot: 3 }
+                    }
+                }
+                Rectangle {
+                    id: ringShape
+                    anchors.centerIn: parent
+                    width: parent.width
+                    height: parent.height
+                    radius: Theme.radius + 2
+                    color: "transparent"
+                    border.width: 2
+                    border.color: Theme.text
+                    opacity: 0
+                    ParallelAnimation {
+                        id: ring
+                        NumberAnimation { target: ringShape; property: "scale"; from: 0.9; to: 1.35; duration: 320; easing.type: Easing.OutCubic }
+                        NumberAnimation { target: ringShape; property: "opacity"; from: 0.5; to: 0; duration: 320; easing.type: Easing.OutCubic }
+                    }
+                }
                 AnimatedImage {
                     anchors.centerIn: parent
                     width: Math.round(rail.key * 0.7)
@@ -44,8 +91,8 @@ Item {
                     source: "emoji/" + face.modelData.file + ".webp"
                     cache: false
                     paused: !face.hot
-                    scale: face.hot && sweep.pressed ? 1.1 : face.hot ? 1.2 : 1
-                    Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutBack } }
+                    scale: plate.scale * (face.hot && sweep.pressed ? 1.1 : face.hot ? 1.2 : 1)
+                    Behavior on scale { enabled: !bounce.running; NumberAnimation { duration: 140; easing.type: Easing.OutBack } }
                     // At rest it shows the frame that stands for it. WebP
                     // frames are reached only one after another from the start.
                     function rest() {
@@ -55,6 +102,15 @@ Item {
                     }
                     onPausedChanged: if (paused) rest()
                     onFrameCountChanged: if (paused) rest()
+                }
+                // Its key, for the first ten.
+                Text {
+                    x: 3
+                    y: 1
+                    visible: Live.keysOn && face.index < Live.reactionKeys.length && rail.key >= 30
+                    text: Live.reactionKeys[face.index] || ""
+                    font.pixelSize: 8
+                    color: Theme.muted
                 }
             }
         }
@@ -66,7 +122,7 @@ Item {
         height: keys.height
         hoverEnabled: true
         preventStealing: true
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: rail.editing ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor) : Qt.PointingHandCursor
         // The key under the pointer (-1 between and beyond them); held, the
         // one at its height while it is over the rail, else the last one.
         property int held: -1
@@ -81,15 +137,23 @@ Item {
             return at < rail.count ? at : -1
         }
         // A press may move `hot` before onPressed: one send for it either way.
+        // While ordering, the one held moves to where the pointer is.
         onHotChanged: {
             if (!pressed || hot < 0 || hot === held)
                 return
+            if (rail.editing)
+                Live.moveReaction(held, hot)
+            else
+                send()
             held = hot
-            send()
         }
         function send() {
-            if (hot >= 0)
-                Live.react(Live.emoji[hot].glyph)
+            if (hot < 0 || rail.editing)
+                return
+            Live.react(Live.reactions[hot].glyph)
+            const k = faces.itemAt(hot)
+            if (k)
+                k.pop()
         }
         onPressed: {
             if (held !== hot) {
@@ -102,11 +166,34 @@ Item {
         Timer {
             interval: 160
             repeat: true
-            running: sweep.pressed
+            running: sweep.pressed && !rail.editing
             onTriggered: sweep.send()
         }
-        ToolTip.visible: containsMouse && !pressed
-        ToolTip.delay: 900
-        ToolTip.text: "点一下发一个 · 按住连发 · 按住上下滑换表情"
+    }
+
+    // ⋯: the order.
+    IconButton {
+        id: menuKey
+        anchors.bottom: parent.bottom
+        anchors.horizontalCenter: parent.horizontalCenter
+        implicitWidth: rail.key
+        implicitHeight: 24
+        iconName: rail.editing ? "check" : "ellipsis"
+        active: rail.editing || reactMenu.visible
+        tip: rail.editing ? "完成排序" : "表情：排序"
+        onClicked: rail.editing ? rail.editing = false : reactMenu.popup(menuKey, -reactMenu.implicitWidth - 4, menuKey.height - reactMenu.implicitHeight)
+    }
+    PopMenu {
+        id: reactMenu
+        implicitWidth: 200
+        PopAction {
+            text: "调整顺序（拖动）"
+            onTriggered: rail.editing = true
+        }
+        PopAction {
+            text: "恢复默认顺序"
+            enabled: Live.reactionOrder.length > 0
+            onTriggered: Live.resetReactions()
+        }
     }
 }

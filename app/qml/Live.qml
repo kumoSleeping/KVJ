@@ -23,6 +23,8 @@ QtObject {
     // (top, bottom: shown, then fading) in ms }.
     signal bullet(var item)
     signal reaction(var item)  // { emoji, x, seed, born }
+    // A reaction key was used (its place in the rail): the rail answers with a bounce.
+    signal reactionPressed(int index)
 
     // State: drawn for as long as it is set.
     property var caption: null // { text, born, hold } in the middle of the screen
@@ -106,6 +108,30 @@ QtObject {
         { glyph: "🤘", file: "1f918" }, { glyph: "✨", file: "2728" }, { glyph: "🪩", file: "1faa9" },
         { glyph: "🐍", file: "1f40d" }
     ]
+    // The reactions in the rail's order (dragged there), kept between runs;
+    // Q to P send the first ten.
+    property var reactionOrder: []
+    readonly property var reactions: {
+        const kept = reactionOrder.map(f => emoji.find(e => e.file === f)).filter(e => !!e)
+        return kept.concat(emoji.filter(e => kept.indexOf(e) < 0))
+    }
+    readonly property var reactionKeys: ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"]
+    function moveReaction(from, to) {
+        const list = reactions.map(e => e.file)
+        if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length)
+            return
+        list.splice(to, 0, list.splice(from, 1)[0])
+        reactionOrder = list
+        reactionStore.order = list.join(",")
+    }
+    function resetReactions() {
+        reactionOrder = []
+        reactionStore.order = ""
+    }
+    property Settings reactionStore: Settings {
+        category: "reactions"
+        property string order: ""
+    }
 
     property int serial: 0
     property var recent: []
@@ -391,6 +417,7 @@ QtObject {
         } catch (error) {
             custom = {}
         }
+        reactionOrder = reactionStore.order ? reactionStore.order.split(",") : []
         const saved = store.order.split(",").filter((k, i, all) => kind(k) >= 0 && all.indexOf(k) === i)
         const keys = saved.concat(effects.map(e => e.key).filter(k => saved.indexOf(k) < 0))
         for (const k of keys)

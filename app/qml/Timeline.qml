@@ -19,7 +19,7 @@ import KVJ
 // player the keys its helpers at work own rest. Entries from the drawer (an
 // internal drag whose source has `entryIds` and `title`), or files, dropped
 // on a track's row replace what is on that track (the host puts that back
-// in the library), and the row lights up saying so. The track followed and the cameras are chosen elsewhere (音频对位,
+// in the library), and the row lights up saying so. The track followed and the cameras are chosen elsewhere (声学追踪,
 // the board).
 //
 //   tracks    [{ key, kind: "track", track, name, entries, player }] in row
@@ -39,8 +39,9 @@ import KVJ
 //   pickSource(key), clearTrack(track), takeLive(key) (a
 //             row's 投放, the quick cut), bringUp(key) (its 置顶, on the
 //             board only): asked of the host
-//   dropEntries(ids, track), dropFiles(urls, track): onto a track, in place
-//             of what is on it
+//   dropEntries(ids, track, append), dropFiles(urls, track, append): onto
+//             a track, after what is on it (dropped on its right half) or
+//             in its place (its left half)
 //   removeEntry(id): an entry's 移出轨道 (right click on it)
 //   jump(), jumpRow(row), syncPlay(row), zoomAt(x, factor), zoomStep(factor), fit(), setMark(x): the
 //             active row's (Enter, − = \)
@@ -73,8 +74,8 @@ Rectangle {
     signal clearTrack(int track)
     signal takeLive(string key)
     signal bringUp(string key)
-    signal dropEntries(var entryIds, int track)
-    signal dropFiles(var urls, int track)
+    signal dropEntries(var entryIds, int track, bool append)
+    signal dropFiles(var urls, int track, bool append)
     signal removeEntry(string entryId)
 
     readonly property var rows: tracks.length ? tracks
@@ -303,27 +304,41 @@ Rectangle {
     readonly property real pitch: rowHeight + rowGap
     // A drag over the rows: where it is and what it carries.
     property bool dragging: false
+    property real dragX: 0
     property real dragY: 0
+    property real dragWidth: 1
     property string dropTitle: ""
-    // Where it would land: { kind: "onto", index, track } on a track's row, or kind "".
-    readonly property var noZone: ({ kind: "", index: -1, track: -1 })
+    // Where it would land: { kind: "onto", index, track, append } on a
+    // track's row (append: its right half, after what is on it; an empty
+    // track takes it either way), or kind "".
+    readonly property var noZone: ({ kind: "", index: -1, track: -1, append: false })
     readonly property var dropZone: {
         if (!dragging)
             return noZone
         const i = Math.max(0, Math.min(rows.length - 1, Math.floor(dragY / pitch)))
-        return rows.length ? { kind: "onto", index: i, track: rows[i].track || 0 } : noZone
+        if (!rows.length)
+            return noZone
+        const filled = ((layouts[i] || {}).clips || []).length > 0
+        return { kind: "onto", index: i, track: rows[i].track || 0, append: filled && dragX >= dragWidth / 2 }
+    }
+    // Only videos go onto a track.
+    function videosOf(drag) {
+        const src = drag.source
+        const urls = src && src.fileUrls && src.fileUrls.length ? src.fileUrls : drag.hasUrls ? drag.urls : []
+        return Array.prototype.slice.call(urls).map(u => String(u)).filter(u => /\.(mp4|m4v|mkv|mov|webm)$/i.test(u))
     }
     function titleOf(drag) {
         const src = drag.source
-        if (src && src.entryIds)
+        if (src && src.entryIds && src.entryIds.length)
             return src.title || (src.entryIds.length + " 个素材")
-        if (drag.hasUrls && drag.urls.length) {
-            const path = String(drag.urls[0]).replace(/\/+$/, "")
+        const videos = videosOf(drag)
+        if (videos.length) {
+            const path = videos[0].replace(/\/+$/, "")
             let name = path.substring(path.lastIndexOf("/") + 1)
             try {
                 name = decodeURIComponent(name)
             } catch (e) {}
-            return drag.urls.length > 1 ? name + " 等 " + drag.urls.length + " 个" : name
+            return videos.length > 1 ? name + " 等 " + videos.length + " 个" : name
         }
         return ""
     }
@@ -331,13 +346,13 @@ Rectangle {
         const z = dropZone
         const src = drop.source
         const ids = src && src.entryIds ? Array.prototype.slice.call(src.entryIds) : []
-        const urls = !ids.length && drop.hasUrls ? drop.urls : []
+        const urls = !ids.length ? videosOf(drop) : []
         if (!z.kind || (!ids.length && !urls.length))
             return
         if (ids.length)
-            dropEntries(ids, z.track)
+            dropEntries(ids, z.track, z.append)
         else
-            dropFiles(urls, z.track)
+            dropFiles(urls, z.track, z.append)
         drop.acceptProposedAction()
     }
 
@@ -495,10 +510,20 @@ Rectangle {
                 keys: ["kvj-entry", "text/uri-list"]
                 onEntered: drag => {
                     line.dropTitle = line.titleOf(drag)
+                    // Pictures do not go onto a track.
+                    if (!line.dropTitle) {
+                        drag.accepted = false
+                        return
+                    }
+                    line.dragX = drag.x
                     line.dragY = drag.y
+                    line.dragWidth = width
                     line.dragging = true
                 }
-                onPositionChanged: drag => line.dragY = drag.y
+                onPositionChanged: drag => {
+                    line.dragX = drag.x
+                    line.dragY = drag.y
+                }
                 onExited: line.dragging = false
                 onDropped: drop => {
                     line.land(drop)

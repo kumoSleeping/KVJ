@@ -1,19 +1,19 @@
 import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
-import QtQuick.Controls.impl
 import QtQuick.Layouts
 import KVJ
 
-// Words for the audience, folded to one line until opened: one field, which
+// Words for the audience (in the board's 文字 popover): one field, which
 // sends at once as danmaku or words in the middle, or makes a text sticker in
 // the middle of the board (`composer`), on the air with it.
 ColumnLayout {
     id: bar
 
     property var composer
-    // Open or folded; folded at first.
-    property bool open: false
+    function focusField() {
+        words.forceActiveFocus()
+    }
     // The words in the field, at once: scrolling, held at the top or the
     // foot, or large in the middle.
     function send(text) {
@@ -36,53 +36,12 @@ ColumnLayout {
         category: "desk"
         property alias wordMode: bar.mode
         property alias wordSize: bar.size
-        property alias wordsOpen: bar.open
     }
 
     spacing: 6
 
-    // The fold: a press opens or closes it.
-    Item {
-        Layout.fillWidth: true
-        implicitHeight: 24
-        Row {
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 4
-            ColorImage {
-                anchors.verticalCenter: parent.verticalCenter
-                source: "icons/chevron-right.svg"
-                sourceSize: Qt.size(14, 14)
-                color: Theme.faint
-                rotation: bar.open ? 90 : 0
-                Behavior on rotation { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
-            }
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "文字"
-                font.pixelSize: Theme.sizeSm
-                font.weight: Font.DemiBold
-                color: foldArea.containsMouse || bar.open ? Theme.text : Theme.muted
-            }
-        }
-        MouseArea {
-            id: foldArea
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: {
-                bar.open = !bar.open
-                if (bar.open)
-                    words.forceActiveFocus()
-            }
-            ToolTip.visible: containsMouse
-            ToolTip.delay: 600
-            ToolTip.text: bar.open ? "收起" : "弹幕、居中文字、文字贴图"
-        }
-    }
-
     Field {
         id: words
-        visible: bar.open
         Layout.fillWidth: true
         placeholderText: bar.mode < 3 ? "回车发弹幕" : "回车居中发出"
         // ⌘ / Ctrl + Enter: a sticker instead.
@@ -102,7 +61,6 @@ ColumnLayout {
     // How the words go at once and how large, on one line (the sizes
     // kept in place, dimmed, for the words in the middle).
     RowLayout {
-        visible: bar.open
         Layout.fillWidth: true
         spacing: 0
         Repeater {
@@ -144,7 +102,6 @@ ColumnLayout {
     }
     // The two ways up, as keys too.
     RowLayout {
-        visible: bar.open
         Layout.fillWidth: true
         spacing: 6
         TextButton {

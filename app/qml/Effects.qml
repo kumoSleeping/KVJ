@@ -201,7 +201,6 @@ Item {
                     ToolTip.visible: (containsMouse && !rail.editing && mode !== "sweep") || mode === "tune"
                     ToolTip.delay: mode === "tune" ? 0 : 500
                     ToolTip.text: fx.name + " · " + (fx.on ? Math.round(fx.level * 100) + "%" : "关")
-                                  + (mode === "tune" ? "" : "\n点一下开关 · 按住上下拖一起开关 · 左右拖调强度 · 双击回到推荐强度")
                 }
             }
         }
@@ -216,7 +215,7 @@ Item {
         implicitHeight: 24
         iconName: rail.editing ? "check" : "ellipsis"
         active: rail.editing || fxMenu.visible
-        tip: rail.editing ? "完成排序" : "效果：全关、排序、强度"
+        tip: rail.editing ? "完成排序" : rail.software ? "这台电脑以软件方式绘制，效果不会出现" : "效果：全关、排序、强度"
         onClicked: rail.editing ? rail.editing = false : fxMenu.popup(menuKey, -fxMenu.implicitWidth - 4, menuKey.height - fxMenu.implicitHeight)
         // This computer draws in software: no effects show.
         Rectangle {
@@ -245,11 +244,6 @@ Item {
             text: "强度恢复默认推荐"
             enabled: Live.customized
             onTriggered: Live.resetPresets()
-        }
-        PopAction {
-            text: rail.software ? "这台电脑以软件方式绘制，效果不会出现"
-                                                             : "快捷键 1–0 开关前十个 · , / . 调最后一个"
-            enabled: false
         }
     }
 

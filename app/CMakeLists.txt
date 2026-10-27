@@ -47,6 +47,7 @@ qt_add_qml_module(KVJ
         qml/FollowMonitor.qml
         qml/Live.qml
         qml/Stage.qml
+        qml/StatusLight.qml
         qml/Sticker.qml
         qml/StickerFrame.qml
         qml/Desk.qml
@@ -54,7 +55,8 @@ qt_add_qml_module(KVJ
         qml/Reactions.qml
         qml/Words.qml
         qml/IdList.qml
-        qml/Sidebar.qml
+        qml/Library.qml
+        qml/LibraryFolder.qml
         qml/Timeline.qml
         qml/TrackRow.qml
         qml/TrackPiece.qml
@@ -79,6 +81,7 @@ qt_add_qml_module(KVJ
         qml/icons/crosshair.svg
         qml/icons/ear.svg
         qml/icons/ellipsis.svg
+        qml/icons/film.svg
         qml/icons/folder.svg
         qml/icons/folder-open.svg
         qml/icons/info.svg

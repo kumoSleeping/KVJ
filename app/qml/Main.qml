@@ -478,7 +478,7 @@ ApplicationWindow {
     // "drop" turns the entry on the screen off as the sidebar's confirmed
     // second press does; "effect <key> <0–1>" sets an effect, "move <from>
     // <to>" reorders them; "set <no.>" chooses that Set as the sidebar does;
-    // "drawer 0|1" puts the library's drawer away or brings it out.
+    // "library 0|1" puts the column at the left away or brings it out.
     // "single 0|1" switches 单轨 on or off; "zoom <0.4–1>" sizes the board's view.
     function devCommand(line) {
         const w = String(line).trim().split(/\s+/)
@@ -517,7 +517,7 @@ ApplicationWindow {
         case "pick": mixer.selected = Number(w[1] || 0); break
         case "fill": mixer.fill(Math.max(0, mixer.selected)); break
         case "revert": Switcher.revert(); break
-        case "drawer": app.setsOpen = Number(w[1] || 0) > 0; break
+        case "library": app.libraryShown = Number(w[1] || 0) > 0; break
         case "single": app.setSingle(Number(w[1] || 0) > 0); break
         case "zoom": mixer.setZoom(Number(w[1] || 1)); break
         case "noline": Switcher.setMask(Math.max(0, mixer.selected), { lines: [] }); break
@@ -606,6 +606,68 @@ ApplicationWindow {
     function placeAnywhere(ids) {
         const empty = app.trackRows.find(r => app.placedOn(r.track).length === 0)
         app.placeOn(ids, empty ? empty.track : 0)
+    }
+
+    // —— The files at the left (Library) ——
+    // Each library entry by its file's URL (the same file may be in it more
+    // than once: one placed on each track).
+    readonly property var entriesByUrl: {
+        const out = {}
+        for (const e of app.entries) {
+            const u = String(Engine.fileUrl(e.path))
+            ;(out[u] = out[u] || []).push(e)
+        }
+        return out
+    }
+    // The tracks a file is placed on.
+    function placedTracksOf(url) {
+        return (app.entriesByUrl[url] || []).filter(e => e.enabled !== false).map(e => e.track || 0)
+                                            .filter((t, i, all) => all.indexOf(t) === i).sort()
+    }
+    // The folders the library's videos are in, outermost only: where the
+    // file list starts the first time.
+    function libraryFolders() {
+        const dirs = []
+        for (const u of Object.keys(app.entriesByUrl)) {
+            const d = u.substring(0, u.lastIndexOf("/"))
+            if (dirs.indexOf(d) < 0)
+                dirs.push(d)
+        }
+        dirs.sort()
+        return dirs.filter(d => !dirs.some(o => o !== d && d.startsWith(o + "/")))
+    }
+    // Video files onto `track`: after what is on it (`append`), or in its
+    // place. A file already in the library is placed as that entry; the
+    // others are imported.
+    function dropFilesOn(urls, track, append) {
+        const list = Array.prototype.slice.call(urls || []).map(u => String(u)).filter(u => /\.(mp4|m4v|mkv|mov|webm)$/i.test(u))
+        if (!list.length)
+            return
+        const known = [], fresh = []
+        for (const u of list) {
+            const mine = app.entriesByUrl[u] || []
+            const e = mine.find(e => (e.track || 0) === track) || mine[0]
+            if (e)
+                known.push(e.id)
+            else
+                fresh.push(u)
+        }
+        if (!append) {
+            if (app.running && app.followTrack === track)
+                return app.dropFilesOn(urls, track, true)
+            const gone = app.placedOn(track).map(e => e.id).filter(id => known.indexOf(id) < 0)
+            if (gone.length && app.currentSet)
+                app.takeOffTrack(app.currentSet, gone)
+        }
+        if (known.length)
+            app.placeOn(known, track)
+        if (fresh.length)
+            app.addUrls(fresh, track)
+    }
+    // A double-click on videos at the left: onto the first empty track, else after the first's.
+    function filesAnywhere(urls) {
+        const empty = app.trackRows.find(r => app.placedOn(r.track).length === 0)
+        app.dropFilesOn(urls, empty ? empty.track : 0, true)
     }
     // KVJ keeps one library of videos (the engine's first Set): an older
     // document with several is made one, an empty one gets its library.
@@ -883,27 +945,27 @@ ApplicationWindow {
         property alias loop: app.loopOn
     }
     Shortcut {
-        sequences: ["Left", "A"]
+        sequences: ["Left"]
         context: Qt.ApplicationShortcut
         autoRepeat: false
         enabled: app.keysLive && app.manualSeek && app.manualTempo && !!transport.entry
         onActivated: app.nudge(-1)
     }
     Shortcut {
-        sequences: ["Right", "D"]
+        sequences: ["Right"]
         context: Qt.ApplicationShortcut
         autoRepeat: false
         enabled: app.keysLive && app.manualSeek && app.manualTempo && !!transport.entry
         onActivated: app.nudge(1)
     }
     Shortcut {
-        sequences: ["Up", "W"]
+        sequences: ["Up"]
         context: Qt.ApplicationShortcut
         enabled: app.keysLive && app.manualTempo
         onActivated: app.nudgeTempo(0.01)
     }
     Shortcut {
-        sequences: ["Down", "S"]
+        sequences: ["Down"]
         context: Qt.ApplicationShortcut
         enabled: app.keysLive && app.manualTempo
         onActivated: app.nudgeTempo(-0.01)
@@ -921,6 +983,20 @@ ApplicationWindow {
             autoRepeat: false
             enabled: app.effectKeysLive && index < Live.order.length
             onActivated: Live.toggleEffect(Live.order[index])
+        }
+    }
+    // Reactions: Q to P send the first ten in the rail (held, a stream).
+    Instantiator {
+        model: Live.reactionKeys.length
+        delegate: Shortcut {
+            required property int index
+            sequence: Live.reactionKeys[index]
+            context: Qt.ApplicationShortcut
+            enabled: app.effectKeysLive && index < Live.reactions.length
+            onActivated: {
+                Live.react(Live.reactions[index].glyph)
+                Live.reactionPressed(index)
+            }
         }
     }
     Shortcut {
@@ -975,35 +1051,18 @@ ApplicationWindow {
         onActivated: timeline.fit()
     }
 
-    // The library's drawer over the canvas's left side: put away at every
-    // start, brought out by its key at the canvas's top left, Ctrl+B (⌘B) or
-    // files dragged to it; a press elsewhere on the canvas or Esc puts it
-    // away, unless one of its menus or dialogs is in use.
-    property bool setsOpen: false
-    function closeSets() {
-        if (!sidebar.holding())
-            app.setsOpen = false
-    }
-    function toggleSets() {
-        if (app.setsOpen)
-            app.closeSets()
-        else
-            app.setsOpen = true
+    // The column at the left (Library): shown or put away by its key in the
+    // title bar or Ctrl+B (⌘B); kept between runs.
+    property bool libraryShown: true
+    Settings {
+        category: "library"
+        property alias shown: app.libraryShown
     }
     Shortcut {
         sequence: "Ctrl+B"
         context: Qt.ApplicationShortcut
         enabled: !sender.visible
-        onActivated: app.toggleSets()
-    }
-    // Not while a sticker or layer is chosen (the preview's Esc lets it go first) or the
-    // drawer's own menu closes on it. Another popup of this window that closes
-    // on Esc shares the key: each press then puts one of them away.
-    Shortcut {
-        sequence: "Esc"
-        enabled: app.setsOpen && mixer.chosenSid === "" && mixer.selected < 0 && !sidebar.asking
-        onActivated: app.closeSets()
-        onActivatedAmbiguously: app.closeSets()
+        onActivated: app.libraryShown = !app.libraryShown
     }
 
     // Light or dark for what the system draws too (dialogs, menus, the
@@ -1035,13 +1094,13 @@ ApplicationWindow {
             live: projection.visible
             canSend: !app.following
             onSend: app.openSender()
-            drawerOpen: app.setsOpen
-            onToggleDrawer: app.toggleSets()
+            drawerOpen: app.libraryShown
+            onToggleDrawer: app.libraryShown = !app.libraryShown
             singleTrack: app.singleTrack
             onToggleSingle: app.setSingle(!app.singleTrack)
         }
 
-        // The canvas across the whole width, the Sets' drawer over its left side.
+        // The canvas across the whole width.
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -1056,6 +1115,18 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     spacing: Theme.gap
+
+                    // —— At the left: what is ready to go on the picture, over
+                    // the folders on this computer; as wide as the right column ——
+                    Library {
+                        id: library
+                        visible: app.libraryShown
+                        Layout.preferredWidth: strip.implicitWidth
+                        Layout.fillWidth: false
+                        Layout.fillHeight: true
+                        composer: mixer
+                        app: app
+                    }
 
                     // —— The board: the picture as the audience sees it and
                     // where it is made, as large as the room allows ——
@@ -1078,13 +1149,26 @@ ApplicationWindow {
                     }
 
                     // —— At the right: what the audience sees, small, over
-                    // smart following, then the words, folded ——
+                    // smart following ——
                     ColumnLayout {
                         Layout.preferredWidth: strip.implicitWidth
                         Layout.fillWidth: false
                         Layout.fillHeight: true
                         spacing: Theme.gap
 
+                        // 输出预览: projecting or not, at its right.
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Heading {
+                                Layout.fillWidth: true
+                                text: "输出预览"
+                            }
+                            StatusLight {
+                                word: projection.visible ? "投放中" : projection.waiting ? "已断开" : "未投放"
+                                on: projection.visible
+                            }
+                        }
                         // The program (PGM) as the projection draws it, the
                         // stickers and effects on the air included; smaller
                         // (centred) when the column is short of room.
@@ -1125,10 +1209,6 @@ ApplicationWindow {
                             rowHeight: timeline.mainRowHeight
                             tracks: app.shownTracks
                         }
-                        Words {
-                            Layout.fillWidth: true
-                            composer: mixer
-                        }
                         Item { Layout.fillHeight: true }
                     }
 
@@ -1162,96 +1242,6 @@ ApplicationWindow {
                 sourceIds: app.sources.map(s => s.id)
                 monitorWidth: mixer.pictureWidth
             }
-
-            // While the drawer is out a press anywhere else on the canvas puts
-            // it away and does nothing more; the picture is never dimmed.
-            MouseArea {
-                anchors.fill: parent
-                visible: app.setsOpen
-                onPressed: app.closeSets()
-            }
-            // Files dragged to the canvas's left edge bring the drawer out, to
-            // be dropped on a Set.
-            DropArea {
-                width: Theme.gap
-                height: parent.height
-                enabled: !app.setsOpen
-                onEntered: drag => {
-                    drag.accepted = false
-                    app.setsOpen = true
-                }
-            }
-
-            // —— Sets and their entries: the drawer ——
-            // Over the canvas and the tracks under it, from under the top bar
-            // to the window's foot.
-            Item {
-                id: drawer
-                readonly property real spread: 14
-                parent: app.contentItem
-                z: 50
-                y: topBar.height
-                width: 280
-                height: app.contentItem.height - y
-                x: -width - spread
-                visible: x > -width - spread
-                states: State {
-                    name: "out"
-                    when: app.setsOpen
-                    PropertyChanges { drawer.x: 0 }
-                }
-                transitions: [
-                    Transition {
-                        to: "out"
-                        NumberAnimation { property: "x"; duration: Theme.quick; easing.type: Easing.OutCubic }
-                    },
-                    Transition {
-                        from: "out"
-                        NumberAnimation { property: "x"; duration: 200; easing.type: Easing.InCubic }
-                    }
-                ]
-
-                // A light shade along its edge, fading out in a few steps.
-                Repeater {
-                    model: 4
-                    Rectangle {
-                        required property int index
-                        width: drawer.width + (index + 1) * drawer.spread / 4
-                        height: drawer.height
-                        radius: Theme.radiusLg + (index + 1) * drawer.spread / 4
-                        topLeftRadius: 0
-                        bottomLeftRadius: 0
-                        color: Qt.rgba(0, 0, 0, Theme.dark ? 0.09 : 0.022)
-                    }
-                }
-                // Presses and the wheel on the drawer stay on it, never reach
-                // the canvas under it.
-                MouseArea {
-                    anchors.fill: parent
-                    acceptedButtons: Qt.AllButtons
-                    hoverEnabled: true
-                    onWheel: wheel => wheel.accepted = true
-                }
-                Sidebar {
-                    id: sidebar
-                    anchors.fill: parent
-                    radius: Theme.radiusLg
-                    topLeftRadius: 0
-                    bottomLeftRadius: 0
-                    sets: app.sets
-                    currentSet: app.currentSet
-                    running: app.running
-                    editable: app.editable
-                    playingId: app.shownEntry ? app.shownEntry.id : ""
-                    playingSetId: app.playingSet ? app.playingSet.id : ""
-                    onAddUrls: urls => app.addUrls(urls)
-                    onPutAway: app.closeSets()
-                    onPlace: ids => app.placeAnywhere(ids)
-                    onDragBegin: (ids, title, at) => app.entryDragBegin(ids, title, at)
-                    onDragMove: at => app.entryDragMove(at)
-                    onDragEnd: drop => app.entryDragEnd(drop)
-                }
-            }
         }
 
         // —— The player's timeline, across the whole foot ——
@@ -1271,10 +1261,10 @@ ApplicationWindow {
             onTakeLive: key => mixer.takeLive(key)
             onBringUp: key => mixer.bringUp(key)
             // The board's keys right under its picture's left edge.
-            keysInset: mixer.keysInset
+            keysInset: mixer.x + mixer.keysInset
             // Done once the drop is over: the rows are made anew by it.
-            onDropEntries: (ids, track) => Qt.callLater(app.replaceOn, ids, track)
-            onDropFiles: (urls, track) => Qt.callLater(app.replaceWithFiles, urls, track)
+            onDropEntries: (ids, track, append) => Qt.callLater(append ? app.placeOn : app.replaceOn, ids, track)
+            onDropFiles: (urls, track, append) => Qt.callLater(app.dropFilesOn, urls, track, append)
             onRemoveEntry: id => Qt.callLater(app.takeOff, id)
             setId: app.currentSet ? app.currentSet.id : ""
             setName: app.currentSet ? app.currentSet.name : ""
@@ -1284,13 +1274,22 @@ ApplicationWindow {
         }
     }
 
-    // An entry dragged from the drawer: this stand-in follows the pointer
-    // over the window and carries the drag (internal, keys "kvj-entry") to the
-    // track rows. It lives here, not in the drawer's row, which the drop may
-    // remake while the drag still runs.
+    // Files dragged from the left (Library): this stand-in follows the
+    // pointer over the window and carries the drag (internal, keys
+    // "kvj-entry") to the track rows, 准备 and the board. It lives here, not
+    // in the file's row, which may be made anew while the drag still runs.
     property bool draggingEntries: false
     function entryDragBegin(ids, title, at) {
         entryGhost.entryIds = ids
+        entryGhost.fileUrls = []
+        entryGhost.title = title
+        app.entryDragMove(at)
+        app.draggingEntries = true
+    }
+    // Files dragged from the left (Library): the same stand-in carries their URLs.
+    function fileDragBegin(urls, title, at) {
+        entryGhost.entryIds = []
+        entryGhost.fileUrls = urls
         entryGhost.title = title
         app.entryDragMove(at)
         app.draggingEntries = true
@@ -1324,6 +1323,7 @@ ApplicationWindow {
     Rectangle {
         id: entryGhost
         property var entryIds: []
+        property var fileUrls: []
         property string title: ""
         parent: app.contentItem
         z: 1000
@@ -1366,9 +1366,6 @@ ApplicationWindow {
         app.cue()
         app.applyScheme()
         app.oneLibrary()
-        // An empty library: show where videos are added.
-        if (app.entries.length === 0)
-            app.setsOpen = true
     }
 
     // Closing the window (its key, Cmd+W, Alt+F4, quitting) during a show is

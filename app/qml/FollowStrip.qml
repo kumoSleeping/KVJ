@@ -5,7 +5,7 @@ import QtQuick.Controls.impl
 import QtQuick.Layouts
 import KVJ
 
-// 音频对位, as a narrow column under the PGM monitor, at the window's right. Top to bottom: its name and a light with its word
+// 声学追踪, as a narrow column under the PGM monitor, at the window's right. Top to bottom: its name and a light with its word
 // (未监听 red; 监听中 / 跟随中 green); following's own small picture
 // (FollowMonitor, its 16:9 room always kept, black until it finds); what
 // it found (the title, or the phase) and how fast it hears the music; the
@@ -134,36 +134,12 @@ Card {
             spacing: 6
             Heading {
                 Layout.fillWidth: true
-                text: "音频对位"
+                text: "声学追踪"
             }
             // The light, with its word: green while listening, red while not.
-            Rectangle {
-                id: light
-                readonly property string word: !root.following ? "未监听"
-                                               : root.app && root.app.aiLeads ? "跟随中" : "监听中"
-                implicitWidth: lightRow.implicitWidth + 16
-                implicitHeight: 22
-                radius: 11
-                color: Theme.inset
-                Row {
-                    id: lightRow
-                    anchors.centerIn: parent
-                    spacing: 6
-                    Rectangle {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 6
-                        height: 6
-                        radius: 3
-                        color: root.following ? "#30a46c" : Theme.danger
-                        Behavior on color { ColorAnimation { duration: Theme.quick } }
-                    }
-                    Text {
-                        text: light.word
-                        font.pixelSize: Theme.sizeXs
-                        font.weight: Font.Medium
-                        color: root.following ? Theme.text : Theme.muted
-                    }
-                }
+            StatusLight {
+                word: !root.following ? "未监听" : root.app && root.app.aiLeads ? "跟随中" : "监听中"
+                on: root.following
             }
         }
 
@@ -206,7 +182,7 @@ Card {
                             ToolTip.delay: 600
                             ToolTip.text: root.running && !on ? "先停止监听再换"
                                           : !heard ? root.trackName(modelData) + " 上还没有带声音的素材"
-                                          : "音频对位听" + root.trackName(modelData) + "的声音"
+                                          : "声学追踪听" + root.trackName(modelData) + "的声音"
                         }
                     }
                 }
