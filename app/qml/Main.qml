@@ -479,7 +479,7 @@ ApplicationWindow {
     // second press does; "effect <key> <0–1>" sets an effect, "move <from>
     // <to>" reorders them; "set <no.>" chooses that Set as the sidebar does;
     // "drawer 0|1" puts the library's drawer away or brings it out.
-    // "single 0|1" switches 单轨 on or off.
+    // "single 0|1" switches 单轨 on or off; "zoom <0.4–1>" sizes the board's view.
     function devCommand(line) {
         const w = String(line).trim().split(/\s+/)
         switch (w[0]) {
@@ -519,6 +519,7 @@ ApplicationWindow {
         case "revert": Switcher.revert(); break
         case "drawer": app.setsOpen = Number(w[1] || 0) > 0; break
         case "single": app.setSingle(Number(w[1] || 0) > 0); break
+        case "zoom": mixer.setZoom(Number(w[1] || 1)); break
         case "noline": Switcher.setMask(Math.max(0, mixer.selected), { lines: [] }); break
         default: return "unknown"
         }
@@ -1078,6 +1079,7 @@ ApplicationWindow {
                             output: desk
                             cameraIds: app.cameraIds
                             keysHost: timeline.keysHost
+                            zoomHost: topBar
                             onAddCamera: id => app.addCamera(id)
                             onRemoveCamera: key => app.removeCamera(key)
                         }

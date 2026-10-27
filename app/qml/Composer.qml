@@ -46,14 +46,24 @@ ColumnLayout {
     property var cameraIds: []
     signal addCamera(string id)
     signal removeCamera(string key)
-    // How wide the picture is drawn here: the sources' light copies are made this large.
-    readonly property real pictureWidth: screen.width
+    // How wide the picture is drawn here at most: the sources' light copies are made this large.
+    readonly property real pictureWidth: screen.fitWidth
     // Where the keys under the picture go (the timeline's top line), and
     // how far in from the board's left edge the picture starts.
     property Item keysHost: null
-    readonly property real keysInset: screen.x
+    readonly property real keysInset: screen.room
     // 画外: the column at the picture's right where the sources not on it wait.
     readonly property real shelfWidth: 112
+    // The view's size: 1 = the picture and 画外 as large as the room allows;
+    // less, both drawn smaller about the middle of that room, so a layer
+    // reaching past the picture is seen whole. Its bar is in the title bar
+    // over the board's right end (`zoomHost`).
+    property real zoom: 1
+    readonly property real minZoom: 0.4
+    property Item zoomHost: null
+    function setZoom(z) {
+        zoom = Math.max(minZoom, Math.min(1, Math.round(z * 100) / 100))
+    }
 
     // The chosen layer (in Switcher.preview.slots), and on it a line and a point.
     property int selected: -1
@@ -343,6 +353,7 @@ ColumnLayout {
         category: "desk"
         property string gallery: "[]"
         property alias size: composer.placeSize
+        property alias zoom: composer.zoom
     }
     FileDialog {
         id: imageDialog
@@ -403,19 +414,18 @@ ColumnLayout {
         // The picture, at the top left with a small margin on the left, top
         // and foot (`room`), enough to reach a split line's point on its edge;
         // at its right the shelf where sources wait. The keys that put it on
-        // the air are on the timeline's top line (keysHost).
+        // the air are on the timeline's top line (keysHost). Zoomed out, the
+        // two shrink about the middle of the room they fill at full size.
         Rectangle {
             id: screen
             readonly property real room: 16
-            readonly property real roomTop: room
-            readonly property real roomLeft: room
-            // Its keys are on the timeline's top line: under it only the margin.
-            readonly property real roomFoot: room
             // At least one column of parked sources fits at its right.
-            width: Math.max(1, Math.min(box.width - roomLeft - 12 - composer.shelfWidth - 8, (box.height - roomTop - roomFoot) * composer.aspect))
+            readonly property real fitWidth: Math.max(1, Math.min(box.width - room - 12 - composer.shelfWidth - 8, (box.height - 2 * room) * composer.aspect))
+            readonly property real fitHeight: fitWidth / Math.max(0.2, composer.aspect)
+            width: fitWidth * composer.zoom
             height: width / Math.max(0.2, composer.aspect)
-            x: roomLeft
-            y: roomTop
+            x: room + (fitWidth + 12 + composer.shelfWidth) * (1 - composer.zoom) / 2
+            y: room + fitHeight * (1 - composer.zoom) / 2
             color: "black"
         }
         // —— 画外: the sources not on the picture, a column at its right ——
@@ -426,10 +436,13 @@ ColumnLayout {
         Item {
             id: shelf
             z: 7
-            x: screen.x + screen.width + 12
+            x: screen.x + screen.width + 12 * composer.zoom
             y: screen.y
+            // Drawn at the view's size, all of it.
             width: composer.shelfWidth
-            height: screen.height
+            height: screen.height / composer.zoom
+            scale: composer.zoom
+            transformOrigin: Item.TopLeft
             readonly property var waiting: composer.slots.map((s, i) => ({ source: s.source, index: i }))
                                                           .filter(o => !Switcher.inPicture(composer.slots[o.index]))
             // The tray.
@@ -691,6 +704,74 @@ ColumnLayout {
                 }
             }
         }
+        // —— The view's size: − bar +, 复原 ——
+        // In the title bar (zoomHost), its right end over 画外's.
+        Row {
+            parent: composer.zoomHost
+            visible: !!parent
+            anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+            x: {
+                const h = composer.zoomHost
+                if (!h)
+                    return 0
+                // What moves it: the board's place and size, the window's.
+                composer.x; composer.width; h.width
+                return box.mapToItem(h, screen.room + screen.fitWidth + 12 + composer.shelfWidth, 0).x - width
+            }
+            spacing: 2
+            IconButton {
+                anchors.verticalCenter: parent.verticalCenter
+                implicitWidth: 22
+                implicitHeight: 22
+                iconSize: 12
+                iconName: "minus"
+                tip: "画板缩小（画面和画外一起）"
+                autoRepeat: true
+                enabled: composer.zoom > composer.minZoom + 1e-6
+                onClicked: composer.setZoom(composer.zoom - 0.05)
+            }
+            Seek {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 80
+                implicitHeight: 22
+                from: composer.minZoom
+                to: 1
+                value: composer.zoom
+                onMoved: composer.setZoom(value)
+                ToolTip.visible: hovered && !pressed
+                ToolTip.delay: 600
+                ToolTip.text: "画板大小：缩小后伸出画面的部分也看得到（双击复原）"
+                TapHandler {
+                    onDoubleTapped: composer.setZoom(1)
+                }
+            }
+            IconButton {
+                anchors.verticalCenter: parent.verticalCenter
+                implicitWidth: 22
+                implicitHeight: 22
+                iconSize: 12
+                iconName: "plus"
+                tip: "画板放大"
+                autoRepeat: true
+                enabled: composer.zoom < 1 - 1e-6
+                onClicked: composer.setZoom(composer.zoom + 0.05)
+            }
+            TextButton {
+                anchors.verticalCenter: parent.verticalCenter
+                flat: true
+                implicitHeight: 22
+                leftPadding: 6
+                rightPadding: 6
+                font.pixelSize: Theme.sizeXs
+                text: "复原"
+                enabled: composer.zoom < 1 - 1e-6
+                onClicked: composer.setZoom(1)
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: "画板回到铺满的大小"
+            }
+        }
+
         // —— The mode, and the keys that put it on the air, then + 相机 ——
         // Shown by the host on the timeline's top line (`keys`), as wide as
         // the picture, + 相机 over the shelf at its right.
@@ -700,7 +781,7 @@ ColumnLayout {
             anchors.verticalCenter: parent ? parent.verticalCenter : undefined
             // As wide as the picture, + 相机 past it; narrower (down to the
             // keys' own widths) when the line is short of room.
-            readonly property real wanted: screen.width + 12 + cameraKey.implicitWidth
+            readonly property real wanted: screen.fitWidth + 12 + cameraKey.implicitWidth
             width: parent ? parent.width : wanted
             spacing: 8
             // 跟随 or 投放, a segmented key: the mode shown in ink on a plate.
@@ -1149,12 +1230,22 @@ ColumnLayout {
         }
 
         // —— Over the layers: their edges, the chosen one's handles and lines ——
+        // Only the chosen layer's frame and handles reach past the picture
+        // (what is there is still grabbed); the other layers' edges and the
+        // split lines stop at its edge.
         Item {
             id: ink
-            width: parent.width
-            // As the layers: nothing over the keys under the picture.
-            height: screen.y + screen.height + 6
-            clip: true
+            anchors.fill: parent
+
+            Item {
+                id: lineClip
+                x: screen.x
+                y: screen.y
+                width: screen.width
+                height: screen.height
+                clip: true
+                z: 3
+            }
 
             Repeater {
                 model: composer.slots.length
@@ -1170,84 +1261,99 @@ ColumnLayout {
                     width: s.w * screen.width
                     height: s.h * screen.height
                     z: chosen ? 2 : 1
-                    Rectangle {
-                        anchors.fill: parent
-                        color: "transparent"
-                        border.width: edge.chosen ? 1.5 : 1
-                        border.color: edge.chosen ? "#ffffff" : "#40ffffff"
-                    }
-                    // The chosen one's frame also in ink just outside: where
-                    // it reaches past the picture (onto the light ground) its
-                    // edge and handles still read as its own.
-                    Rectangle {
-                        visible: edge.chosen
-                        anchors.fill: parent
-                        anchors.margins: -1.5
-                        color: "transparent"
-                        border.width: 1
-                        border.color: Theme.dark ? "#c3c8d0" : "#55555c"
-                    }
-                    // Its name, on a plate at its top left.
-                    Rectangle {
-                        x: 4
-                        y: 4
-                        width: label.implicitWidth + 10
-                        height: 16
-                        radius: 4
-                        visible: edge.width > 40 && edge.height > 24
-                        color: edge.chosen ? "#ffffff" : "#99000000"
-                        Text {
-                            id: label
-                            anchors.centerIn: parent
-                            text: composer.sourceName(edge.s.source) + (edge.lost ? " · 已移除" : "")
-                            font.pixelSize: 10
-                            font.weight: Font.DemiBold
-                            color: edge.chosen ? "#000000" : "#ffffff"
-                        }
-                    }
-                    // Its way off, on the chosen one, at its top right inside:
-                    // a camera is let go (it stops), a layer gone from the
-                    // sources leaves, a track goes off the picture.
-                    IconButton {
-                        readonly property bool camera: edge.s.source.startsWith("camera:")
-                        visible: edge.chosen && (camera || edge.lost || Switcher.inPicture(edge.s))
-                        x: Math.max(0, edge.width - width - 6)
-                        y: 6
-                        z: 3
-                        implicitWidth: 22
-                        implicitHeight: 22
-                        iconSize: 12
-                        iconName: "x"
-                        icon.color: "#000000"
-                        background: Rectangle {
-                            radius: 11
-                            color: parent.down ? "#d0d0d0" : parent.hovered ? "#ececec" : "#ffffff"
-                        }
-                        tip: camera ? "移除这个相机（相机随即关掉）"
-                           : edge.lost ? "从合成中删除"
-                           : "移出画面（放到右边画外）" + (Switcher.follow ? "" : "，按「投放」后观众那边也移出")
-                        onClicked: {
-                            composer.selected = edge.index
-                            if (camera)
-                                composer.dropCamera()
-                            else
-                                composer.park(edge.index)
-                        }
-                    }
-                    // Corners and edge middles size it.
-                    Repeater {
-                        model: edge.chosen ? [[0, 0], [0.5, 0], [1, 0], [0, 0.5], [1, 0.5], [0, 1], [0.5, 1], [1, 1]] : []
-                        Rectangle {
-                            required property var modelData
-                            readonly property bool side: modelData[0] === 0.5 || modelData[1] === 0.5
-                            width: side ? (modelData[0] === 0.5 ? 14 : 5) : 8
-                            height: side ? (modelData[1] === 0.5 ? 14 : 5) : 8
-                            x: modelData[0] * edge.width - width / 2
-                            y: modelData[1] * edge.height - height / 2
-                            radius: side ? 2.5 : 2
-                            color: "#ffffff"
-                            border.width: 1
-                            border.color: "#000000"
+                    // Another layer's edge and name stop at the picture's edge.
+                    Item {
+                        id: cut
+                        clip: !edge.chosen
+                        x: edge.chosen ? 0 : screen.x - edge.x
+                        y: edge.chosen ? 0 : screen.y - edge.y
+                        width: edge.chosen ? edge.width : screen.width
+                        height: edge.chosen ? edge.height : screen.height
+                        Item {
+                            x: -cut.x
+                            y: -cut.y
+                            width: edge.width
+                            height: edge.height
+                            Rectangle {
+                                anchors.fill: parent
+                                color: "transparent"
+                                border.width: edge.chosen ? 1.5 : 1
+                                border.color: edge.chosen ? "#ffffff" : "#40ffffff"
+                            }
+                            // The chosen one's frame also in ink just outside: where
+                            // it reaches past the picture (onto the light ground) its
+                            // edge and handles still read as its own.
+                            Rectangle {
+                                visible: edge.chosen
+                                anchors.fill: parent
+                                anchors.margins: -1.5
+                                color: "transparent"
+                                border.width: 1
+                                border.color: Theme.dark ? "#c3c8d0" : "#55555c"
+                            }
+                            // Its name, on a plate at its top left.
+                            Rectangle {
+                                x: 4
+                                y: 4
+                                width: label.implicitWidth + 10
+                                height: 16
+                                radius: 4
+                                visible: edge.width > 40 && edge.height > 24
+                                color: edge.chosen ? "#ffffff" : "#99000000"
+                                Text {
+                                    id: label
+                                    anchors.centerIn: parent
+                                    text: composer.sourceName(edge.s.source) + (edge.lost ? " · 已移除" : "")
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                    color: edge.chosen ? "#000000" : "#ffffff"
+                                }
+                            }
+                            // Its way off, on the chosen one, at its top right inside:
+                            // a camera is let go (it stops), a layer gone from the
+                            // sources leaves, a track goes off the picture.
+                            IconButton {
+                                readonly property bool camera: edge.s.source.startsWith("camera:")
+                                visible: edge.chosen && (camera || edge.lost || Switcher.inPicture(edge.s))
+                                x: Math.max(0, edge.width - width - 6)
+                                y: 6
+                                z: 3
+                                implicitWidth: 22
+                                implicitHeight: 22
+                                iconSize: 12
+                                iconName: "x"
+                                icon.color: "#000000"
+                                background: Rectangle {
+                                    radius: 11
+                                    color: parent.down ? "#d0d0d0" : parent.hovered ? "#ececec" : "#ffffff"
+                                }
+                                tip: camera ? "移除这个相机（相机随即关掉）"
+                                   : edge.lost ? "从合成中删除"
+                                   : "移出画面（放到右边画外）" + (Switcher.follow ? "" : "，按「投放」后观众那边也移出")
+                                onClicked: {
+                                    composer.selected = edge.index
+                                    if (camera)
+                                        composer.dropCamera()
+                                    else
+                                        composer.park(edge.index)
+                                }
+                            }
+                            // Corners and edge middles size it.
+                            Repeater {
+                                model: edge.chosen ? [[0, 0], [0.5, 0], [1, 0], [0, 0.5], [1, 0.5], [0, 1], [0.5, 1], [1, 1]] : []
+                                Rectangle {
+                                    required property var modelData
+                                    readonly property bool side: modelData[0] === 0.5 || modelData[1] === 0.5
+                                    width: side ? (modelData[0] === 0.5 ? 14 : 5) : 8
+                                    height: side ? (modelData[1] === 0.5 ? 14 : 5) : 8
+                                    x: modelData[0] * edge.width - width / 2
+                                    y: modelData[1] * edge.height - height / 2
+                                    radius: side ? 2.5 : 2
+                                    color: "#ffffff"
+                                    border.width: 1
+                                    border.color: "#000000"
+                                }
+                            }
                         }
                     }
                 }
@@ -1257,11 +1363,11 @@ ColumnLayout {
             // (it goes on straight), the soft band of the chosen one, its points.
             Item {
                 id: lineBox
+                parent: lineClip
                 readonly property var s: composer.slot
                 visible: !!s && s.mask.lines.length > 0
-                z: 3
-                x: s ? screen.x + s.x * screen.width : 0
-                y: s ? screen.y + s.y * screen.height : 0
+                x: s ? s.x * screen.width : 0
+                y: s ? s.y * screen.height : 0
                 width: s ? s.w * screen.width : 0
                 height: s ? s.h * screen.height : 0
                 clip: true
