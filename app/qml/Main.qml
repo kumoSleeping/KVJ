@@ -1185,7 +1185,6 @@ ApplicationWindow {
                         keysHost: timeline.keysHost
                         zoomHost: topBar
                         onAddCamera: id => app.addCamera(id)
-                        onRemoveCamera: key => app.removeCamera(key)
                     }
 
                     // —— At the right: what the audience sees, small, over

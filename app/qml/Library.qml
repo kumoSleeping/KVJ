@@ -340,11 +340,24 @@ Item {
                                     lib.composer.bringIn(srcTile.sid)
                             }
                             onCanceled: lib.composer.layerCarried = ""
-                            ToolTip.visible: containsMouse && !pressed
+                            ToolTip.visible: containsMouse && !pressed && !dropKey.hovered
                             ToolTip.delay: 600
                             ToolTip.text: !srcTile.usable ? srcTile.modelData.why
                                         : srcTile.shown ? "在画面中 · 点一下在画板上选中它"
                                         : "在画外，观众看不到 · 点一下放进画面右下角，或拖进画面里"
+                        }
+                        // A camera taken in is let go only here (it stops).
+                        IconButton {
+                            id: dropKey
+                            anchors.top: parent.top
+                            anchors.right: parent.right
+                            implicitWidth: 18
+                            implicitHeight: 18
+                            iconSize: 10
+                            iconName: "x"
+                            tip: "移除这个相机（相机随即关掉）"
+                            visible: srcTile.modelData.camera && srcTile.sid !== "camera:" && (sourceArea.containsMouse || hovered)
+                            onClicked: lib.app.removeCamera(srcTile.sid)
                         }
                     }
                 }

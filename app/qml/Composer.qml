@@ -26,11 +26,12 @@ import KVJ
 // straight line pulls out its one bend (a press on a bent one only chooses
 // it), with Shift (or the 折角 key) the bend is a corner; right-click for
 // more. Delete takes the chosen bend (the line goes straight), the line or
-// the layer (back to the stage) away; the trash key takes the chosen line or
+// the layer (back to 预备, a camera too) away; the trash key takes the chosen line or
 // all the layer's lines. Esc lets go. (The arrow keys stay the player's.)
 //
 //   sources:  [{ id, name }] the picture sources (the tracks, the cameras)
-//   cameraIds the cameras taken in; addCamera(id), removeCamera(key) ask the host
+//   cameraIds the cameras taken in; addCamera(id) asks the host (a camera is let
+//             go from 预备, Library)
 //   textures: the window's SourceTextures
 //   aspect:   the projected picture's width / height
 //   entry:    the entry the picture shows (an audio-only one shows its title)
@@ -45,7 +46,6 @@ ColumnLayout {
     property var output: null
     property var cameraIds: []
     signal addCamera(string id)
-    signal removeCamera(string key)
     // How wide the picture is drawn here at most: the sources' light copies are made this large.
     readonly property real pictureWidth: screen.fitWidth
     // Where the keys under the picture go (the timeline's top line), and
@@ -237,17 +237,6 @@ ColumnLayout {
             Switcher.removeSlot(i)
         selected = -1
     }
-    // The chosen layer's camera let go, and the camera with it (it stops).
-    // Later: letting go destroys the menu item that asked.
-    function dropCamera() {
-        if (!slot || !slot.source.startsWith("camera:"))
-            return
-        const key = slot.source
-        Qt.callLater(() => {
-            selected = -1
-            removeCamera(key)
-        })
-    }
     function addLine() {
         if (!slot)
             return
@@ -279,10 +268,8 @@ ColumnLayout {
             Switcher.removeLine(selected, lineAt)
             lineAt = -1
             point = -1
-        } else if (slot && slot.source.startsWith("camera:")) {
-            // A camera goes for good (it stops), not off the picture.
-            dropCamera()
         } else if (slot) {
+            // Off the picture, into 预备 (a camera too: it is let go only from there).
             park(selected)
         }
     }
@@ -1386,17 +1373,6 @@ ColumnLayout {
                 text: composer.slot && !composer.known(composer.slot.source) ? "从合成中删除" : "移到画外"
                 onTriggered: composer.park(composer.selected)
             }
-            // A camera's layer: the camera let go, its layer with it.
-            Instantiator {
-                model: composer.slot && composer.slot.source.startsWith("camera:") ? 1 : 0
-                delegate: PopAction {
-                    risky: true
-                    text: "移除相机"
-                    onTriggered: composer.dropCamera()
-                }
-                onObjectAdded: (index, object) => layerMenu.addAction(object)
-                onObjectRemoved: (index, object) => layerMenu.removeAction(object)
-            }
         }
 
         PopMenu {
@@ -1561,13 +1537,11 @@ ColumnLayout {
                             { sep: true },
                             { icon: "arrow-up-to-line", tip: "置顶", act: () => Switcher.raiseSlot(composer.selected) },
                             { icon: "arrow-down-to-line", tip: "置底", act: () => Switcher.lowerSlot(composer.selected) },
-                            { icon: "arrow-right-to-line", tip: "移到画外（Delete）", act: () => composer.park(composer.selected) },
-                            { icon: "x", tip: "移除这个相机（相机随即关掉）", camera: true, act: () => composer.dropCamera() }
+                            { icon: "arrow-right-to-line", tip: "移出画面，放回预备（Delete）", act: () => composer.park(composer.selected) }
                         ]
                         Item {
                             id: key
                             required property var modelData
-                            visible: !modelData.camera || (!!composer.slot && composer.slot.source.startsWith("camera:"))
                             implicitWidth: modelData.sep ? 10 : 26
                             implicitHeight: 26
                             IconButton {
