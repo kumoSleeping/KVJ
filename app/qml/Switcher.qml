@@ -349,11 +349,19 @@ QtObject {
         property int fadeLength: 600
         property bool follow: false
     }
-    onProgramChanged: if (loaded) store.program = JSON.stringify(program)
+    // Written a moment after the last change, not on every step of a drag.
+    property Timer saving: Timer {
+        interval: 400
+        onTriggered: {
+            switcher.store.program = JSON.stringify(switcher.program)
+            switcher.store.preview = JSON.stringify(switcher.preview)
+        }
+    }
+    onProgramChanged: if (loaded) saving.restart()
     onPreviewChanged: {
         if (!loaded)
             return
-        store.preview = JSON.stringify(preview)
+        saving.restart()
         if (follow) {
             done.stop()
             transition = null

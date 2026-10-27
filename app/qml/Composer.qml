@@ -770,9 +770,11 @@ ColumnLayout {
                         }
                         readonly property real band: lineBox.s ? lineBox.s.mask.blend * Math.min(lineBox.width, lineBox.height) / 2 : 0
                         anchors.fill: parent
+                        // The guides (past the ends, the band) plain and off the
+                        // main thread: dashes are many pieces.
                         Shape {
                             anchors.fill: parent
-                            preferredRendererType: Shape.CurveRenderer
+                            asynchronous: true
                             // Past the ends.
                             ShapePath {
                                 strokeColor: "#80ffffff"
@@ -785,7 +787,8 @@ ColumnLayout {
                                         const c = drawn.course
                                         if (drawn.modelData.closed || c.length < 2)
                                             return []
-                                        const far = 4000
+                                        // Far enough to leave the layer, no further.
+                                        const far = 2 * Math.hypot(lineBox.width, lineBox.height)
                                         const ext = (p, q) => {
                                             const len = Math.max(1e-6, Math.hypot(p.x - q.x, p.y - q.y))
                                             return [p, Qt.point(p.x + (p.x - q.x) / len * far, p.y + (p.y - q.y) / len * far)]
@@ -803,6 +806,10 @@ ColumnLayout {
                                     paths: drawn.chosen && drawn.band > 1 ? [drawn.offset(drawn.band), drawn.offset(-drawn.band)] : []
                                 }
                             }
+                        }
+                        Shape {
+                            anchors.fill: parent
+                            preferredRendererType: Shape.CurveRenderer
                             // The line, dark under light so it reads on any picture.
                             ShapePath {
                                 strokeColor: "#99000000"
