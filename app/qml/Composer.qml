@@ -407,14 +407,16 @@ ColumnLayout {
         clip: true
 
         // The picture, centred across the board with a small margin at the
-        // top and foot (`room`), enough to reach a split line's point on its
-        // edge. The keys that put it on the air are on the timeline's top
+        // top (`room`), enough to reach a split line's point on its edge,
+        // and under it the strip where the chosen layer's keys show. The keys that put it on the air are on the timeline's top
         // line (keysHost). Zoomed out, it shrinks about the middle of the
         // room it fills at full size.
         Rectangle {
             id: screen
             readonly property real room: 16
-            readonly property real fitWidth: Math.max(1, Math.min(box.width - 2 * room, (box.height - 2 * room) * composer.aspect))
+            // Under it, a strip kept for the chosen layer's keys (tools).
+            readonly property real toolsRoom: 72
+            readonly property real fitWidth: Math.max(1, Math.min(box.width - 2 * room, (box.height - room - toolsRoom) * composer.aspect))
             readonly property real fitHeight: fitWidth / Math.max(0.2, composer.aspect)
             // Where it starts at full size: centred across the board.
             readonly property real fitX: (box.width - fitWidth) / 2
@@ -1123,35 +1125,6 @@ ColumnLayout {
                                     color: edge.chosen ? "#000000" : "#ffffff"
                                 }
                             }
-                            // Its way off, on the chosen one, at its top right inside:
-                            // a camera is let go (it stops), a layer gone from the
-                            // sources leaves, a track goes off the picture.
-                            IconButton {
-                                readonly property bool camera: edge.s.source.startsWith("camera:")
-                                visible: edge.chosen && (camera || edge.lost || Switcher.inPicture(edge.s))
-                                x: Math.max(0, edge.width - width - 6)
-                                y: 6
-                                z: 3
-                                implicitWidth: 22
-                                implicitHeight: 22
-                                iconSize: 12
-                                iconName: "x"
-                                icon.color: "#000000"
-                                background: Rectangle {
-                                    radius: 11
-                                    color: parent.down ? "#d0d0d0" : parent.hovered ? "#ececec" : "#ffffff"
-                                }
-                                tip: camera ? "移除这个相机（相机随即关掉）"
-                                   : edge.lost ? "从合成中删除"
-                                   : "移出画面（放到右边画外）" + (Switcher.follow ? "" : "，按「投放」后观众那边也移出")
-                                onClicked: {
-                                    composer.selected = edge.index
-                                    if (camera)
-                                        composer.dropCamera()
-                                    else
-                                        composer.park(edge.index)
-                                }
-                            }
                             // Corners and edge middles size it.
                             Repeater {
                                 model: edge.chosen ? [[0, 0], [0.5, 0], [1, 0], [0, 0.5], [1, 0.5], [0, 1], [0.5, 1], [1, 1]] : []
@@ -1478,24 +1451,19 @@ ColumnLayout {
             }
         }
 
-        // The chosen layer's keys, on a plate that pops up under it and goes
-        // where it goes (inside the picture's foot when there is no room
-        // under it, above the keys under the picture); its corner, band and
-        // feather on a second line when it has them. Presses stay on it.
+        // The chosen layer's keys, on a plate in the strip under the picture
+        // (it stays there whatever the layer or the view's size do), shown
+        // while a layer is chosen; its corner, band and feather on a second
+        // line. Presses stay on it.
         Item {
             id: tools
             z: 9
-            readonly property rect at: composer.slot ? hand.rectOf(composer.slot) : Qt.rect(0, 0, 0, 0)
             readonly property real spread: 6
             visible: !!composer.slot
             width: toolColumn.implicitWidth + 12
             height: toolColumn.implicitHeight + 8
-            x: Math.max(4, Math.min(box.width - width - 4, at.x + at.width / 2 - width / 2))
-            y: {
-                const floor = box.height - 4
-                const below = at.y + at.height + 8
-                return below + height <= floor ? below : Math.max(4, Math.min(floor, at.y + at.height - 8) - height)
-            }
+            x: Math.max(4, Math.min(box.width - width - 4, screen.fitX + screen.fitWidth / 2 - width / 2))
+            y: box.height - height - 6
             // A soft shadow, in layers that fade outwards.
             Repeater {
                 model: 4
@@ -1540,7 +1508,7 @@ ColumnLayout {
                             { icon: "square-round", tip: "圆角", shape: "round", act: () => Switcher.setMask(composer.selected, { shape: "round" }) },
                             { icon: "circle", tip: "圆形", shape: "circle", act: () => Switcher.setMask(composer.selected, { shape: "circle" }) },
                             { sep: true },
-                            { icon: "spline", tip: "加分割线：上面遮住、下面露出，中间渐变", act: () => composer.addLine() },
+                            { icon: "spline", tip: "加分割线：左下到右上的一道弧线，左上那边遮住、右下露出，中间渐变", act: () => composer.addLine() },
                             { icon: "polyline", tip: "中间点拉成折角（同按住 Shift）", toggle: true, act: () => composer.straight = !composer.straight },
                         { icon: "trash", tip: "删除选中的分割线；没选中线时删除这个画面的全部分割线", lines: true, act: () => composer.removeLines() },
                             { sep: true },
@@ -1610,6 +1578,27 @@ ColumnLayout {
                         value: composer.slot ? composer.slot.mask.feather : 0
                         onMoved: Switcher.setMask(composer.selected, { feather: value })
                     }
+                }
+            }
+        }
+    }
+
+    // A press anywhere else in the window lets the chosen layer and sticker
+    // go (a press on the board decides for itself). Passive: the press goes
+    // on to what is under it.
+    Item {
+        parent: composer.Window.contentItem
+        anchors.fill: parent
+        z: 998
+        PointHandler {
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            onActiveChanged: {
+                if (!active)
+                    return
+                const p = box.mapFromItem(null, point.scenePosition.x, point.scenePosition.y)
+                if (p.x < 0 || p.y < 0 || p.x > box.width || p.y > box.height) {
+                    composer.selected = -1
+                    composer.chosenSid = ""
                 }
             }
         }

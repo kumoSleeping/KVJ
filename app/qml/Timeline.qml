@@ -371,12 +371,18 @@ Rectangle {
             Layout.preferredHeight: Math.max(28, keysSlot.implicitHeight)
             spacing: 8
             readonly property var act: line.activeItem
-            // The board's keys (the host's), under its picture, on this line.
-            // As wide as they want, given way down to their least.
+            // The board's keys (the host's), under its picture, on this line,
+            // `keysInset` in (that room the first to give way when the line
+            // is short); as wide as they want, given way down to their least.
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredWidth: line.keysInset
+                Layout.maximumWidth: line.keysInset
+                Layout.minimumWidth: 0
+            }
             Item {
                 id: keysSlot
                 readonly property Item keys: children.length ? children[0] : null
-                Layout.leftMargin: line.keysInset
                 Layout.fillHeight: true
                 Layout.fillWidth: true
                 Layout.preferredWidth: keys ? keys.wanted : 0

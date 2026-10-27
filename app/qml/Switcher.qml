@@ -191,13 +191,14 @@ QtObject {
             return
         updateSlot(i, { mask: Object.assign({}, preview.slots[i].mask, mask) })
     }
-    // A split line across the middle of slot `i`, the half above hidden; its
+    // A split line across slot `i`, an arc from its lower left to its upper
+    // right, the side at the upper left hidden; its
     // index among the slot's lines. Its ends sit a little inside the slot, off
     // the slot's own handles; the line goes on past them.
     function addLine(i) {
         if (!preview || i < 0 || i >= preview.slots.length)
             return -1
-        const lines = preview.slots[i].mask.lines.concat([{ points: [[0.12, 0.5, 0], [0.88, 0.5, 0]], closed: false, flip: false }])
+        const lines = preview.slots[i].mask.lines.concat([{ points: [[0.08, 0.92, 0], [0.62, 0.62, 0], [0.92, 0.08, 0]], closed: false, flip: false }])
         setMask(i, { lines: lines })
         return lines.length - 1
     }

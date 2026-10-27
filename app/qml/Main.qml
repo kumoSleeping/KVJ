@@ -1291,7 +1291,7 @@ ApplicationWindow {
             onClearTrack: track => app.clearTrack(track)
             onTakeLive: key => mixer.takeLive(key)
             onBringUp: key => mixer.bringUp(key)
-            // The board's keys right under its picture's left edge.
+            // The board's keys under its picture's left edge, as far as room allows.
             keysInset: mixer.x + mixer.keysInset
             // Done once the drop is over: the rows are made anew by it.
             onDropEntries: (ids, track, append) => Qt.callLater(append ? app.placeOn : app.replaceOn, ids, track)
