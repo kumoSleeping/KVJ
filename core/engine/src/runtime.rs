@@ -80,7 +80,25 @@ impl Evidence {
     fn agrees(&self, other: &Self) -> bool {
         self.same_position(other) && (self.rate - other.rate).abs() < 0.06
     }
+    /// `later`, heard at least `CONFIRM_AFTER` s after this one on mostly new
+    /// audio, is where this one said the music would be by then.
+    fn confirmed_by(&self, later: &Self) -> bool {
+        later.at.saturating_duration_since(self.at).as_secs_f64() >= CONFIRM_AFTER
+            && self.recording == later.recording
+            && (self.now() - later.now()).abs() < 0.25
+            && (self.rate - later.rate).abs() < 0.06
+    }
 }
+/// A jump away from the place the picture shows (another entry, or 2.5 s or
+/// more within one) is taken only once a second observation, heard at least
+/// this long after the first, lands where the first said the music would be.
+/// One round can align by chance, most often just after the DJ jumps, while
+/// the 550 ms query still holds the audio from before: the picture would cut
+/// there and, a moment later, back. Queries this far apart share little audio.
+const CONFIRM_AFTER: f64 = 0.5;
+/// Unconfirmed jumps are kept this long, at most this many.
+const PENDING_SECONDS: f64 = 3.;
+const PENDING_MAX: usize = 6;
 /// Room mode, searching: a plausible position not yet confirmed. Retrieval seldom
 /// ranks a reverberant song's position first twice, so once found it is checked
 /// again each round where the music should be by now.
@@ -340,7 +358,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
             session,
             Level::Info,
             Stage::Scan,
-            "监听就绪 · 550 ms 音频窗 / 命中即切 / 失锁时逐档检索".into(),
+            "监听就绪 · 550 ms 音频窗 / 远跳经两次印证 / 失锁时逐档检索".into(),
         );
         let room = input.room;
         if room {
@@ -354,6 +372,8 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
         }
         let mut corroboration = Corroboration::default();
         let mut candidates: Vec<Candidate> = Vec::new();
+        // Jumps away from the shown place, heard once, not yet confirmed.
+        let mut pending: Vec<Evidence> = Vec::new();
         let mut generation = 0;
         let mut input_epoch = 0;
         let mut features = FeatureCache(VecDeque::new());
@@ -393,7 +413,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                             publish(engine, session, |v| v.phase = "searching".into());
                         }
                         current = None; estimate = None; lost = false;
-                        generation = 0; search_cursor = 0; corroboration.clear();
+                        generation = 0; search_cursor = 0; corroboration.clear(); pending.clear();
                     } else if Instant::now() >= reopen_at {
                         match super::feature_input::Input::start(engine, input) {
                             Ok(reopened) => {
@@ -423,7 +443,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
             if input_epoch != epoch {
                 input_epoch = epoch; current = None; estimate = None; lost = false;
                 generation = 0; search_cursor = 0; last_rejection = None;
-                corroboration.clear(); candidates.clear();
+                corroboration.clear(); candidates.clear(); pending.clear();
             }
             if let Some(notice) = polled.notice {
                 // At most one warning every 5 s so a flaky driver cannot flush the bounded
@@ -536,6 +556,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                     search_cursor = 0;
                     corroboration.clear();
                     candidates.clear();
+                    pending.clear();
                     engine
                         .present(session, |v| v.candidate = None);
                 }
@@ -612,6 +633,8 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                     };
                     scanned.clear();
                     let mut rescued = None;
+                    // Room mode's corroboration already heard it agree over 3 s.
+                    let mut vouched = false;
                     let rescue_ran = !tracking && on.contains(&true);
                     if tracking {
                         search_cursor = 0;
@@ -727,6 +750,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                                     &mut scanned,
                                 );
                                 if rescued.is_some() {
+                                    vouched = corroborated;
                                     break 'search;
                                 }
                                 if room && result.plausible {
@@ -799,6 +823,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                                 ..result.clone()
                             };
                             rescued = record(set, c.found.target, &query, at, &gated, confirmed, ms, &mut scanned);
+                            vouched = confirmed;
                             if heard {
                                 candidates[i].found = Evidence {
                                     position: found,
@@ -845,6 +870,36 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                             error_ms: None,
                         };
                     }
+                    // The music is where the picture is: earlier jumps heard elsewhere go.
+                    if tracking {
+                        pending.clear();
+                    }
+                    // A jump away from the shown place waits for its confirmation
+                    // (CONFIRM_AFTER); the picture stays meanwhile.
+                    let rescued = match rescued {
+                        Some(found) if !vouched && current.is_some_and(|old| found.discontinuity(&old)) => {
+                            pending.retain(|p| {
+                                on[p.recording] && at.saturating_duration_since(p.at).as_secs_f64() <= PENDING_SECONDS
+                            });
+                            if pending.iter().any(|p| p.confirmed_by(&found)) {
+                                pending.clear();
+                                Some(found)
+                            } else {
+                                if !pending.iter().any(|p| p.recording == found.recording && (p.now() - found.now()).abs() < 0.25) {
+                                    log(engine, session, Level::Info, Stage::Decision, format!(
+                                        "新位置待印证：{} · {:.3} 秒 · {:.3}×，保留当前画面",
+                                        set.recordings[found.recording].entry.title, found.now(), found.rate
+                                    ));
+                                }
+                                pending.push(found);
+                                if pending.len() > PENDING_MAX {
+                                    pending.remove(0);
+                                }
+                                None
+                            }
+                        }
+                        other => other,
+                    };
                     // Exactly one accepted observation updates the playback clock.
                     let chosen = local.or(rescued);
                     if let Some(mut chosen) = chosen {
@@ -962,5 +1017,21 @@ mod tests {
         assert_eq!(mask(0), [true, false, false]);
         assert_eq!(mask(1), [false, true, false]);
         assert_eq!(mask(2), [false, false, false]);
+    }
+
+    #[test]
+    fn a_jump_is_confirmed_only_by_a_later_observation_that_agrees() {
+        let t0 = Instant::now() - Duration::from_secs(10);
+        let heard = |s: f64, recording, position| Evidence {
+            target: 0, recording, position, at: t0 + Duration::from_secs_f64(s), rate: 1., score: 0.7, margin: 0.2,
+        };
+        let first = heard(0., 0, 100.);
+        assert!(first.confirmed_by(&heard(0.6, 0, 100.6)));
+        assert!(first.confirmed_by(&heard(2.0, 0, 102.1)));
+        // Too soon: mostly the same audio.
+        assert!(!first.confirmed_by(&heard(0.25, 0, 100.25)));
+        // Elsewhere, or in another entry.
+        assert!(!first.confirmed_by(&heard(0.6, 0, 257.)));
+        assert!(!first.confirmed_by(&heard(0.6, 1, 100.6)));
     }
 }
