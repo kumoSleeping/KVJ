@@ -1201,14 +1201,12 @@ ApplicationWindow {
                             }
                         }
                         // The program (PGM) as the projection draws it, the
-                        // stickers and effects on the air included; smaller
-                        // (centred) when the column is short of room.
+                        // stickers and effects on the air included; always
+                        // whole (声学追踪's picture gives way instead).
                         Item {
                             Layout.fillWidth: true
-                            Layout.fillHeight: true
                             Layout.preferredHeight: width / Math.max(0.2, desk.aspect)
-                            Layout.maximumHeight: width / Math.max(0.2, desk.aspect)
-                            Layout.minimumHeight: 48
+                            Layout.minimumHeight: width / Math.max(0.2, desk.aspect)
                             Rectangle {
                                 width: Math.min(parent.width, parent.height * Math.max(0.2, desk.aspect))
                                 height: width / Math.max(0.2, desk.aspect)
@@ -1232,9 +1230,12 @@ ApplicationWindow {
                         }
 
                         // —— Smart following: one, on the track chosen in it ——
+                        // Shorter than it wants only when the column is short of room.
                         FollowStrip {
                             id: strip
                             Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            Layout.maximumHeight: implicitHeight
                             app: app
                             surface: projection.surface
                             rowHeight: timeline.mainRowHeight

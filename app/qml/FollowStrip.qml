@@ -189,17 +189,17 @@ Card {
             }
         }
 
-        // Following's own picture, where it puts the music: 16:9 at the card's
-        // width, smaller (centred) when the card is short.
-        // Its room always kept, 16:9 at the card's width, black until
-        // following has found the music: never squeezed.
+        // Following's own picture, where it puts the music: 16:9 at the
+        // card's width, black until following has found the music; the one
+        // thing that gives way (smaller, centred) when the column is short.
         Item {
             id: monitorBox
             readonly property real full: width * 9 / 16 + 3
             Layout.fillWidth: true
+            Layout.fillHeight: true
             Layout.preferredHeight: full
             Layout.maximumHeight: full
-            Layout.minimumHeight: full
+            Layout.minimumHeight: 40
             Rectangle {
                 width: parent.width
                 height: parent.height - 3
