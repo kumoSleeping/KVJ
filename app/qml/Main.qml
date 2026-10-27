@@ -279,34 +279,63 @@ ApplicationWindow {
             transport.load(entry, at, true)
         app.tick()
     }
+    // The keys act on the track row last pressed on the timeline (its
+    // activeTrack): 画面 1's player is this window's own, the others their
+    // TrackPlayer, whose keys rest while following leads it.
+    readonly property int keyTrack: Math.max(0, timeline.activeTrack)
+    readonly property var keyPlayer: keyTrack > 0 ? app.auxPlayers[keyTrack - 1] : null
     function toggle() {
+        if (app.keyPlayer) {
+            app.keyPlayer.toggle()
+            return
+        }
         if (!app.manualSeek)
             return
         transport.toggle()
         app.tick()
     }
     function seekBy(seconds) {
+        if (app.keyPlayer) {
+            const p = app.keyPlayer
+            if (p.entry)
+                p.seek(p.entry, p.now() + seconds)
+            return
+        }
         if (!app.manualSeek || !transport.entry)
             return
         transport.seek(transport.now() + seconds)
         app.tick()
     }
     function nudgeTempo(step) {
+        if (app.keyPlayer) {
+            if (!app.keyPlayer.lead)
+                app.keyPlayer.setSpeed(app.keyPlayer.speed + step)
+            return
+        }
         if (app.manualTempo)
             transport.setTempo(transport.tempo + step)
     }
     // The picture ahead (direction > 0) or back by playing faster or slower
     // until `letGo` (or for `ms`), instead of a jump.
     function nudge(direction, ms) {
+        if (app.keyPlayer) {
+            const p = app.keyPlayer
+            if (!p.lead && p.entry)
+                p.clock.nudge(direction, ms || 0)
+            return
+        }
         if (!app.manualSeek || !app.manualTempo || !transport.entry)
             return
         transport.nudge(direction, ms || 0)
         app.tick()
     }
     // A nudge key let go (main.cpp sees the release; 0 when the app loses the
-    // keyboard, which would never hear it).
+    // keyboard, which would never hear it): every player, the row may have
+    // changed meanwhile.
     function letGo(direction) {
         transport.letGo(direction)
+        for (const p of app.auxPlayers)
+            p.clock.letGo(direction)
     }
     Connections {
         target: Qt.application
@@ -364,10 +393,12 @@ ApplicationWindow {
             const i = list.findIndex(e => e.id === transport.entry.id)
             const next = i >= 0 ? list.slice(i + 1).find(e => e.enabled !== false) : null
             const first = app.loopOn ? list.find(e => e.enabled !== false) : null
-            if (next || first)
+            if (next || first) {
+                transport.cut()
                 transport.load(next || first, 0, true)
-            else
+            } else {
                 transport.setPlaying(false)
+            }
             app.playhead = transport.now()
         }
     }
@@ -462,6 +493,11 @@ ApplicationWindow {
             const off = mine.filter(id => set.entries.some(e => e.id === id && e.enabled === false))
             if (off.length)
                 Engine.enableEntries(set.id, off, true)
+            // Placed after what is on the track already, in the order dropped:
+            // dropped again on its own track, an entry goes to its end.
+            if (app.editable)
+                for (const id of mine)
+                    Engine.moveEntry(set.id, id)
         }
     }
     // Back to the library only.
@@ -476,56 +512,60 @@ ApplicationWindow {
     }
     // A double-click in the drawer: onto the first track from the top with
     // nothing on it, else onto a new one, else the main track's end.
-    function placeAnywhere(id) {
+    function placeAnywhere(ids) {
         const rows = app.trackRows.filter(r => r.kind === "track")
         const empty = rows.find(r => app.placedOn(r.track).length === 0)
         const fresh = [1, 2, 3].find(t => app.shownAux.indexOf(t) < 0)
-        app.placeOn([id], empty ? empty.track : fresh || 0)
+        app.placeOn(ids, empty ? empty.track : fresh || 0)
     }
-    // A new aux track at row `position` (1 = right under the main one): the
-    // aux tracks from there on move one number up, then the entries go on it.
-    // Files are imported onto it the same way.
+    // KVJ keeps one library of videos (the engine's first Set): an older
+    // document with several is made one, an empty one gets its library.
+    function oneLibrary() {
+        if (app.running || Engine.importing)
+            return
+        if (app.sets.length === 0)
+            Engine.createSet("素材库")
+        else if (app.sets.length > 1)
+            Engine.mergeSets()
+    }
+    Connections {
+        target: Engine
+        function onDocumentChanged() { Qt.callLater(app.oneLibrary) }
+    }
+    // A new track at row `position` (0 = the top): the tracks from there on
+    // move one number down the list (画面 2 becomes 画面 3…), then the
+    // entries or files go on it. Four tracks at most.
     function insertTrack(position) {
-        const aux = app.shownAux.slice()
-        if (aux.length >= 3)
+        const shown = [0].concat(app.shownAux)
+        if (shown.length >= 4)
             return -1
-        const at = Math.max(0, Math.min(aux.length, position - 1))
-        // New numbers in row order: 1, 2, 3; the old ones from `at` on shift.
-        for (let i = aux.length - 1; i >= at; --i) {
-            const from = aux[i]
-            const to = i + 2
-            if (from === to)
-                continue
-            const ids = app.entries.filter(e => (e.track || 0) === from).map(e => e.id)
+        const at = Math.max(0, Math.min(shown.length, position))
+        const order = shown.slice(0, at).concat([-1]).concat(shown.slice(at))
+        // Each track's entries to its new number (its place in the order);
+        // those moving down first, from the last, so none lands on another.
+        const moves = order.map((from, to) => ({ from: from, to: to })).filter(m => m.from >= 0 && m.from !== m.to)
+        moves.sort((a, b) => (b.to > b.from) - (a.to > a.from) || (a.to > a.from ? b.from - a.from : a.from - b.from))
+        for (const m of moves) {
+            const ids = app.entries.filter(e => (e.track || 0) === m.from).map(e => e.id)
             if (ids.length)
-                Engine.setTrack(app.currentSet.id, ids, to)
+                Engine.setTrack(app.currentSet.id, ids, m.to)
         }
-        for (let i = 0; i < at; ++i) {
-            const from = aux[i]
-            const to = i + 1
-            const ids = app.entries.filter(e => (e.track || 0) === from).map(e => e.id)
-            if (from !== to && ids.length)
-                Engine.setTrack(app.currentSet.id, ids, to)
-        }
-        // The empty ones the operator added keep their places in the order.
-        const added = []
-        aux.forEach((t, i) => { if (app.addedTracks.indexOf(t) >= 0) added.push(i < at ? i + 1 : i + 2) })
-        const track = at + 1
-        app.setAddedTracks(added.concat([track]))
-        return track
+        app.setAddedTracks(order.map((t, i) => (t >= 0 && app.addedTracks.indexOf(t) >= 0) || t < 0 ? i : -1)
+                                .filter(i => i > 0))
+        return at
     }
     function insertEntries(ids, position) {
         if (!app.editable || !app.currentSet)
             return
         const track = app.insertTrack(position)
-        if (track > 0)
+        if (track >= 0)
             app.placeOn(ids, track)
     }
     function insertFiles(urls, position) {
         if (!app.editable || !app.currentSet)
             return
         const track = app.insertTrack(position)
-        if (track > 0)
+        if (track >= 0)
             app.addUrls(urls, track)
     }
 
@@ -591,7 +631,8 @@ ApplicationWindow {
     // place while following follows it (TrackPlayer.lead).
     function auxTiming(track) {
         const p = app.auxPlayers[track - 1]
-        return { entry: p.entry, position: p.position, rate: p.rate, clockAtMs: p.clockAtMs, offsetMs: p.offsetMs }
+        return { entry: p.entry, position: p.position, rate: p.rate, clockAtMs: p.clockAtMs, offsetMs: p.offsetMs,
+                 cut: p.clock.cutting }
     }
     Timer {
         interval: 50
@@ -609,7 +650,7 @@ ApplicationWindow {
         rate: app.aiMain ? app.match.rate : transport.rate
         clockAtMs: app.aiMain ? app.match.clock_at_ms : transport.clockAtMs
         offsetMs: app.aiMain ? strip.offsetMs : 0
-        fadeMs: app.fadeOn ? app.fadeMs : 0
+        fadeMs: app.fadeOn && !transport.cutting ? app.fadeMs : 0
         maxHeight: desk.maxHeight
         maxFps: desk.maxFps
         auxTimings: [app.auxTiming(1), app.auxTiming(2), app.auxTiming(3)]
@@ -645,7 +686,7 @@ ApplicationWindow {
     // The timeline's rows, which are also the mixer's sources: the main track,
     // the aux tracks shown, the cameras taken in.
     readonly property var trackRows: {
-        const rows = [{ key: "track:0", kind: "track", track: 0, name: "画面 1 · 主轨",
+        const rows = [{ key: "track:0", kind: "track", track: 0, name: "画面 1",
                         entries: app.entries.filter(app.isMain), player: app }]
         for (const t of app.shownAux) {
             const p = app.auxPlayers[t - 1]
@@ -769,7 +810,7 @@ ApplicationWindow {
     Shortcut {
         sequences: ["Return", "Enter"]
         context: Qt.ApplicationShortcut
-        enabled: app.keysLive && app.manualSeek && !!timeline.markClip
+        enabled: app.keysLive && timeline.canJump
         onActivated: timeline.jump()
     }
     Shortcut {
@@ -791,18 +832,13 @@ ApplicationWindow {
         onActivated: timeline.fit()
     }
 
-    // The Sets' drawer over the canvas's left side: put away at every start,
-    // brought out by its key in the top bar, Ctrl+B (⌘B) or files dragged to
-    // it; a press elsewhere on the canvas or Esc puts it away. Choosing a Set
-    // leaves it out, and so does anything of its own in use, a menu or a
-    // dialog. The red question about turning off the entry on the screen is
-    // never put away unseen: such a press answers it with no and leaves the
-    // drawer out.
+    // The library's drawer over the canvas's left side: put away at every
+    // start, brought out by its key at the canvas's top left, Ctrl+B (⌘B) or
+    // files dragged to it; a press elsewhere on the canvas or Esc puts it
+    // away, unless one of its menus or dialogs is in use.
     property bool setsOpen: false
     function closeSets() {
-        if (sidebar.confirmId !== "")
-            sidebar.confirmId = ""
-        else if (!sidebar.holding())
+        if (!sidebar.holding())
             app.setsOpen = false
     }
     function toggleSets() {
@@ -1033,11 +1069,9 @@ ApplicationWindow {
                     editable: app.editable
                     playingId: app.shownEntry ? app.shownEntry.id : ""
                     playingSetId: app.playingSet ? app.playingSet.id : ""
-                    onSelectSet: id => app.chooseSet(id)
                     onAddUrls: urls => app.addUrls(urls)
-                    onDropPlaying: id => app.dropPlaying(id)
                     onPutAway: app.closeSets()
-                    onPlace: id => app.placeAnywhere(id)
+                    onPlace: ids => app.placeAnywhere(ids)
                     onDragBegin: (ids, title, at) => app.entryDragBegin(ids, title, at)
                     onDragMove: at => app.entryDragMove(at)
                     onDragEnd: drop => app.entryDragEnd(drop)
@@ -1153,8 +1187,9 @@ ApplicationWindow {
                 app.addUrls([Engine.fileUrl(args[i + 1])])
         app.cue()
         app.applyScheme()
-        // A first start has no Set yet: show where they are made.
-        if (!app.sets || app.sets.length === 0)
+        app.oneLibrary()
+        // An empty library: show where videos are added.
+        if (app.entries.length === 0)
             app.setsOpen = true
     }
 

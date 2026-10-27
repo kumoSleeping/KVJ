@@ -4,8 +4,8 @@ import KVJ
 // One entry on a timeline row: its tempo a block a section with its BPM, its
 // frames (upright strips of each frame's middle) over its sound's waveform
 // (KDJ's whole-track preview, the part played dimmed), a line down through
-// both where the tempo changes, and its name. `view` is the Timeline (its
-// pps, viewLeft, emptyClip and tempoColor); `clip` is { entry, n, start,
+// both where the tempo changes, and its name. `view` is its row (TrackRow:
+// its pps, viewLeft, emptyClip and tempoColor); `clip` is { entry, n, start,
 // length } in seconds along the row.
 Item {
     id: piece

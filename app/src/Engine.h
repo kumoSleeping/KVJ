@@ -77,12 +77,16 @@ public:
     Q_INVOKABLE void createSet(const QString &name);
     Q_INVOKABLE void deleteSet(const QString &setId);
     Q_INVOKABLE void removeEntry(const QString &setId, const QString &entryId);
+    // Before another entry of the Set, or to its end (empty `beforeId`).
+    Q_INVOKABLE void moveEntry(const QString &setId, const QString &entryId, const QString &beforeId = {});
     // `track`: 0 the main track, 1..3 the aux ones (画面 2..4).
     // `placed`: onto the timeline (on), or only into the Set's library.
     Q_INVOKABLE void importUrls(const QString &setId, const QList<QUrl> &urls, int track = 0, bool placed = true);
     // On or off for following; also while following, for the next round.
     Q_INVOKABLE void enableEntries(const QString &setId, const QStringList &entryIds, bool on);
     // Moves entries to a track (0..3); like other edits, only while not following.
+    // Every Set into the first: KVJ keeps one library of videos.
+    Q_INVOKABLE void mergeSets();
     Q_INVOKABLE void setTrack(const QString &setId, const QStringList &entryIds, int track);
     // `room`: 现场模式, the input hears a reverberant room through a microphone.
     // `track`: only that track's entries are followed; `view.track` says which.

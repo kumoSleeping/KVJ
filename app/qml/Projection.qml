@@ -174,7 +174,7 @@ Window {
                 rate: timing ? timing.rate : 0
                 clockAtMs: timing ? timing.clockAtMs : 0
                 offsetMs: timing ? timing.offsetMs : 0
-                fadeMs: root.fadeMs
+                fadeMs: timing && timing.cut ? 0 : root.fadeMs
             }
         }
         IdList {

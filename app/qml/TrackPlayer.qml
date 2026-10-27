@@ -160,10 +160,12 @@ QtObject {
             const i = list.findIndex(e => e.id === clock.entry.id)
             const next = i >= 0 ? list.slice(i + 1).find(e => e.enabled !== false) : null
             const first = player.loop ? firstOn() : null
-            if (next || first)
+            if (next || first) {
+                clock.cut()
                 clock.load(next || first, 0, true)
-            else
+            } else {
                 clock.setPlaying(false)
+            }
             player.playhead = clock.now()
         }
     }

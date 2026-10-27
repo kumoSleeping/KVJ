@@ -101,4 +101,17 @@ QtObject {
     property Timer bendTimer: Timer {
         onTriggered: transport.bendTo(0)
     }
+    // Going on by itself at an entry's end (the next one, or the first again
+    // when looping) is a cut, never a dissolve: many videos are made to loop,
+    // their last frame leading straight into their first. The picture reads
+    // this while it takes the new place.
+    property bool cutting: false
+    function cut() {
+        cutting = true
+        cutTimer.restart()
+    }
+    property Timer cutTimer: Timer {
+        interval: 500
+        onTriggered: transport.cutting = false
+    }
 }

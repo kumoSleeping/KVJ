@@ -28,28 +28,34 @@ chooses the current DJ among the connected ones. Pair the two computers in the s
 
 Everything is in one window, and nothing in it appears or moves when following
 starts. The top bar (the title bar itself on macOS) holds **发送端** and the
-light / dark switch at the right. The Sets are in a drawer over the left side
-of the canvas, put away at every start: the small key at the canvas's top
+light / dark switch at the right. The library is in a drawer over the left
+side of the canvas, put away at every start: the small key at the canvas's top
 left (where the drawer's own head has it), or Ctrl+B (⌘B on macOS), brings it
 out, and so do files dragged onto that key or to the canvas's left edge, to be
-dropped on a Set. A press elsewhere on the canvas, the key in its head again or
-Esc puts it away; choosing a Set leaves it out, and
-so does a Set's menu or an add dialog in use. The drawer is one tree of the Sets: each Set
-opens onto its entries (videos only: mp4, m4v, mkv, mov, webm; a folder adds
-the videos in it and its subfolders), grouped by the folders they came from;
-the chosen Set is the one played and followed, and files dropped on a Set go
-into its library. An entry is on the timeline (and followed, on the followed
-track) once it is placed on a track: dragged onto a track row, or
+dropped in it. A press elsewhere on the canvas, the key in its head again or
+Esc puts it away; an add dialog in use leaves it out. The drawer is the
+library's videos as ordinary folders (videos only: mp4, m4v, mkv, mov, webm; a
+folder adds the videos in it and its subfolders), grouped by the folders the
+files are in below the one they all share (a folder holding just one folder
+shows as one row, "a / b"); a folder's arrow opens and closes it, and files
+dropped anywhere on the drawer go into the library. Rows are chosen as in a
+file manager: a click chooses one, ⌘-click (Ctrl elsewhere) adds or takes one
+away, ⇧-click chooses the run from the row last clicked, a click on a folder
+chooses everything in it, and Esc (while the drawer has the keys) or a click
+on no row chooses none. An entry is on the timeline (and followed, on the
+followed track) once it is placed on a track: dragged onto a track row, or
 double-clicked (onto the first track with nothing on it, else a new one, else
-the main track's end); a placed entry shows which picture it plays in
-(画面 N). A piece's right-click menu on the timeline (移出轨道) takes it back
+the main track's end). A drag or a double-click that starts on a chosen row
+takes all the chosen ones (a folder row, all of the folder), else just that
+row. A placed entry shows which picture it plays in (画面 N), the one on the
+screen is in bold with a play mark, and the × on a hovered row takes it out of
+the library. A piece's right-click menu on the timeline (移出轨道) takes it back
 off, into the library only. Placing works during the show onto the track an
 entry is already on (moving between tracks waits until following stops), so at
 a handover between DJs the next DJ's entries go on while the last ones stay.
 Every entry is indexed either way, so placing never waits for indexing: the
-index holds the whole Set, entries off the timeline included (about 0.6 MiB a
-minute of sound, up to 192 MiB, some five hours; a larger collection goes into
-several Sets). Files imported from the drawer go into the library; files
+index holds the whole library, entries off the timeline included (about
+0.6 MiB a minute of sound, up to 192 MiB, some five hours). Files imported from the drawer go into the library; files
 dropped on a track row are imported onto that track.
 
 Every entry is on one of four **tracks**: the main track, where entries go
@@ -66,39 +72,58 @@ and **开始投放**. Resolution and frame rate start on **推荐**: as sharp as
 chosen screen shows and the video holds (480p, 720p, 1080p, or the source past
 1600 rows), and every frame the video has up to 60; the other choices are as
 before. The **timeline** runs across the whole foot of the window, laid out
-like a video editor's track area without editing anything: a row a source under one
-ruler. A slim bar on top holds what belongs to no one track: the Set and the
-entry the main track shows, where it is (and what is left of it), the cursor
-with **跳至光标处**, the zoom keys (− **全览** +), **快捷键** and **跳转渐变**:
-every jump, by hand or by smart following, dissolves from the last picture over
-the chosen time (0.1–2 s), or cuts when it is off. Under it the whole
-timeline's bar: zoomed in, a frame on it shows which part the rows show, and
-drags along or, by its ends, wider or narrower; a press well away from it only
-sets the cursor. Then the ruler, in each entry's own time along the longest row
-(plain seconds while every row is empty).
+like a video editor's track area without editing anything: a row a source,
+each on a clock of its own, all of them alike. The rows are the tracks (画面 1
+to 4, the first played by the player and listed first) and each camera taken
+in; two are in view, a third and more are reached by scrolling, as an
+editor's tracks are (a scroll bar shows once there are more than fit). A slim
+**+** under the last row adds a track or a camera (it lists the cameras only
+while its menu is open). There are no hints in the track area: an empty
+track's lane is blank, a camera's plain.
 
-The rows come next, two in view; a third and more are reached by scrolling, as
-an editor's tracks are (a scroll bar shows once there are more than fit). The
-main track (画面 1) is always the first row, also while it is empty; each aux
-track (画面 2, 3, 4) that has entries or was added has its own, and so does
-each camera taken in. A slim **+** under the last row adds an aux track or a
-camera (it lists the cameras only while its menu is open). A row's header holds the
-source's own small live picture (a press puts it in the preview's chosen slot,
-PVW; on the air it has an ink edge and PGM, in the preview a faint one and PVW),
-its name, an ear on the track following listens to, and ⋯ (an aux track's
-**跟随主轨速度**, and **移除轨道** for an empty aux track or a camera). There are no hints in
-the track area: an empty track's lane is blank, a camera's plain. Across the
-rest of the row runs its own play bar over its lane, so every track is
-operated on its own: play and pause, where it is in its entry, a seek track
-over the whole row (a press or drag moves that track's picture there; on the
-main track a jump into another entry starts it playing, and while the timeline
-is parked it brings the picture over to this Set), the speed with − / + a
-percent at a time, a small bar and **复原** (or a double-click on the speed),
-who sets the speed (手动, 智能跟随, 跟主轨速度 …), and **循环** or **播完即停**
-after the row's last entry (kept per track). An aux track plays on its own
-clock beside the main one; **跟随主轨速度** plays it at its own speed times the
-main track's, so it keeps pace when the main track's tempo changes. A
-track's keys rest while smart following leads its player.
+The track row pressed last is the **active** one: its header has an ink edge
+on a deeper tone. The slim bar on top is about it: its name and the entry it
+shows, its cursor with **跳至光标处**, its zoom keys (− **全览** +), then
+**快捷键** and **跳转渐变**: every jump, by hand or by smart following,
+dissolves from the last picture over the chosen time (0.1–2 s), or cuts when
+it is off.
+
+A row's header holds the source's own small live picture (a press puts it in
+the preview's chosen slot, PVW; on the air it has an ink edge and PGM, in the
+preview a faint one and PVW), its name, an ear on the track following listens
+to, and ⋯ (**跟随画面 1 的速度** on the other tracks, and **移除轨道** for an
+empty track or a camera). Across the rest of the row run its play bar, its
+ruler and its lane, so every track is operated on its own. The play bar has
+play and pause, where it is in its entry, its cursor with **跳至**, the whole
+track at a glance (where its picture is, a notch between entries, the cursor
+as a hollow ball and, zoomed in, a frame round what the lane shows), the speed
+with − / + a percent at a time, a small bar and **复原** (or a double-click on
+the speed), who sets the speed (手动, 智能跟随, 跟画面 1 速度 …), and **循环**
+or **播完即停** after the track's last entry (kept per track). The other tracks
+play on their own clocks beside the first; **跟随画面 1 的速度** plays one at its
+own speed times the first track's, so it keeps pace when that tempo changes.
+A track's keys rest while smart following leads its player.
+
+**A click never moves a picture.** A press or drag on a track's overview, ruler
+or lane only places that track's cursor, a line through its ruler and lane;
+**跳至** on its bar, or **跳至光标处** or Enter for the active track, plays from
+it (within the entry shown it keeps playing or paused, another entry starts
+playing). Only those, the play key and the nudge keys move a picture. Each
+track keeps its own cursor and view.
+
+Each row has its own timebase: its ruler is in each entry's own time along
+that track (plain seconds while it is empty), with its playhead and its
+cursor on it, and its zoom and scroll are its own. Pinch on the trackpad (or
+⌘/Ctrl/Alt + scroll) over a row zooms that row about the pointer down to a few
+frames; a sideways two-finger swipe moves it with the fingers, along the axis
+it started on and on through its momentum, and an upright one scrolls the rows
+once there are more than fit (else it moves the lane too); a mouse wheel moves
+a tenth of the view a notch, tilted or with Shift, and upright scrolls the rows
+once there are more than fit; over the headers it always scrolls the rows.
+− 全览 + at the right end of a row's ruler (or a double-click on the ruler)
+zoom and fit that row; the keys − = \ and the top bar's zoom keys act on the
+active row. While playing, a zoomed lane follows its own playhead unless it
+was touched in the last few seconds.
 
 The lane shows the track's entries that are on end to end as upright strips of
 the middle of their frames (enough to know the picture, and many more of them)
@@ -112,26 +137,15 @@ right click on an entry offers **移出轨道**, which turns it off so it goes b
 to the drawer. Entries dragged from the drawer, or files from the desktop,
 dropped on the body of a track's row go on that track: the row lights up and
 a block after its last entry shows where they will land. Dropped on the seam
-between two rows, or below the last one (on the +), they go on a new track
-that appears there, shown by an ink line with a + while they hover; never
-above the main track, and only while another aux track can be added. A
-camera's row takes nothing. Held near the top or bottom of the rows, a drag
-scrolls them. All rows share one view. Pinch on the trackpad (or ⌘/Ctrl/Alt + scroll) zooms about the
-pointer down to a few frames; a sideways two-finger swipe moves the lanes with
-the fingers, along the axis it started on and on through its momentum, and an
-upright one scrolls the rows once there are more than fit (else it moves the
-lanes too); a mouse wheel moves a tenth of the view a notch, tilted or with
-Shift, and upright scrolls the rows once there are more than fit; over the
-headers it always scrolls the rows. **全览** shows everything again. Pressing or
-dragging on the main track's lane or on the ruler only sets the cursor and
-leaves the picture alone; **跳至光标处** (or Enter) plays from it. A press or
-drag on an aux track's lane moves that track's picture there at once, playing
-or paused as it was. While playing, the lanes follow the main playhead unless
-they were touched in the last few seconds. Frames for the lanes are decoded
-small on one low-priority thread and kept up to 48 MB. At the end of an entry
-the next one that is on follows. Seeks aim ahead by what passes while the
-decoder gets there, and a paused seek lands on the exact frame. Aux tracks are
-never followed unless chosen for it (below), and never identified otherwise.
+between two rows, at the top of the first or below the last one (on the +),
+they go on a new track that appears there, shown by an ink line with a +
+while they hover; only while another track can be added. A camera's row takes
+nothing. Held near the top or bottom of the rows, a drag scrolls them. Frames
+for the lanes are decoded small on one low-priority thread and kept up to
+48 MB. At the end of an entry the next one that is on follows. Seeks aim ahead
+by what passes while the decoder gets there, and a paused seek lands on the
+exact frame. Tracks other than the followed one are never followed or
+identified.
 
 At the right end of the rows sits **音频对位** pressed into a strip as tall as
 one row, beside the first: what following does (未监听, 监听中 or 跟随中, and
@@ -151,8 +165,11 @@ music; stopped, it is gone and the rows take the room.
 With **快捷键** on (it is by default), ← / → or A / D
 nudge the picture back or ahead without a jump, as a pitch bend does: while
 held, the picture plays at 0.7 or 1.5 of its speed, and let go it is back at
-its speed (paused, a press steps a second); ↑ / ↓ or W / S change the speed by 1 % and the speed bar follows; Enter plays from the
-cursor.
+its speed (paused, a press steps a second); ↑ / ↓ or W / S change the speed by 1 % and the speed bar follows; Enter
+plays from the cursor, and − = \ zoom. Every one of these keys acts on the
+active track (the row last pressed on the timeline); a track led by following
+takes none of them. An entry's end goes on to the next one, or back to the
+first when looping, with a cut, never a dissolve: many videos are made to loop.
 Space does nothing: one touch of it during a show is too easy. No key acts while
 words are being typed.
 

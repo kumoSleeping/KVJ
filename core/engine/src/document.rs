@@ -277,6 +277,10 @@ pub enum Edit {
         entry_ids: Vec<String>,
         track: u8,
     },
+    /// Makes every Set one: the first keeps its id and name and gains the
+    /// others' entries (a file already in it is not added twice; a copy that
+    /// was placed on the timeline places the kept one, on its track).
+    Merge,
 }
 #[cfg(not(windows))]
 pub(crate) fn replace(tmp: &Path, target: &Path) -> std::io::Result<()> {
@@ -392,6 +396,26 @@ impl Document {
                         .track = track;
                 }
             }
+            Edit::Merge => {
+                let mut sets = std::mem::take(&mut self.sets).into_iter();
+                let Some(mut library) = sets.next() else {
+                    return Ok(());
+                };
+                for set in sets {
+                    for entry in set.entries {
+                        match library.entries.iter_mut().find(|e| e.path == entry.path) {
+                            Some(kept) => {
+                                if entry.enabled && !kept.enabled {
+                                    kept.enabled = true;
+                                    kept.track = entry.track;
+                                }
+                            }
+                            None => library.entries.push(entry),
+                        }
+                    }
+                }
+                self.sets = vec![library];
+            }
         }
         Ok(())
     }
@@ -412,6 +436,37 @@ impl Document {
             .iter_mut()
             .find(|s| s.id == id)
             .context("Set 不存在")
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+
+    fn entry(path: &str, enabled: bool, track: u8) -> Entry {
+        let mut e = Entry::new(Path::new(path), true, 0., 10.).unwrap();
+        e.enabled = enabled;
+        e.track = track;
+        e
+    }
+
+    #[test]
+    fn merge_makes_one_set_without_twice_the_same_file() {
+        let mut doc = Document::default();
+        doc.edit(Edit::Create { name: "A".into() }).unwrap();
+        doc.edit(Edit::Create { name: "B".into() }).unwrap();
+        doc.sets[0].entries = vec![entry("/v/a.mp4", false, 0), entry("/v/b.mp4", true, 0)];
+        doc.sets[1].entries = vec![entry("/v/a.mp4", true, 2), entry("/v/c.mp4", false, 1)];
+        let first = doc.sets[0].id.clone();
+        doc.edit(Edit::Merge).unwrap();
+        assert_eq!(doc.sets.len(), 1);
+        let set = &doc.sets[0];
+        assert_eq!(set.id, first);
+        let paths: Vec<_> = set.entries.iter().map(|e| e.path.as_str()).collect();
+        assert_eq!(paths, ["/v/a.mp4", "/v/b.mp4", "/v/c.mp4"]);
+        assert!(set.entries[0].enabled);
+        assert_eq!(set.entries[0].track, 2);
+        assert!(!set.entries[2].enabled);
     }
 }
 

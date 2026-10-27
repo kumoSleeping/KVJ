@@ -72,7 +72,7 @@ Item {
     readonly property bool asking: !!app && (app.incoming || []).some(p => p.link.state === "asking")
 
     function trackName(t) {
-        return t === 0 ? "主轨" : "画面 " + (t + 1)
+        return "画面 " + (t + 1)
     }
     // A track that no longer has sound gives way to the main one.
     onAudioTracksChanged: {

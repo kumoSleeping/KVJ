@@ -253,6 +253,12 @@ void Engine::deleteSet(const QString &setId)
     edit({{"kind", "delete"}, {"set_id", setId}});
 }
 
+void Engine::moveEntry(const QString &setId, const QString &entryId, const QString &beforeId)
+{
+    edit({{"kind", "move"}, {"set_id", setId}, {"entry_id", entryId},
+          {"before_id", beforeId.isEmpty() ? QJsonValue() : QJsonValue(beforeId)}});
+}
+
 void Engine::removeEntry(const QString &setId, const QString &entryId)
 {
     edit({{"kind", "remove"}, {"set_id", setId}, {"entry_id", entryId}});
@@ -277,6 +283,11 @@ void Engine::enableEntries(const QString &setId, const QStringList &entryIds, bo
         m_document = document;
         emit documentChanged();
     }, true, {}, &m_edits);
+}
+
+void Engine::mergeSets()
+{
+    edit({{"kind", "merge"}});
 }
 
 void Engine::setTrack(const QString &setId, const QStringList &entryIds, int track)
