@@ -192,13 +192,13 @@ QtObject {
         updateSlot(i, { mask: Object.assign({}, preview.slots[i].mask, mask) })
     }
     // A split line across slot `i`, an arc from its lower left corner to its
-    // upper right corner, the side at the upper left hidden; its index among
-    // the slot's lines.
+    // upper right corner bowed towards the upper left: the small part there
+    // hidden, the larger rest shown. Its index among the slot's lines.
     function addLine(i) {
         if (!preview || i < 0 || i >= preview.slots.length)
             return -1
         const first = preview.slots[i].mask.lines.length === 0
-        const lines = preview.slots[i].mask.lines.concat([{ points: [[0, 1, 0], [0.7, 0.7, 0], [1, 0, 0]], closed: false, flip: false }])
+        const lines = preview.slots[i].mask.lines.concat([{ points: [[0, 1, 0], [0.3, 0.3, 0], [1, 0, 0]], closed: false, flip: false }])
         // The first line of a layer comes with the band at the middle of its range.
         setMask(i, first ? { lines: lines, blend: 0.5 } : { lines: lines })
         return lines.length - 1
