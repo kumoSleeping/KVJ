@@ -48,6 +48,10 @@ ColumnLayout {
     signal removeCamera(string key)
     // How wide the picture is drawn here: the sources' light copies are made this large.
     readonly property real pictureWidth: screen.width
+    // Where the keys under the picture go (the timeline's top line), and
+    // how far in from the board's left edge the picture starts.
+    property Item keysHost: null
+    readonly property real keysInset: screen.x
     // 画外: the column at the picture's right where the sources not on it wait.
     readonly property real shelfWidth: 112
 
@@ -398,15 +402,15 @@ ColumnLayout {
 
         // The picture, at the top left with a small margin on the left, top
         // and foot (`room`), enough to reach a split line's point on its edge;
-        // at its right the stage where sources wait, under it the keys that
-        // put it on the air and the layer tools.
+        // at its right the shelf where sources wait. The keys that put it on
+        // the air are on the timeline's top line (keysHost).
         Rectangle {
             id: screen
             readonly property real room: 16
             readonly property real roomTop: room
             readonly property real roomLeft: room
-            // Fixed, so the picture never changes size as the tools do.
-            readonly property real roomFoot: room + airRow.implicitHeight + 10
+            // Its keys are on the timeline's top line: under it only the margin.
+            readonly property real roomFoot: room
             // At least one column of parked sources fits at its right.
             width: Math.max(1, Math.min(box.width - roomLeft - 12 - composer.shelfWidth - 8, (box.height - roomTop - roomFoot) * composer.aspect))
             height: width / Math.max(0.2, composer.aspect)
@@ -417,7 +421,8 @@ ColumnLayout {
         // —— 画外: the sources not on the picture, a column at its right ——
         // Each a small picture with its name: a click brings it onto the
         // picture (lower right), a drag puts it where it is let go. A layer
-        // moved wholly off the picture comes here. + 相机 at the foot.
+        // moved wholly off the picture comes here. It is a tray drawn with a
+        // dashed edge; empty, a small drawing in it says what it holds.
         Item {
             id: shelf
             z: 7
@@ -427,9 +432,118 @@ ColumnLayout {
             height: screen.height
             readonly property var waiting: composer.slots.map((s, i) => ({ source: s.source, index: i }))
                                                           .filter(o => !Switcher.inPicture(composer.slots[o.index]))
+            // The tray.
+            Shape {
+                anchors.fill: parent
+                preferredRendererType: Shape.CurveRenderer
+                ShapePath {
+                    strokeColor: shelf.carrying ? Theme.muted : Theme.dark ? "#3a404a" : "#d4d4da"
+                    strokeWidth: 1.2
+                    strokeStyle: ShapePath.DashLine
+                    dashPattern: [4, 3]
+                    fillColor: Theme.inset
+                    PathRectangle {
+                        x: 0.6
+                        y: 0.6
+                        width: shelf.width - 1.2
+                        height: shelf.height - 1.2
+                        radius: Theme.radiusLg
+                    }
+                }
+            }
+            // Empty: pictures waiting in a tray, one sliding in from the
+            // picture at the left, and two words.
+            Column {
+                visible: shelf.waiting.length === 0
+                anchors.centerIn: parent
+                width: parent.width - 16
+                spacing: 10
+                Item {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 64
+                    height: 50
+                    // Two waiting, stacked.
+                    Rectangle {
+                        x: 22; y: 4
+                        width: 36; height: 22
+                        radius: 4
+                        rotation: 6
+                        color: Theme.bg
+                        border.width: 1.2
+                        border.color: Theme.faint
+                    }
+                    Rectangle {
+                        x: 18; y: 12
+                        width: 36; height: 22
+                        radius: 4
+                        rotation: -3
+                        color: Theme.bg
+                        border.width: 1.2
+                        border.color: Theme.muted
+                        // A small picture in it: a hill and a sun.
+                        Rectangle { x: 24; y: 5; width: 5; height: 5; radius: 2.5; color: Theme.faint }
+                        Shape {
+                            anchors.fill: parent
+                            preferredRendererType: Shape.CurveRenderer
+                            ShapePath {
+                                strokeColor: "transparent"
+                                fillColor: Theme.faint
+                                startX: 3; startY: 19
+                                PathLine { x: 13; y: 9 }
+                                PathLine { x: 19; y: 15 }
+                                PathLine { x: 23; y: 12 }
+                                PathLine { x: 33; y: 19 }
+                            }
+                        }
+                    }
+                    // One coming in from the left.
+                    Shape {
+                        anchors.fill: parent
+                        preferredRendererType: Shape.CurveRenderer
+                        ShapePath {
+                            strokeColor: Theme.muted
+                            strokeWidth: 1.5
+                            fillColor: "transparent"
+                            capStyle: ShapePath.RoundCap
+                            joinStyle: ShapePath.RoundJoin
+                            startX: 0; startY: 42
+                            PathLine { x: 22; y: 42 }
+                            PathMove { x: 17; y: 37.5 }
+                            PathLine { x: 22; y: 42 }
+                            PathLine { x: 17; y: 46.5 }
+                        }
+                    }
+                    Rectangle {
+                        x: 26; y: 37
+                        width: 16; height: 10
+                        radius: 2.5
+                        color: "transparent"
+                        border.width: 1.2
+                        border.color: Theme.faint
+                    }
+                }
+                Text {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    text: "画外"
+                    font.pixelSize: Theme.sizeSm
+                    font.weight: Font.DemiBold
+                    color: Theme.muted
+                }
+                Text {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                    text: "拖出画面的画面在这里等着"
+                    font.pixelSize: Theme.sizeXs
+                    color: Theme.faint
+                }
+            }
             Flickable {
-                width: parent.width
-                height: parent.height - cameraKey.height - 8
+                x: 6
+                y: 6
+                width: parent.width - 12
+                height: parent.height - 12
                 contentHeight: shelfColumn.implicitHeight
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
@@ -516,22 +630,6 @@ ColumnLayout {
             property bool carrying: false
             property string carried: ""
             property point at
-            // + 相机: a camera taken in comes onto the picture, at its lower
-            // right. Listed only while the menu is open (listing wakes the
-            // camera stack).
-            TextButton {
-                id: cameraKey
-                anchors.bottom: parent.bottom
-                flat: true
-                iconName: "plus"
-                text: "相机"
-                leftPadding: 6
-                rightPadding: 8
-                onClicked: cameraMenu.popup(cameraKey, 0, cameraKey.height + 2)
-                ToolTip.visible: hovered && !cameraMenu.visible
-                ToolTip.delay: 600
-                ToolTip.text: "加一个相机画面，放在画面右下角"
-            }
         }
         // The layer being dragged in from the shelf, as large as it will land.
         Rectangle {
@@ -593,24 +691,17 @@ ColumnLayout {
                 }
             }
         }
-        // The keys under the picture on the board's own ground: a layer
-        // reaching down past the picture never makes them hard to read.
-        Rectangle {
-            z: 7
-            x: airRow.x - 6
-            y: airRow.y - 4
-            width: airRow.width + 12
-            height: airRow.height + 8
-            radius: Theme.radius
-            color: Theme.bg
-        }
-        // —— Right under the picture: the mode, and the keys that put it on the air ——
+        // —— The mode, and the keys that put it on the air, then + 相机 ——
+        // Shown by the host on the timeline's top line (`keys`), as wide as
+        // the picture, + 相机 over the shelf at its right.
         RowLayout {
             id: airRow
-            z: 8
-            x: screen.x
-            y: screen.y + screen.height + screen.room
-            width: Math.min(screen.width, box.width - x - 8)
+            parent: composer.keysHost
+            anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+            // As wide as the picture, + 相机 past it; narrower (down to the
+            // keys' own widths) when the line is short of room.
+            readonly property real wanted: screen.width + 12 + cameraKey.implicitWidth
+            width: parent ? parent.width : wanted
             spacing: 8
             // 跟随 or 投放, a segmented key: the mode shown in ink on a plate.
             Rectangle {
@@ -701,7 +792,7 @@ ColumnLayout {
                 iconName: out && out.anySound ? "volume-2" : "volume-x"
                 text: !out || !out.anySound ? "声音关"
                       : out.topOnly ? "顶层声音"
-                      : !out.dual ? "声音 · " + Math.round(out.soundVolume * 100) + "%"
+                      : out.solo >= 0 ? "画面 " + (out.solo + 1) + " · " + Math.round((out.solo === 1 ? out.soundVolume2 : out.soundVolume) * 100) + "%"
                       : out.hears1 && out.hears2 ? "画面 1+2"
                       : out.hears1 ? "画面 1 · " + Math.round(out.soundVolume * 100) + "%"
                       : "画面 2 · " + Math.round(out.soundVolume2 * 100) + "%"
@@ -764,6 +855,22 @@ ColumnLayout {
                     border.width: 1.5
                     border.color: Theme.bg
                 }
+            }
+            // Over the shelf: a camera taken in comes onto the picture, at its
+            // lower right. Listed only while the menu is open (listing wakes
+            // the camera stack).
+            TextButton {
+                id: cameraKey
+                Layout.leftMargin: 4
+                flat: true
+                iconName: "plus"
+                text: "相机"
+                leftPadding: 6
+                rightPadding: 8
+                onClicked: cameraMenu.popup(cameraKey, 0, cameraKey.height + 2)
+                ToolTip.visible: hovered && !cameraMenu.visible
+                ToolTip.delay: 600
+                ToolTip.text: "加一个相机画面，放在画面右下角"
             }
         }
 
@@ -1463,8 +1570,7 @@ ColumnLayout {
             height: toolColumn.implicitHeight + 8
             x: Math.max(4, Math.min(box.width - width - 4, at.x + at.width / 2 - width / 2))
             y: {
-                // Over the picture, the keys under it are not to be covered.
-                const floor = at.x < screen.x + screen.width ? airRow.y - 6 : box.height - 4
+                const floor = box.height - 4
                 const below = at.y + at.height + 8
                 return below + height <= floor ? below : Math.max(4, Math.min(floor, at.y + at.height - 8) - height)
             }

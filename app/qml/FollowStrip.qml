@@ -83,7 +83,7 @@ Card {
     readonly property bool following: !!app && app.following
     readonly property var match: app ? app.match : null
     // Tracks with something to hear: 0 the main one, 1..3 画面 2..4.
-    readonly property var audioTracks: (tracks || [0]).filter(t => t === 0 || (entries || []).some(e => (e.track || 0) === t && !e.silent))
+    readonly property var audioTracks: (tracks || [0]).filter(t => t === (tracks || [0])[0] || (entries || []).some(e => (e.track || 0) === t && !e.silent))
     readonly property bool canStart: !running && !Engine.importing
                                      && (entries || []).some(e => (e.track || 0) === followTrack && e.enabled !== false && !e.silent)
     readonly property bool monitorVisible: following
@@ -102,10 +102,11 @@ Card {
     function setOffset(ms) {
         offsetMs = Math.max(-400, Math.min(400, Math.round(ms / 10) * 10))
     }
-    // A track that no longer has sound gives way to the main one.
+    // A track that no longer has sound, or is not shown, gives way to the
+    // first one shown.
     onAudioTracksChanged: {
         if (!running && (entries || []).length > 0 && audioTracks.indexOf(followTrack) < 0)
-            followTrack = 0
+            followTrack = audioTracks.length ? audioTracks[0] : (tracks || [0])[0]
     }
 
     implicitWidth: 228

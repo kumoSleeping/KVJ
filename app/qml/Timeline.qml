@@ -62,6 +62,12 @@ Rectangle {
     readonly property int mainRowHeight: rowHeight
     readonly property int rowGap: 6
 
+    // Where the host puts the board's keys, at the left of the top line
+    // (`keysInset` in from the rows' left edge), so they share it with the
+    // timeline's own keys.
+    readonly property Item keysHost: keysSlot
+    property real keysInset: 0
+
     signal pickSource(string key)
     signal clearTrack(int track)
     signal takeLive(string key)
@@ -345,9 +351,22 @@ Rectangle {
         // —— What belongs to no one row: the active row and its cursor, the keys, the fade ——
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 28
+            Layout.preferredHeight: Math.max(28, keysSlot.implicitHeight)
             spacing: 8
             readonly property var act: line.activeItem
+            // The board's keys (the host's), under its picture, on this line.
+            // As wide as they want, given way down to their least.
+            Item {
+                id: keysSlot
+                readonly property Item keys: children.length ? children[0] : null
+                Layout.leftMargin: line.keysInset
+                Layout.fillHeight: true
+                Layout.fillWidth: true
+                Layout.preferredWidth: keys ? keys.wanted : 0
+                Layout.maximumWidth: keys ? keys.wanted : 0
+                Layout.minimumWidth: keys ? keys.implicitWidth : 0
+                implicitHeight: keys ? keys.implicitHeight : 0
+            }
             Item { Layout.fillWidth: true }
             Item { implicitWidth: 6 }
             // The active row's zoom.

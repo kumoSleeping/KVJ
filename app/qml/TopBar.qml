@@ -77,8 +77,8 @@ Rectangle {
             iconSize: 15
             iconName: top.singleTrack ? "rectangle-horizontal" : "rows-2"
             active: top.singleTrack
-            tip: top.singleTrack ? "单轨：只用画面 1 · 点一下回到两条轨道"
-                                 : "两条轨道 · 点一下切到单轨（画面 2 停下、移出画面，轨道上的视频保留）"
+            tip: top.singleTrack ? "单轨 · 点一下回到两条轨道"
+                                 : "两条轨道 · 点一下切到单轨：留下正在播放的那条，画面和声音不断；另一条停下、移出画面，轨道上的视频保留"
             onClicked: top.toggleSingle()
         }
 

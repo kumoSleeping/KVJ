@@ -733,37 +733,62 @@ ApplicationWindow {
         property string cameras: "[]"
         property string tracks: "[]"
         property alias single: app.singleTrack
+        property alias solo: app.soloTrack
         Component.onCompleted: {
             try {
                 app.cameraIds = JSON.parse(cameras)
             } catch (e) {
                 app.cameraIds = []
             }
-            // 画面 2's layer waits aside in 单轨 and is back in 双轨; the
-            // layers of any others wait aside.
+            // In 单轨 the track not kept waits aside, in 双轨 both are back;
+            // the layers of any others wait aside.
             Qt.callLater(() => {
-                if (app.singleTrack)
-                    Switcher.setAside("track:1")
-                else
-                    Switcher.bringBack("track:1")
+                for (const t of [0, 1]) {
+                    if (app.singleTrack && t !== app.soloTrack)
+                        Switcher.setAside("track:" + t)
+                    else
+                        Switcher.bringBack("track:" + t)
+                }
                 for (const t of [2, 3])
                     Switcher.setAside("track:" + t)
             })
         }
     }
-    // 单轨: only 画面 1, on the timeline and the board; 画面 2 stops, its
-    // entries stay on it and its layer waits aside until 双轨 brings it back
-    // where it was.
+    // 单轨: one track on the timeline and the board, the one that was
+    // playing (soloTrack), so its picture and sound carry on untouched; the
+    // other stops, its entries stay on it and its layer waits aside until
+    // 双轨 brings it back where it was.
     property bool singleTrack: false
+    property int soloTrack: 0
+    // The track to keep: the one following follows while it runs, else the
+    // one playing, else (both or neither) the one on top on the air.
+    function keptTrack() {
+        if (app.running && (app.followTrack === 0 || app.followTrack === 1))
+            return app.followTrack
+        const playing = [transport.playing, aux1.playing]
+        if (playing[0] !== playing[1])
+            return playing[1] ? 1 : 0
+        return timeline.onTop === "track:1" ? 1 : 0
+    }
     function setSingle(on) {
         if (on === app.singleTrack)
             return
         if (on) {
-            if (aux1.playing)
+            const keep = app.keptTrack()
+            const other = 1 - keep
+            if (other === 1 && aux1.playing)
                 aux1.toggle()
-            Switcher.setAside("track:1")
+            else if (other === 0 && transport.playing && app.manualSeek) {
+                transport.toggle()
+                app.tick()
+            }
+            Switcher.setAside("track:" + other)
+            app.soloTrack = keep
+            // Following listens to the track shown.
+            if (!app.running)
+                strip.followTrack = keep
         } else {
-            Switcher.bringBack("track:1")
+            Switcher.bringBack("track:" + (1 - app.soloTrack))
         }
         app.singleTrack = on
     }
@@ -779,18 +804,17 @@ ApplicationWindow {
         app.setCameras(app.cameraIds.filter(c => "camera:" + c !== key))
         Switcher.rename({ [key]: "" })
     }
-    // Two tracks, as a DJ's two decks, or only 画面 1 (单轨).
-    readonly property var shownAux: app.singleTrack ? [] : [1]
+    // Two tracks, as a DJ's two decks, or one (单轨).
+    readonly property var shownTracks: app.singleTrack ? [app.soloTrack] : [0, 1]
+    readonly property var shownAux: app.shownTracks.filter(t => t > 0)
     // The timeline's rows: the tracks shown.
-    readonly property var trackRows: {
-        const rows = [{ key: "track:0", kind: "track", track: 0, name: "画面 1",
-                        entries: app.entries.filter(app.isMain), player: app }]
-        for (const t of app.shownAux) {
-            const p = app.auxPlayers[t - 1]
-            rows.push({ key: "track:" + t, kind: "track", track: t, name: "画面 " + (t + 1), entries: p.entries, player: p })
-        }
-        return rows
-    }
+    readonly property var trackRows: app.shownTracks.map(t => {
+        if (t === 0)
+            return { key: "track:0", kind: "track", track: 0, name: "画面 1",
+                     entries: app.entries.filter(app.isMain), player: app }
+        const p = app.auxPlayers[t - 1]
+        return { key: "track:" + t, kind: "track", track: t, name: "画面 " + (t + 1), entries: p.entries, player: p }
+    })
     // The mixer's sources: the tracks, then the cameras. Names only once
     // there are cameras: the list wakes the camera stack.
     readonly property var sources: {
@@ -933,14 +957,14 @@ ApplicationWindow {
         sequence: "["
         context: Qt.ApplicationShortcut
         autoRepeat: false
-        enabled: app.keysLive
+        enabled: app.keysLive && app.shownTracks.indexOf(0) >= 0
         onActivated: mixer.takeLive("track:0")
     }
     Shortcut {
         sequence: "]"
         context: Qt.ApplicationShortcut
         autoRepeat: false
-        enabled: app.keysLive && !app.singleTrack
+        enabled: app.keysLive && app.shownTracks.indexOf(1) >= 0
         onActivated: mixer.takeLive("track:1")
     }
     Shortcut {
@@ -1053,6 +1077,7 @@ ApplicationWindow {
                             entry: projection.entry
                             output: desk
                             cameraIds: app.cameraIds
+                            keysHost: timeline.keysHost
                             onAddCamera: id => app.addCamera(id)
                             onRemoveCamera: key => app.removeCamera(key)
                         }
@@ -1100,7 +1125,7 @@ ApplicationWindow {
                             app: app
                             surface: projection.surface
                             rowHeight: timeline.mainRowHeight
-                            tracks: [0].concat(app.shownAux)
+                            tracks: app.shownTracks
                         }
                     }
 
@@ -1121,7 +1146,7 @@ ApplicationWindow {
                 sound: sound
                 sound2: sound2
                 topSource: timeline.onTop
-                dual: !app.singleTrack
+                solo: app.singleTrack ? app.soloTrack : -1
                 sourceIds: app.sources.map(s => s.id)
                 monitorWidth: mixer.pictureWidth
             }
@@ -1232,6 +1257,8 @@ ApplicationWindow {
             onPickSource: key => app.pickSource(key)
             onClearTrack: track => app.clearTrack(track)
             onTakeLive: key => mixer.takeLive(key)
+            // The board's keys right under its picture's left edge.
+            keysInset: mixer.keysInset
             // Done once the drop is over: the rows are made anew by it.
             onDropEntries: (ids, track) => Qt.callLater(app.replaceOn, ids, track)
             onDropFiles: (urls, track) => Qt.callLater(app.replaceWithFiles, urls, track)
