@@ -205,24 +205,39 @@ Rectangle {
     // keeping both in sight when they fit (centred between them), else
     // paging on with the one that reached the end. Not for a while after a
     // row was zoomed or moved by hand.
+    // Which rows' playheads the view showed at the last look: one that was
+    // shown and is past the end now crossed it between two looks.
+    property var shownBefore: ({})
     function followTogether() {
         const rows = rowItems.filter(r => !!r && !r.camera)
         const ref = activeItem
-        if (!ref || !ref.zoomed || rows.some(r => Date.now() - r.touchedAt < 4000))
+        if (!ref || !ref.zoomed)
             return
-        const left = ref.viewLeft, span = ref.span
-        const seen = rows.filter(r => r.playing && r.playT >= left && r.playT <= left + span).map(r => r.playT)
-        if (!seen.length || Math.max(...seen) <= left + span * 0.97)
+        const left = ref.viewLeft, span = ref.span, end = left + span * 0.97
+        const shown = {}
+        for (const r of rows)
+            shown[r.key] = r.playing && r.playT >= left && r.playT <= end
+        const before = shownBefore
+        shownBefore = shown
+        if (rows.some(r => Date.now() - r.touchedAt < 4000))
             return
+        // Reached the end: inside it now, or was shown a moment ago.
+        const reached = rows.filter(r => r.playing && r.playT > end && (before[r.key] || r.playT <= left + span))
+        if (!reached.length)
+            return
+        const seen = rows.filter(r => shown[r.key] || reached.indexOf(r) >= 0).map(r => r.playT)
         const lo = Math.min(...seen), hi = Math.max(...seen)
         const next = hi - lo <= span * 0.8 ? Math.max(hi - span * 0.9, (lo + hi) / 2 - span / 2)
                                           : hi - span * 0.1
         ref.viewStart = Math.max(0, Math.min(next, ref.extent - span))
         ref.keep()
         mirror(ref)
+        shownBefore = {}
+        for (const r of rows)
+            shownBefore[r.key] = r.playing && r.playT >= ref.viewLeft && r.playT <= ref.viewLeft + span * 0.97
     }
     Timer {
-        interval: 200
+        interval: 100
         repeat: true
         running: line.viewsLocked && line.visible
         onTriggered: line.followTogether()

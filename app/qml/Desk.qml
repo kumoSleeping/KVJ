@@ -249,7 +249,7 @@ Item {
     // The picture's own sound: on or off, where and how loud.
     Popup {
         id: soundPop
-        width: 300
+        width: 340
         padding: 12
         margins: 8
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
@@ -265,33 +265,66 @@ Item {
             // an output of its own: headphones to listen in, or the speakers.
             // Both on, they mix there (a cue mix of the same videos). How loud
             // and where can be set before it is turned on.
+            // By number, not by a list of values: a list made anew at each
+            // step of a drag would make the slider anew under the finger.
             Repeater {
-                model: [{ name: "画面 1", on: desk.soundOn, volume: desk.soundVolume },
-                        { name: "画面 2", on: desk.soundOn2, volume: desk.soundVolume2 }]
+                model: 2
                 RowLayout {
-                    required property var modelData
+                    id: soundRow
                     required property int index
+                    readonly property bool on: index === 0 ? desk.soundOn : desk.soundOn2
+                    readonly property real volume: index === 0 ? desk.soundVolume : desk.soundVolume2
+                    function setVolume(v) {
+                        v = Math.round(Math.max(0, Math.min(1, v)) * 100) / 100
+                        if (index === 0)
+                            desk.soundVolume = v
+                        else
+                            desk.soundVolume2 = v
+                    }
                     Layout.fillWidth: true
-                    spacing: 8
+                    spacing: 4
                     Toggle {
-                        text: parent.modelData.name
-                        checked: parent.modelData.on
-                        onToggled: parent.index === 0 ? desk.soundOn = checked : desk.soundOn2 = checked
+                        Layout.rightMargin: 4
+                        text: "画面 " + (soundRow.index + 1)
+                        checked: soundRow.on
+                        onToggled: soundRow.index === 0 ? desk.soundOn = checked : desk.soundOn2 = checked
+                    }
+                    // 1 % a press (held, it goes on); the slider drags and,
+                    // under the wheel, steps by 1 %.
+                    IconButton {
+                        implicitWidth: 22
+                        implicitHeight: 22
+                        iconSize: 12
+                        iconName: "minus"
+                        tip: "音量 −1%"
+                        autoRepeat: true
+                        onClicked: soundRow.setVolume(soundRow.volume - 0.01)
                     }
                     Seek {
                         Layout.fillWidth: true
                         from: 0
                         to: 1
-                        value: parent.modelData.volume
-                        onMoved: parent.index === 0 ? desk.soundVolume = value : desk.soundVolume2 = value
+                        stepSize: 0.01
+                        wheelEnabled: true
+                        value: soundRow.volume
+                        onMoved: soundRow.setVolume(value)
+                    }
+                    IconButton {
+                        implicitWidth: 22
+                        implicitHeight: 22
+                        iconSize: 12
+                        iconName: "plus"
+                        tip: "音量 +1%"
+                        autoRepeat: true
+                        onClicked: soundRow.setVolume(soundRow.volume + 0.01)
                     }
                     Text {
-                        Layout.preferredWidth: 34
+                        Layout.preferredWidth: 38
                         horizontalAlignment: Text.AlignRight
-                        text: Math.round(parent.modelData.volume * 100) + "%"
+                        text: Math.round(soundRow.volume * 100) + "%"
                         font.pixelSize: Theme.sizeSm
                         font.features: { "tnum": 1 }
-                        color: parent.modelData.on ? Theme.body : Theme.faint
+                        color: soundRow.on ? Theme.body : Theme.faint
                     }
                 }
             }

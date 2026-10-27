@@ -380,9 +380,10 @@ ColumnLayout {
             y: roomTop
             color: "black"
         }
-        // What lies off the picture, on the stage at its right and in the
-        // margins round it, never below the picture's foot: a layer made
-        // larger than the picture does not cover the keys under it.
+        // The sources waiting off the picture, on the stage at its right.
+        // Only those wholly off it: a layer on the picture shows only what
+        // the audience sees of it (its frame, when chosen, shows its whole
+        // size), so nothing of it spills round the picture's edge.
         Item {
             width: box.width
             height: screen.y + screen.height
@@ -393,7 +394,7 @@ ColumnLayout {
                 y: screen.y
                 width: screen.width
                 height: screen.height
-                layout: Switcher.preview
+                layout: ({ slots: Switcher.preview.slots.filter(s => !Switcher.inPicture(s)) })
                 textures: composer.textures
                 operator: true
             }
