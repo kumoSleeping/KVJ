@@ -8,7 +8,7 @@ import KVJ
 // window's own keys (`inset` leaves them room) and it moves the window; where
 // the system keeps its title bar it sits under it. The name, the key of the
 // Sets' drawer and what is going on at the left; at the right the way into the
-// sender and the light or dark look.
+// sender and the light or dark look. (No name: the window is KVJ.)
 Rectangle {
     id: top
     color: Theme.raised
@@ -22,8 +22,11 @@ Rectangle {
     property string status: ""
     property bool live: false
     property bool canSend: true
+    // The library drawer: out or not; its key comes first in the bar.
+    property bool drawerOpen: false
 
     signal send()
+    signal toggleDrawer()
 
     implicitHeight: unified ? Math.max(32, titleHeight) : 36
 
@@ -43,6 +46,26 @@ Rectangle {
         anchors.leftMargin: top.unified && top.inset > 0 ? top.inset + 14 : 16
         anchors.rightMargin: 8
         spacing: 10
+
+        // The library's drawer, right after the window's own keys (on
+        // Windows, at the top left). Files dragged onto it bring it out.
+        IconButton {
+            implicitWidth: 28
+            implicitHeight: 24
+            iconSize: 15
+            iconName: "panel-left"
+            active: top.drawerOpen
+            tip: (top.drawerOpen ? "收起素材" : "素材") + "（" + (Qt.platform.os === "osx" ? "⌘B" : "Ctrl+B") + "）"
+            onClicked: top.toggleDrawer()
+            DropArea {
+                anchors.fill: parent
+                onEntered: drag => {
+                    drag.accepted = false
+                    if (!top.drawerOpen)
+                        top.toggleDrawer()
+                }
+            }
+        }
 
         // What is going on: listening, following, projecting.
         Rectangle {

@@ -980,6 +980,7 @@ ApplicationWindow {
         spacing: 0
 
         TopBar {
+            id: topBar
             Layout.fillWidth: true
             inset: app.visibility === Window.FullScreen ? 0 : app.titleInset
             titleHeight: app.visibility === Window.FullScreen ? 0 : app.titleHeight
@@ -988,6 +989,8 @@ ApplicationWindow {
             live: projection.visible
             canSend: !app.following
             onSend: app.openSender()
+            drawerOpen: app.setsOpen
+            onToggleDrawer: app.toggleSets()
         }
 
         // The canvas across the whole width, the Sets' drawer over its left side.
@@ -1061,22 +1064,6 @@ ApplicationWindow {
                                     operator: true
                                 }
                             }
-                            Rectangle {
-                                x: 6
-                                y: 6
-                                width: pgmTag.implicitWidth + 10
-                                height: 16
-                                radius: 4
-                                color: projection.visible ? Theme.danger : "#8c000000"
-                                Text {
-                                    id: pgmTag
-                                    anchors.centerIn: parent
-                                    text: projection.visible ? "观众画面 · 投屏中" : "观众画面"
-                                    font.pixelSize: 9
-                                    font.weight: Font.DemiBold
-                                    color: "white"
-                                }
-                            }
                         }
 
                         // —— Smart following: one, on the track chosen in it ——
@@ -1124,40 +1111,17 @@ ApplicationWindow {
                 }
             }
 
-            // The drawer's key, at the top left of the canvas where the drawer's
-            // own head has it: put away, only the key stays, over the stage's
-            // corner. Files dragged onto it bring the drawer out too.
-            IconButton {
-                // In the margin left of the board's picture, clear of its corner.
-                x: 2
-                y: 2
-                z: 2
-                implicitWidth: 24
-                implicitHeight: 24
-                iconSize: 14
-                visible: !app.setsOpen
-                iconName: "panel-left"
-                tip: "素材（" + (Qt.platform.os === "osx" ? "⌘B" : "Ctrl+B") + "）"
-                onClicked: app.toggleSets()
-                background: Rectangle {
-                    radius: Theme.radius
-                    color: parent.hovered ? Theme.hover : Theme.inset
-                }
-                DropArea {
-                    anchors.fill: parent
-                    onEntered: drag => {
-                        drag.accepted = false
-                        app.setsOpen = true
-                    }
-                }
-            }
-
             // —— Sets and their entries: the drawer ——
+            // Over the canvas and the tracks under it, from under the top bar
+            // to the window's foot.
             Item {
                 id: drawer
-                readonly property real spread: 24
+                readonly property real spread: 14
+                parent: app.contentItem
+                z: 50
+                y: topBar.height
                 width: 280
-                height: parent.height
+                height: app.contentItem.height - y
                 x: -width - spread
                 visible: x > -width - spread
                 states: State {
@@ -1176,17 +1140,17 @@ ApplicationWindow {
                     }
                 ]
 
-                // A soft shadow over the canvas, in layers that fade outwards.
+                // A light shade along its edge, fading out in a few steps.
                 Repeater {
-                    model: 8
+                    model: 4
                     Rectangle {
                         required property int index
-                        width: drawer.width + (index + 1) * drawer.spread / 8
+                        width: drawer.width + (index + 1) * drawer.spread / 4
                         height: drawer.height
-                        radius: Theme.radiusLg + (index + 1) * drawer.spread / 8
+                        radius: Theme.radiusLg + (index + 1) * drawer.spread / 4
                         topLeftRadius: 0
                         bottomLeftRadius: 0
-                        color: Qt.rgba(0, 0, 0, Theme.shadow.a / 8)
+                        color: Qt.rgba(0, 0, 0, Theme.dark ? 0.09 : 0.022)
                     }
                 }
                 // Presses and the wheel on the drawer stay on it, never reach
