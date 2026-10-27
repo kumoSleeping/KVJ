@@ -101,7 +101,8 @@ ColumnLayout {
         }
         Qt.callLater(stackSources)
     }
-    // Once a run, those already waiting are parked anew (see Switcher.restack).
+    // Once a run, those already waiting are parked anew (see Switcher.restack)
+    // and cameras removed before are taken off.
     property bool restacked: false
     function stackSources() {
         if (!Switcher.loaded)
@@ -109,6 +110,14 @@ ColumnLayout {
         Switcher.stack(sourceIds, id => ratio(id), aspect)
         if (!restacked) {
             restacked = true
+            // A camera no longer taken in is gone for good (a track may only
+            // be loading): its layer goes.
+            const gone = {}
+            for (const s of Switcher.preview.slots.concat(Switcher.program.slots))
+                if (s.source.startsWith("camera:") && sourceIds.indexOf(s.source) < 0)
+                    gone[s.source] = ""
+            if (Object.keys(gone).length)
+                Switcher.rename(gone)
             Switcher.restack(id => ratio(id), aspect)
         }
     }
@@ -1100,9 +1109,9 @@ ColumnLayout {
 
         // The hint for what is chosen, at the canvas's foot.
         Text {
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: 7
+            // Over the picture's right half, clear of the sources parked at its right.
+            x: screen.x + screen.width - width
+            y: screen.y - height - 3
             z: 7
             horizontalAlignment: Text.AlignRight
             text: composer.chosenLine ? "拖点改形 · 按住线拉出新点 · Shift 或「直线」拉直 · 右键更多"
@@ -1111,7 +1120,7 @@ ColumnLayout {
             font.pixelSize: Theme.sizeXs
             color: Theme.faint
             elide: Text.ElideLeft
-            width: Math.max(0, parent.width - 260)
+            width: screen.width * 0.6
         }
 
         // Images from elsewhere dropped on the canvas: into the gallery and posted.
