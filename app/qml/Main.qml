@@ -184,7 +184,10 @@ ApplicationWindow {
     // Following stopped (or only listens): the speed is the operator's own
     // again, once the player has taken the picture over.
     onAiLeadsChanged: if (!aiLeads) Qt.callLater(giveTempoBack)
-    onEntriesChanged: cue()
+    onEntriesChanged: {
+        cue()
+        Qt.callLater(app.switchAfterReplace)
+    }
 
     function takeOver() {
         const p = app.followedPlayer
@@ -589,7 +592,34 @@ ApplicationWindow {
         const gone = app.placedOn(track).map(e => e.id).filter(id => ids.indexOf(id) < 0)
         if (gone.length && app.currentSet)
             app.takeOffTrack(app.currentSet, gone)
+        const first = app.entries.find(e => e.id === ids[0])
+        if (first)
+            app.switchWhenPlaced(track, String(Engine.fileUrl(first.path)))
         app.placeOn(ids, track)
+    }
+    // After a replace the track's player goes straight to the first of what
+    // was dropped, playing on if it played (what played before is no longer
+    // on the track, and would otherwise stay on screen till it ended); once
+    // the engine has it placed (an import takes a moment).
+    property var replacing: null  // { track, url, playing }
+    function trackPlayer(t) {
+        return t === 0 ? transport : app.auxPlayers[t - 1].clock
+    }
+    function switchWhenPlaced(track, url) {
+        app.replacing = { track: track, url: url, playing: app.trackPlayer(track).playing }
+        app.switchAfterReplace()
+    }
+    function switchAfterReplace() {
+        const w = app.replacing
+        if (!w)
+            return
+        const e = app.placedOn(w.track).find(e => String(Engine.fileUrl(e.path)) === w.url)
+        if (!e)
+            return
+        app.replacing = null
+        const p = app.trackPlayer(w.track)
+        if (!p.entry || p.entry.id !== e.id)
+            p.load(e, 0, w.playing)
     }
     function replaceWithFiles(urls, track) {
         if (!urls || urls.length === 0 || !app.editable)
@@ -666,6 +696,7 @@ ApplicationWindow {
             const gone = app.placedOn(track).map(e => e.id).filter(id => known.indexOf(id) < 0)
             if (gone.length && app.currentSet)
                 app.takeOffTrack(app.currentSet, gone)
+            app.switchWhenPlaced(track, list[0])
         }
         if (known.length)
             app.placeOn(known, track)
