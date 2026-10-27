@@ -110,6 +110,7 @@ protected:
 private:
     // Seconds between frames for the current zoom, and the frames in view.
     double step() const;
+    qint64 cellMs(qint64 k, double s) const;
     void refresh();
 
     QString m_source;

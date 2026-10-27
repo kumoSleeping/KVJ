@@ -2,8 +2,8 @@ import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Dialogs
+import QtQuick.Controls.impl
 import QtQuick.Layouts
-import QtQuick.Shapes
 import KVJ
 
 // The column at the window's left, as wide as the one at its right: above,
@@ -155,16 +155,33 @@ Item {
         const out = []
         for (const r of (app ? app.trackRows : [])) {
             const has = app.placedOn(r.track).length > 0
-            out.push({ id: r.key, name: r.name, usable: has, why: r.name + " 上还没有视频：从下面的媒体库拖一个上去" })
+            out.push({ id: r.key, name: r.name, usable: has, camera: false, word: "没有视频",
+                       why: r.name + " 上还没有视频：从下面的媒体库拖一个上去" })
         }
         const cams = app ? app.cameraIds : []
         for (const c of cams) {
             const key = "camera:" + c
-            out.push({ id: key, name: lib.composer.sourceName(key), usable: lib.composer.known(key), why: "这台相机没有连接" })
+            out.push({ id: key, name: lib.composer.sourceName(key), usable: lib.composer.known(key), camera: true, word: "未连接",
+                       why: "这台相机没有连接" })
         }
         if (!cams.length)
-            out.push({ id: "camera:", name: "相机", usable: false, why: "还没有相机：用画面下方的「+ 相机」加一个" })
+            out.push({ id: "camera:", name: "相机", usable: false, camera: true, word: "未添加",
+                       why: "还没有相机：用画面下方的「+ 相机」加一个" })
         return out
+    }
+    // For a track's tile while its player rests at the very start: the
+    // video's path and a moment a little way in ({ path, duration, at }), or
+    // null (playing, moved on, no video).
+    function trackStill(id) {
+        if (!app || !id.startsWith("track:"))
+            return null
+        const t = Number(id.substring(6))
+        const e = t === 0 ? app.shownEntry : app.auxPlayers[t - 1].entry
+        const playing = t === 0 ? (!!app.match || app.transport.playing) : app.auxPlayers[t - 1].playing
+        const at = t === 0 ? app.transport.position : app.auxPlayers[t - 1].position
+        if (!e || !e.path || playing || at > 0.5 || !(e.duration > 0))
+            return null
+        return { path: e.path, duration: e.duration, at: Math.min(e.duration * 0.1, 30) }
     }
     FileDialog {
         id: pictureDialog
@@ -200,7 +217,7 @@ Item {
             y: readyHead.height + 4
             width: parent.width
             height: parent.height - y
-            contentHeight: tiles.implicitHeight + (lib.composer.gallery.length ? 0 : 92)
+            contentHeight: tiles.implicitHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             interactive: lib.composer.layerCarried === "" && !lib.composer.carrying
@@ -216,11 +233,12 @@ Item {
                 // none). Off the picture, a click brings one in at the lower
                 // right and a drag puts it where it is let go; on it (an ink
                 // edge), a click chooses it on the board. One with nothing to
-                // show yet (an empty track, no camera) is dimmed and does nothing.
+                // show yet (an empty track, no camera) says so in its tile and
+                // does nothing.
                 Repeater {
                     model: lib.sources
                     Item {
-                        id: source
+                        id: srcTile
                         required property var modelData
                         readonly property string sid: modelData.id
                         readonly property int index_: lib.composer.slots.findIndex(s => s.source === sid)
@@ -229,42 +247,72 @@ Item {
                         readonly property bool chosen: shown && lib.composer.selected === index_
                         width: tiles.tile
                         height: thumb.height + 18
-                        opacity: usable ? 1 : 0.4
                         Rectangle {
                             id: thumb
                             width: parent.width
                             height: Math.round(width * 9 / 16)
                             radius: Theme.radius
-                            color: source.usable ? "black" : Theme.inset
+                            color: srcTile.usable ? "black" : Theme.inset
                             clip: true
-                            opacity: lib.composer.layerCarried === source.sid ? 0.4 : 1
+                            opacity: lib.composer.layerCarried === srcTile.sid ? 0.4 : 1
                             Compositor {
-                                visible: source.usable
+                                visible: srcTile.usable && !still.visible
                                 anchors.fill: parent
-                                layout: ({ slots: [Switcher.slot({ source: source.sid, x: 0, y: 0, w: 1, h: 1, fit: "contain" }, 0)] })
+                                layout: ({ slots: [Switcher.slot({ source: srcTile.sid, x: 0, y: 0, w: 1, h: 1, fit: "contain" }, 0)] })
                                 textures: lib.composer.textures
                                 operator: true
+                            }
+                            // A track still at its start shows a frame from a
+                            // little way in (a VJ video often opens on black).
+                            FilmStrip {
+                                id: still
+                                readonly property var info: lib.trackStill(srcTile.sid)
+                                visible: srcTile.usable && !!info
+                                anchors.fill: parent
+                                source: info ? info.path : ""
+                                duration: info ? info.duration : 0
+                                from: info ? info.at : 0
+                                pxPerSec: width / 0.1
+                                gap: "black"
+                            }
+                            // Nothing to show: what is missing, plainly.
+                            Column {
+                                visible: !srcTile.usable
+                                anchors.centerIn: parent
+                                spacing: 2
+                                ColorImage {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    source: srcTile.modelData.camera ? "icons/camera-off.svg" : "icons/video-off.svg"
+                                    sourceSize: Qt.size(16, 16)
+                                    color: Theme.muted
+                                }
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    text: srcTile.modelData.word
+                                    font.pixelSize: 10
+                                    color: Theme.muted
+                                }
                             }
                         }
                         // On the picture: an ink edge (thicker while chosen there).
                         Rectangle {
-                            visible: source.shown
+                            visible: srcTile.shown
                             x: -2
                             y: -2
                             width: thumb.width + 4
                             height: thumb.height + 4
                             radius: Theme.radius + 2
                             color: "transparent"
-                            border.width: source.chosen ? 2 : 1.5
+                            border.width: srcTile.chosen ? 2 : 1.5
                             border.color: Theme.text
                         }
                         Text {
                             y: thumb.height + 3
                             width: parent.width
-                            text: source.modelData.name
+                            text: srcTile.modelData.name
                             font.pixelSize: Theme.sizeXs
-                            font.weight: source.shown ? Font.DemiBold : Font.Normal
-                            color: sourceArea.containsMouse || source.shown ? Theme.text : Theme.muted
+                            font.weight: srcTile.shown ? Font.DemiBold : Font.Normal
+                            color: sourceArea.containsMouse || srcTile.shown ? Theme.text : Theme.body
                             elide: Text.ElideRight
                         }
                         MouseArea {
@@ -272,30 +320,30 @@ Item {
                             anchors.fill: parent
                             hoverEnabled: true
                             preventStealing: true
-                            cursorShape: !source.usable ? Qt.ArrowCursor : lib.composer.layerCarried ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+                            cursorShape: !srcTile.usable ? Qt.ArrowCursor : lib.composer.layerCarried ? Qt.ClosedHandCursor : Qt.PointingHandCursor
                             property point from
                             onPressed: mouse => from = Qt.point(mouse.x, mouse.y)
                             onPositionChanged: mouse => {
-                                if (!pressed || !source.usable)
+                                if (!pressed || !srcTile.usable)
                                     return
                                 if (!lib.composer.layerCarried && Math.hypot(mouse.x - from.x, mouse.y - from.y) > 6)
-                                    lib.composer.layerCarried = source.sid
+                                    lib.composer.layerCarried = srcTile.sid
                                 if (lib.composer.layerCarried)
                                     lib.composer.layerAt = mapToItem(lib.composer, mouse.x, mouse.y)
                             }
                             onReleased: {
-                                if (!source.usable)
+                                if (!srcTile.usable)
                                     return
                                 if (lib.composer.layerCarried)
                                     lib.composer.dropLayer()
                                 else
-                                    lib.composer.bringIn(source.sid)
+                                    lib.composer.bringIn(srcTile.sid)
                             }
                             onCanceled: lib.composer.layerCarried = ""
                             ToolTip.visible: containsMouse && !pressed
                             ToolTip.delay: 600
-                            ToolTip.text: !source.usable ? source.modelData.why
-                                        : source.shown ? "在画面中 · 点一下在画板上选中它"
+                            ToolTip.text: !srcTile.usable ? srcTile.modelData.why
+                                        : srcTile.shown ? "在画面中 · 点一下在画板上选中它"
                                         : "在画外，观众看不到 · 点一下放进画面右下角，或拖进画面里"
                         }
                     }
@@ -400,78 +448,6 @@ Item {
                             onClicked: lib.composer.forget(kept.modelData.id)
                         }
                     }
-                }
-            }
-            // No pictures kept yet: a small picture, over and over, carried
-            // in from below and laid down in a dashed tray.
-            Item {
-                visible: lib.composer.gallery.length === 0
-                y: tiles.implicitHeight + 14
-                width: parent.width
-                height: 74
-                Shape {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    y: 4
-                    width: 84
-                    height: 52
-                    preferredRendererType: Shape.CurveRenderer
-                    ShapePath {
-                        strokeColor: Theme.dark ? "#3a404a" : "#d4d4da"
-                        strokeWidth: 1.2
-                        strokeStyle: ShapePath.DashLine
-                        dashPattern: [4, 3]
-                        fillColor: "transparent"
-                        PathRectangle { x: 0.6; y: 0.6; width: 82.8; height: 50.8; radius: Theme.radiusLg }
-                    }
-                }
-                Rectangle {
-                    id: card
-                    x: parent.width / 2 - width / 2
-                    width: 34
-                    height: 24
-                    radius: 4
-                    color: Theme.bg
-                    border.width: 1.2
-                    border.color: Theme.muted
-                    // A hill and a sun.
-                    Rectangle { x: 23; y: 5; width: 5; height: 5; radius: 2.5; color: Theme.faint }
-                    Shape {
-                        anchors.fill: parent
-                        preferredRendererType: Shape.CurveRenderer
-                        ShapePath {
-                            strokeColor: "transparent"
-                            fillColor: Theme.faint
-                            startX: 3; startY: 21
-                            PathLine { x: 12; y: 11 }
-                            PathLine { x: 18; y: 17 }
-                            PathLine { x: 22; y: 14 }
-                            PathLine { x: 31; y: 21 }
-                        }
-                    }
-                    SequentialAnimation {
-                        running: parent.visible && lib.visible
-                        loops: Animation.Infinite
-                        PropertyAction { target: card; property: "opacity"; value: 0 }
-                        PropertyAction { target: card; property: "y"; value: 62 }
-                        PropertyAction { target: card; property: "rotation"; value: -10 }
-                        ParallelAnimation {
-                            NumberAnimation { target: card; property: "opacity"; to: 1; duration: 300 }
-                            NumberAnimation { target: card; property: "y"; to: 18; duration: 900; easing.type: Easing.OutCubic }
-                            NumberAnimation { target: card; property: "rotation"; to: 0; duration: 900; easing.type: Easing.OutCubic }
-                        }
-                        PauseAnimation { duration: 900 }
-                        NumberAnimation { target: card; property: "opacity"; to: 0; duration: 400 }
-                        PauseAnimation { duration: 400 }
-                    }
-                }
-                // The pointer carrying it.
-                Text {
-                    x: card.x + card.width - 6
-                    y: card.y + card.height - 8
-                    opacity: card.opacity
-                    text: "\u2196"
-                    font.pixelSize: 14
-                    color: Theme.body
                 }
             }
         }

@@ -303,6 +303,13 @@ double FilmStrip::step() const
     return 3600;
 }
 
+// The frame a cell shows: the one in its middle, not at its start (a VJ
+// video often opens on black, and so would every clip's first cell).
+qint64 FilmStrip::cellMs(qint64 k, double s) const
+{
+    return qint64(std::llround(std::min((k + 0.5) * s, std::max(0.0, m_duration - 0.05)) * 1000));
+}
+
 void FilmStrip::refresh()
 {
     update();
@@ -318,9 +325,9 @@ void FilmStrip::refresh()
     const qint64 mid = (first + last) / 2;
     for (qint64 d = 0; mid - d >= first || mid + d <= last; ++d) {
         if (mid + d <= last)
-            wanted.append(qint64(std::llround(std::min((mid + d) * s, std::max(0.0, m_duration - 0.05)) * 1000)));
+            wanted.append(cellMs(mid + d, s));
         if (d > 0 && mid - d >= first)
-            wanted.append(qint64(std::llround((mid - d) * s * 1000)));
+            wanted.append(cellMs(mid - d, s));
     }
     FrameCache::instance()->want(this, m_source, wanted);
 }
@@ -338,7 +345,7 @@ void FilmStrip::paint(QPainter *painter)
     for (qint64 k = first; k <= last; ++k) {
         const double x = (k * s - m_from) * m_pxPerSec;
         const double w = std::min(s * m_pxPerSec, end - x);
-        const qint64 ms = qint64(std::llround(std::min(k * s, std::max(0.0, m_duration - 0.05)) * 1000));
+        const qint64 ms = cellMs(k, s);
         bool exact = false;
         const QImage image = FrameCache::instance()->frame(m_source, ms, &exact);
         const QRectF target(x, 0, std::max(0.0, w - 1), h);

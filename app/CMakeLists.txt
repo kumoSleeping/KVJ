@@ -81,7 +81,9 @@ qt_add_qml_module(KVJ
         qml/icons/crosshair.svg
         qml/icons/ear.svg
         qml/icons/ellipsis.svg
+        qml/icons/camera-off.svg
         qml/icons/film.svg
+        qml/icons/video-off.svg
         qml/icons/folder.svg
         qml/icons/folder-open.svg
         qml/icons/info.svg
