@@ -150,23 +150,24 @@ Item {
 
     implicitWidth: 228
 
-    // The picture sources 预备 always shows: { id, name, usable, why }.
+    // The picture sources 预备 always shows: { id, name, usable, why, error }
+    // (`error`: what is wrong with a camera taken in, or "").
     readonly property var sources: {
         const out = []
         for (const r of (app ? app.trackRows : [])) {
             const has = app.placedOn(r.track).length > 0
             out.push({ id: r.key, name: r.name, usable: has, camera: false, word: "没有视频",
-                       why: r.name + " 上还没有视频：从下面的媒体库拖一个上去" })
+                       why: r.name + " 上还没有视频：从下面的媒体库拖一个上去", error: "" })
         }
         const cams = app ? app.cameraIds : []
         for (const c of cams) {
             const key = "camera:" + c
             out.push({ id: key, name: lib.composer.sourceName(key), usable: lib.composer.known(key), camera: true, word: "未连接",
-                       why: "这台相机没有连接" })
+                       why: "这台相机没有连接", error: lib.composer.sourceError(key) })
         }
         if (!cams.length)
             out.push({ id: "camera:", name: "相机", usable: false, camera: true, word: "未添加",
-                       why: "还没有相机：用画面下方的「+ 相机」加一个" })
+                       why: "还没有相机：用画面下方的「+ 相机」加一个", error: "" })
         return out
     }
     // For a track's tile while its player rests at the very start: the
@@ -256,7 +257,7 @@ Item {
                             clip: true
                             opacity: lib.composer.layerCarried === srcTile.sid ? 0.4 : 1
                             Compositor {
-                                visible: srcTile.usable && !still.visible
+                                visible: srcTile.usable && !still.visible && !srcTile.modelData.error
                                 anchors.fill: parent
                                 layout: ({ slots: [Switcher.slot({ source: srcTile.sid, x: 0, y: 0, w: 1, h: 1, fit: "contain" }, 0)] })
                                 textures: lib.composer.textures
@@ -275,22 +276,28 @@ Item {
                                 pxPerSec: width / 0.1
                                 gap: "black"
                             }
-                            // Nothing to show: what is missing, plainly.
+                            // Nothing to show: what is missing, plainly; a camera
+                            // taken in that cannot show, what is wrong (in full
+                            // contrast on its black tile).
                             Column {
-                                visible: !srcTile.usable
+                                readonly property bool broken: srcTile.usable && !!srcTile.modelData.error
+                                visible: !srcTile.usable || broken
                                 anchors.centerIn: parent
+                                width: parent.width - 8
                                 spacing: 2
                                 ColorImage {
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     source: srcTile.modelData.camera ? "icons/camera-off.svg" : "icons/video-off.svg"
                                     sourceSize: Qt.size(16, 16)
-                                    color: Theme.muted
+                                    color: parent.broken ? "#ffffff" : Theme.muted
                                 }
                                 Text {
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    text: srcTile.modelData.word
+                                    width: parent.width
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: parent.broken ? srcTile.modelData.error : srcTile.modelData.word
                                     font.pixelSize: 10
-                                    color: Theme.muted
+                                    color: parent.broken ? "#ffffff" : Theme.muted
+                                    elide: Text.ElideRight
                                 }
                             }
                         }
@@ -343,8 +350,9 @@ Item {
                             ToolTip.visible: containsMouse && !pressed && !dropKey.hovered
                             ToolTip.delay: 600
                             ToolTip.text: !srcTile.usable ? srcTile.modelData.why
-                                        : srcTile.shown ? "在画面中 · 点一下在画板上选中它"
-                                        : "在画外，观众看不到 · 点一下放进画面右下角，或拖进画面里"
+                                        : (srcTile.modelData.error ? srcTile.modelData.error + "\n" : "")
+                                          + (srcTile.shown ? "在画面中 · 点一下在画板上选中它"
+                                             : "在画外，观众看不到 · 点一下放进画面右下角，或拖进画面里")
                         }
                         // A camera taken in is let go only here (it stops).
                         IconButton {

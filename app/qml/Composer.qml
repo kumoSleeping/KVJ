@@ -29,7 +29,8 @@ import KVJ
 // the layer (back to 预备, a camera too) away; the trash key takes the chosen line or
 // all the layer's lines. Esc lets go. (The arrow keys stay the player's.)
 //
-//   sources:  [{ id, name }] the picture sources (the tracks, the cameras)
+//   sources:  [{ id, name, error }] the picture sources (the tracks, the
+//             cameras; a camera's error is what is wrong with it, or "")
 //   cameraIds the cameras taken in; addCamera(id) asks the host (a camera is let
 //             go from 预备, Library)
 //   textures: the window's SourceTextures
@@ -99,6 +100,11 @@ ColumnLayout {
     }
     function known(id) {
         return (sources || []).some(s => s.id === id)
+    }
+    // What is wrong with a source (a camera that cannot show), or "".
+    function sourceError(id) {
+        const s = (sources || []).find(s => s.id === id)
+        return s && s.error ? s.error : ""
     }
     function ratio(id) {
         return textures ? textures.aspect(id) : 16 / 9
@@ -1105,6 +1111,38 @@ ColumnLayout {
                                 color: "transparent"
                                 border.width: 1
                                 border.color: Theme.dark ? "#c3c8d0" : "#55555c"
+                            }
+                            // A camera that cannot show says why, plainly, in its middle.
+                            Rectangle {
+                                id: whyPlate
+                                readonly property string why: composer.sourceError(edge.s.source)
+                                visible: why !== "" && edge.width > 40 && edge.height > 24
+                                anchors.centerIn: parent
+                                width: Math.min(parent.width - 8, whyText.implicitWidth + 28)
+                                height: 20
+                                radius: 4
+                                color: "#000000"
+                                Row {
+                                    x: 6
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 4
+                                    ColorImage {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        source: "icons/camera-off.svg"
+                                        sourceSize: Qt.size(12, 12)
+                                        color: "#ffffff"
+                                    }
+                                    Text {
+                                        id: whyText
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: Math.max(0, whyPlate.width - 28)
+                                        text: whyPlate.why
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                        color: "#ffffff"
+                                        elide: Text.ElideRight
+                                    }
+                                }
                             }
                             // Its name, on a plate at its top left, while chosen.
                             Rectangle {

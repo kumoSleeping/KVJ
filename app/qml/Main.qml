@@ -904,10 +904,14 @@ ApplicationWindow {
             app.setCameras(app.cameraIds.concat([id]))
     }
     // A camera taken in that goes away (unplugged, the iPhone taken off)
-    // leaves the board by itself; one not yet seen this run may still be
-    // waking, and is given a few seconds from the start.
+    // leaves the board by itself once it has been missing for 10 seconds on
+    // end: one that drops out of the list for a moment stays, its layer saying
+    // 相机已断开 until it is back. One not yet seen this run may still be
+    // waking, and is given a few seconds from the start before that.
     property var seenCameras: ({})
     property bool camerasSettled: false
+    // Since when each camera taken in has been missing (Date.now()), by id.
+    property var missingCameras: ({})
     Timer {
         interval: 6000
         running: !app.camerasSettled && app.cameraIds.length > 0
@@ -916,17 +920,39 @@ ApplicationWindow {
             app.checkCameras()
         }
     }
+    // Looked at again while one is missing: the list may not change again.
+    Timer {
+        interval: 1000
+        repeat: true
+        running: Object.keys(app.missingCameras).length > 0
+        onTriggered: app.checkCameras()
+    }
     function checkCameras() {
-        if (!app.cameraIds.length)
+        const now = app.cameraIds.length ? Cameras.list.map(c => c.id) : []
+        // An empty list may be the camera stack not answering: nothing goes on that.
+        if (!now.length) {
+            if (!app.cameraIds.length)
+                app.missingCameras = ({})
             return
-        const now = Cameras.list.map(c => c.id)
+        }
         const seen = Object.assign({}, app.seenCameras)
         for (const id of now)
             seen[id] = true
         app.seenCameras = seen
-        // (An empty list may be the camera stack not answering yet: nothing goes on that.)
-        const settled = app.camerasSettled && now.length > 0
-        for (const id of app.cameraIds.filter(id => (seen[id] || settled) && now.indexOf(id) < 0))
+        const at = Date.now()
+        const missing = {}
+        const gone = []
+        for (const id of app.cameraIds) {
+            if (now.indexOf(id) >= 0 || !(seen[id] || app.camerasSettled))
+                continue
+            const since = app.missingCameras[id] !== undefined ? app.missingCameras[id] : at
+            if (at - since >= 10000)
+                gone.push(id)
+            else
+                missing[id] = since
+        }
+        app.missingCameras = missing
+        for (const id of gone)
             app.removeCamera("camera:" + id)
     }
     onCameraIdsChanged: Qt.callLater(app.checkCameras)
@@ -954,9 +980,10 @@ ApplicationWindow {
     readonly property var sources: {
         const list = app.trackRows.map(r => ({ id: r.key, name: r.name }))
         const cams = app.cameraIds.length ? Cameras.list : []
+        const errors = projection.cameraErrors
         for (const id of app.cameraIds) {
             const c = cams.find(c => c.id === id)
-            list.push({ id: "camera:" + id, name: c ? c.name : "相机（未连接）" })
+            list.push({ id: "camera:" + id, name: c ? c.name : "相机（未连接）", error: errors[id] || "" })
         }
         return list
     }

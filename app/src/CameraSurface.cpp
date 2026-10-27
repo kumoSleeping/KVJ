@@ -1,11 +1,15 @@
 #include "CameraSurface.h"
 
+#include "Engine.h"
 #include "FrameNode.h"
 #include "kvj.h"
 
 #include <QCamera>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDebug>
+#include <QDir>
+#include <QFile>
 #include <QMediaCaptureSession>
 #include <QMediaDevices>
 #include <QQuickWindow>
@@ -23,18 +27,39 @@ namespace {
 // A frame not drawn this long after it came (the window went away meanwhile)
 // no longer holds back the next one.
 constexpr double kDrawWaitMs = 500;
+// A camera that failed is tried again, and one sending nothing is started
+// again, this long after; each further time in a row twice as long, up to the most.
+constexpr double kRetryMs = 3000;
+constexpr double kRetryMostMs = 30000;
+
+// A line for the session's log on disk (Engine::writeLog's file, which a
+// Windows build, having no console, also needs) and the console.
+void note(const QString &line)
+{
+    qInfo().noquote() << line;
+    const QDir dir(QDir(Engine::defaultDataDir()).filePath(QStringLiteral("logs")));
+    if (!dir.exists() && !QDir().mkpath(dir.path()))
+        return;
+    const QDateTime now = QDateTime::currentDateTime();
+    QFile file(dir.filePath(QStringLiteral("kvj-%1.log").arg(now.toString(QStringLiteral("yyyy-MM-dd")))));
+    if (file.open(QIODevice::Append | QIODevice::Text))
+        file.write((now.toString(QStringLiteral("HH:mm:ss.zzz ")) + QStringLiteral("[info] ") + line + QLatin1Char('\n')).toUtf8());
+}
 
 // The camera's own format closest to a projected picture: at most 1080 lines,
-// a fluent rate, not compressed (decoding JPEG costs more than converting),
-// then the largest. Rates above 30 a second count the same: the extra frames
-// would only be dropped.
+// a fluent rate, at least 720 lines, not compressed (decoding JPEG costs more
+// than converting, but a USB 2 webcam gives 1080 lines at 30 only as JPEG),
+// then the largest. Then 30 a second, or the rate nearest above it (the extra
+// frames would only be dropped), else the fastest under it.
 QCameraFormat pickFormat(const QCameraDevice &device)
 {
     const auto key = [](const QCameraFormat &format) {
         const QSize size = format.resolution();
-        return std::make_tuple(size.height() <= 1080, format.maxFrameRate() >= 24,
-                               format.pixelFormat() != QVideoFrameFormat::Format_Jpeg,
-                               size.width() * size.height(), std::min(format.maxFrameRate(), 30.0f));
+        const float fps = format.maxFrameRate();
+        const bool full = fps >= 29.5f;
+        return std::make_tuple(size.height() <= 1080, fps >= 24, size.height() >= 720,
+                               format.pixelFormat() != QVideoFrameFormat::Format_Jpeg, size.width() * size.height(),
+                               full, full ? -fps : fps);
     };
     QCameraFormat best;
     for (const QCameraFormat &format : device.videoFormats()) {
@@ -52,7 +77,8 @@ CameraSurface::CameraSurface(QQuickItem *parent)
     m_soon.setSingleShot(true);
     m_soon.setInterval(0);
     connect(&m_soon, &QTimer::timeout, this, &CameraSurface::evaluate);
-    // Whether a preview is on screen is not signalled; it is looked at now and then.
+    // Whether a preview is on screen is not signalled; it is looked at now and
+    // then, and so is whether frames still come and a failed camera is due again.
     m_poll.setInterval(1000);
     connect(&m_poll, &QTimer::timeout, this, &CameraSurface::evaluate);
     m_convert.setMaxThreadCount(1);
@@ -77,6 +103,7 @@ void CameraSurface::setDeviceId(const QString &id)
     stop();
     m_failed = false;
     m_lost = false;
+    m_retries = 0;
     setError(QString());
     schedule();
     emit deviceIdChanged();
@@ -89,6 +116,7 @@ void CameraSurface::setActive(bool active)
     m_active = active;
     m_failed = false;
     m_lost = false;
+    m_retries = 0;
     if (active) {
         m_poll.start();
     } else {
@@ -149,19 +177,52 @@ QCameraDevice CameraSurface::findDevice() const
     return found == devices.end() ? QCameraDevice() : *found;
 }
 
+double CameraSurface::retryMs() const
+{
+    return std::min(kRetryMs * double(1 << std::min(m_retries, 4)), kRetryMostMs);
+}
+
 void CameraSurface::evaluate()
 {
-    if (m_newFrame && kvj_clock_ms() - m_takenAt > kDrawWaitMs) {
+    const double now = kvj_clock_ms();
+    if (m_newFrame && now - m_takenAt > kDrawWaitMs) {
         m_newFrame = false;
         m_pending = QImage();
         m_busy = false;
     }
-    if (!m_active || !(shown() || previewsWatching())) {
+    // Nobody looking only stops the converting: the camera runs on.
+    m_watched = shown() || previewsWatching();
+    if (!m_active) {
         stop();
         return;
     }
-    if (m_camera || m_failed || m_asking)
+    if (m_camera) {
+        // Frames since it started: it works, whatever was wrong before.
+        const double frameAt = m_frameAt;
+        if (frameAt > m_startedAt) {
+            m_retries = 0;
+            setError(QString());
+        }
+        // Nothing for a while (the stream stalled, the iPhone locked, the
+        // driver stuck, or it went away unannounced): started again.
+        const double quiet = now - std::max(frameAt, m_startedAt);
+        if (quiet < retryMs())
+            return;
+        note(QStringLiteral("camera: 重启（%1 秒无画面）").arg(qRound(quiet / 1000)));
+        stop();
+        ++m_retries;
+        m_lost = true;
+        setError(QStringLiteral("相机没有画面"));
+    }
+    if (m_asking)
         return;
+    if (m_failed) {
+        if (now - m_failedAt < retryMs())
+            return;
+        // Tried again, if it is still there.
+        m_failed = false;
+        ++m_retries;
+    }
 #if QT_CONFIG(permissions)
     const QCameraPermission permission;
     switch (qApp->checkPermission(permission)) {
@@ -214,22 +275,29 @@ void CameraSurface::start(const QCameraDevice &device)
     connect(m_camera.get(), &QCamera::errorOccurred, this, [this, generation](QCamera::Error error, const QString &text) {
         if (error == QCamera::NoError || !m_camera || generation != m_generation)
             return;
-        qInfo().noquote() << QStringLiteral("camera: %1").arg(text);
+        note(QStringLiteral("camera: %1").arg(text));
         stop();
         m_failed = true;
+        m_failedAt = kvj_clock_ms();
+#ifdef Q_OS_WIN
+        // Media Foundation's own words (with its HRESULT) say more than ours.
+        setError(text.isEmpty() ? QStringLiteral("相机打不开") : QStringLiteral("相机打不开：%1").arg(text));
+#else
         setError(QStringLiteral("相机打不开"));
+#endif
     }, Qt::QueuedConnection);
     m_session->setCamera(m_camera.get());
     m_startedId = device.id();
     m_first = true;
     m_lost = false;
-    setError(QString());
+    // What was wrong is said until the first frame (evaluate).
     m_camera->start();
-    qInfo().noquote() << QStringLiteral("camera: %1 · %2×%3 at %4 fps")
-                             .arg(device.description())
-                             .arg(format.resolution().width())
-                             .arg(format.resolution().height())
-                             .arg(double(format.maxFrameRate()));
+    m_startedAt = kvj_clock_ms();
+    note(QStringLiteral("camera: %1 · %2×%3 at %4 fps")
+             .arg(device.description())
+             .arg(format.resolution().width())
+             .arg(format.resolution().height())
+             .arg(double(format.maxFrameRate())));
 }
 
 void CameraSurface::stop()
@@ -261,7 +329,7 @@ void CameraSurface::devicesChanged()
         const bool present = std::any_of(devices.begin(), devices.end(),
                                          [this](const QCameraDevice &d) { return d.id() == m_startedId; });
         if (!present) {
-            qInfo().noquote() << QStringLiteral("camera: disconnected");
+            note(QStringLiteral("camera: disconnected"));
             stop();
             m_lost = true;
             setError(QStringLiteral("相机已断开"));
@@ -276,7 +344,10 @@ void CameraSurface::devicesChanged()
 // is the same bytes.
 void CameraSurface::offer(const QVideoFrame &frame)
 {
-    if (!frame.isValid() || m_busy.exchange(true))
+    if (!frame.isValid())
+        return;
+    m_frameAt = kvj_clock_ms();
+    if (!m_watched || m_busy.exchange(true))
         return;
     const int generation = m_generation;
     const bool mirror = m_mirrored;
