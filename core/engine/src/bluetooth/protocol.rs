@@ -37,13 +37,15 @@ pub(super) fn hello(role: u8, token: &str) -> Vec<u8> {
     bytes.extend(name[..end].as_bytes());
     bytes
 }
+/// Why a peer of another protocol or feature version is let go.
+pub(super) const MISMATCH: &str = "KVJ 蓝牙协议或特征版本不一致，请更新两端";
 /// Checks the contract and returns the peer's pairing token and name.
 pub(super) fn check_hello(bytes: &[u8], role: u8) -> Result<(String, String)> {
     let expected = contract(role);
     let start = expected.len() + 32;
     anyhow::ensure!(
         bytes.len() >= start && bytes.len() <= start + 128 && bytes.starts_with(&expected),
-        "KVJ 蓝牙协议或特征版本不一致，请更新两端"
+        MISMATCH
     );
     let token = std::str::from_utf8(&bytes[expected.len()..start]).unwrap_or_default();
     anyhow::ensure!(super::pairing::valid_token(token), "KVJ 蓝牙配对信息无效，请更新两端");

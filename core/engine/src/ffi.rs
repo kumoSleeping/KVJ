@@ -311,8 +311,11 @@ pub unsafe extern "C" fn kvj_sound_open(path: *const c_char, rate: *mut u32, dur
 #[no_mangle]
 pub unsafe extern "C" fn kvj_sound_seek(sound: *mut SoundStream, seconds: f64) -> bool {
     match sound.as_mut() {
-        Some(sound) => catch_unwind(AssertUnwindSafe(|| sound.seek(seconds))).unwrap_or(false),
-        None => false,
+        Some(sound) if !sound.broken => catch_unwind(AssertUnwindSafe(|| sound.seek(seconds))).unwrap_or_else(|_| {
+            broken(sound);
+            false
+        }),
+        _ => false,
     }
 }
 
@@ -327,7 +330,21 @@ pub unsafe extern "C" fn kvj_sound_read(sound: *mut SoundStream, out: *mut f32, 
         return 0;
     }
     let out = std::slice::from_raw_parts_mut(out, frames * 2);
-    catch_unwind(AssertUnwindSafe(|| sound.read(out))).unwrap_or(0)
+    if sound.broken {
+        out.fill(0.);
+        return 0;
+    }
+    catch_unwind(AssertUnwindSafe(|| sound.read(out))).unwrap_or_else(|_| {
+        broken(sound);
+        out.fill(0.);
+        0
+    })
+}
+/// A stream that panicked once is silent from then on: called again, it would
+/// most likely panic again, up to 64 times every 10 ms on the sound thread.
+fn broken(sound: &mut SoundStream) {
+    sound.broken = true;
+    crate::report::note("声音流损坏，已静音");
 }
 
 /// # Safety

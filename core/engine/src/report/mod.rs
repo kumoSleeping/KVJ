@@ -53,31 +53,72 @@ pub struct Preview {
     pub destination: &'static str,
 }
 
+/// Where `record_panics` writes, once it was called.
+static PANICS: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 /// Panics are caught at the C ABI and fail one call; the hook also writes them
-/// where a report can find them (and the previous hook still prints them).
+/// where a report can find them (and the previous hook still prints those
+/// written in full). A call that keeps panicking (the sound thread reads up
+/// to 64 times every 10 ms) must not capture a backtrace each time: the first
+/// 5 get one, then one a minute at most, and the rest one short line a second
+/// at most, with how many went unwritten.
 pub fn record_panics(dir: &Path) {
+    use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
     static ONCE: std::sync::Once = std::sync::Once::new();
-    let file = dir.join("logs").join("panics.log");
+    let _ = PANICS.set(dir.join("logs").join("panics.log"));
     ONCE.call_once(move || {
         let previous = std::panic::take_hook();
+        let started = Instant::now();
+        // Milliseconds since `started`, plus one: 0 is never.
+        let (seen, unwritten, last_line, last_full) = (AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0));
         std::panic::set_hook(Box::new(move |info| {
-            let backtrace = std::backtrace::Backtrace::force_capture();
-            let line = format!("{} {info}\n{backtrace}", local_stamp());
-            let line: String = line.chars().take(8000).collect();
-            // Kept small: a file that grew past 256 KiB starts again.
-            if fs::metadata(&file).is_ok_and(|m| m.len() > 256 * 1024) {
-                let _ = fs::remove_file(&file);
+            let now = started.elapsed().as_millis() as u64 + 1;
+            let due = |last: &AtomicU64, every: u64| {
+                let before = last.load(Relaxed);
+                (before == 0 || now.saturating_sub(before) >= every)
+                    && last.compare_exchange(before, now, Relaxed, Relaxed).is_ok()
+            };
+            let full = if seen.fetch_add(1, Relaxed) < 5 {
+                last_full.store(now, Relaxed);
+                true
+            } else {
+                due(&last_full, 60_000)
+            };
+            if !full && !due(&last_line, 1_000) {
+                unwritten.fetch_add(1, Relaxed);
+                return;
             }
-            if let Some(parent) = file.parent() {
-                let _ = fs::create_dir_all(parent);
+            let skipped = unwritten.swap(0, Relaxed);
+            let skipped = if skipped > 0 { format!("（此前 {skipped} 次未记录）") } else { String::new() };
+            if full {
+                let backtrace = std::backtrace::Backtrace::force_capture();
+                let line: String = format!("{info}{skipped}\n{backtrace}").chars().take(8000).collect();
+                append(&line);
+                previous(info);
+            } else {
+                let line: String = format!("{info}{skipped}").chars().take(500).collect();
+                append(&line);
             }
-            if let Ok(mut out) = fs::OpenOptions::new().create(true).append(true).open(&file) {
-                use std::io::Write;
-                let _ = writeln!(out, "{}\n\u{1e}", line.replace('\u{1e}', ""));
-            }
-            previous(info);
         }));
     });
+}
+/// One entry in the panics file (none before `record_panics`), which a report
+/// lists with the panics.
+pub(crate) fn note(message: &str) {
+    append(message);
+}
+fn append(message: &str) {
+    let Some(file) = PANICS.get() else { return };
+    // Kept small: a file that grew past 256 KiB starts again.
+    if fs::metadata(file).is_ok_and(|m| m.len() > 256 * 1024) {
+        let _ = fs::remove_file(file);
+    }
+    if let Some(parent) = file.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(mut out) = fs::OpenOptions::new().create(true).append(true).open(file) {
+        use std::io::Write;
+        let _ = writeln!(out, "{} {}\n\u{1e}", local_stamp(), message.replace('\u{1e}', ""));
+    }
 }
 
 impl Reports {

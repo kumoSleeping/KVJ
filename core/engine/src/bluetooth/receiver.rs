@@ -15,6 +15,7 @@ use crate::{
 use anyhow::{bail, Context, Result};
 use kvj_recognize::LiveFeatures;
 use std::{
+    collections::HashMap,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex, Weak,
@@ -39,9 +40,10 @@ impl Receiver {
             .name("vj-rfcomm-receive".into())
             .spawn(move || {
                 let mut delay = 2;
+                let mut rejected = Rejected::default();
                 while !cancel.load(Ordering::Relaxed) {
                     let started = Instant::now();
-                    let result = run(&engine, &shared, &cancel);
+                    let result = run(&engine, &shared, &cancel, &mut rejected);
                     let mut state = shared.lock().unwrap();
                     state.listening = false;
                     state.reset_source();
@@ -425,7 +427,46 @@ fn route_changed(engine: &Weak<Engine>) {
         super::route_changed(&engine);
     }
 }
-fn run(engine: &Weak<Engine>, shared: &Mutex<Inbox>, cancel: &AtomicBool) -> Result<()> {
+/// Peers let go for another protocol or feature version. Such a sender comes
+/// back every half minute or so, all day, and its two lines each time once
+/// filled most of a day's log: said once a peer every 10 minutes, with how
+/// often it came meanwhile.
+#[derive(Default)]
+struct Rejected(HashMap<String, (Instant, u32)>);
+const REJECTED_QUIET: Duration = Duration::from_secs(600);
+impl Rejected {
+    /// Let go for its version within the last 10 minutes: its link lines are left out.
+    fn quiet(&self, id: &str) -> bool {
+        self.0.get(id).is_some_and(|(since, _)| since.elapsed() < REJECTED_QUIET)
+    }
+    /// Let go for its version just now: what to add to the line, or nothing to say.
+    fn mismatch(&mut self, id: &str) -> Option<String> {
+        if let Some((since, count)) = self.0.get_mut(id) {
+            if since.elapsed() < REJECTED_QUIET {
+                *count += 1;
+                return None;
+            }
+            let before = std::mem::replace(count, 1);
+            *since = Instant::now();
+            return Some(if before > 1 { format!("（10 分钟内 {before} 次）") } else { String::new() });
+        }
+        if self.0.len() >= 16 {
+            let oldest = self.0.iter().min_by_key(|(_, (since, _))| *since).map(|(id, _)| id.clone());
+            if let Some(oldest) = oldest {
+                self.0.remove(&oldest);
+            }
+        }
+        self.0.insert(id.to_owned(), (Instant::now(), 1));
+        Some(String::new())
+    }
+    /// Its HELLO passed (updated since): said in full again.
+    fn passed(&mut self, id: &str) {
+        if !self.0.is_empty() {
+            self.0.remove(id);
+        }
+    }
+}
+fn run(engine: &Weak<Engine>, shared: &Mutex<Inbox>, cancel: &AtomicBool, rejected: &mut Rejected) -> Result<()> {
     let mut listener = Native::listen()?;
     {
         let mut inbox = shared.lock().unwrap();
@@ -455,7 +496,9 @@ fn run(engine: &Weak<Engine>, shared: &Mutex<Inbox>, cancel: &AtomicBool) -> Res
             // the old peer is stale, so the new link replaces it. Dropping the new
             // one instead would wedge that DJ until its link changes again.
             let stale = peers.iter().position(|p| p.id == id);
-            note(engine, format!("蓝牙：{id} 连入{}", if stale.is_some() { "（替换已断开的旧连接）" } else { "" }));
+            if !rejected.quiet(&id) {
+                note(engine, format!("蓝牙：{id} 连入{}", if stale.is_some() { "（替换已断开的旧连接）" } else { "" }));
+            }
             if let Some(stale) = stale {
                 peers.remove(stale);
             }
@@ -500,15 +543,22 @@ fn run(engine: &Weak<Engine>, shared: &Mutex<Inbox>, cancel: &AtomicBool) -> Res
                     if changed {
                         route_changed(engine);
                     }
+                    if peers[index].ready {
+                        rejected.passed(&peers[index].id);
+                    }
                     index += 1;
                 }
                 Err(error) => {
                     let peer = peers.remove(index);
-                    note(engine, format!("蓝牙：{} 断开：{error:#}", peer.id));
+                    let message = format!("{error:#}");
+                    let said = if message.contains(MISMATCH) { rejected.mismatch(&peer.id) } else { Some(String::new()) };
+                    if let Some(count) = said {
+                        note(engine, format!("蓝牙：{} 断开：{message}{count}", peer.id));
+                    }
                     let mut inbox = shared.lock().unwrap();
                     if let Some(status) = inbox.peers.get_mut(&peer.id) {
                         status.link.state = "disconnected".into();
-                        status.link.error = format!("{error:#}");
+                        status.link.error = message;
                     }
                     // Still chosen: the same DJ back is granted again (tick).
                     let changed = inbox.selected.as_deref() == Some(&peer.id);

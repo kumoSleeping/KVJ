@@ -141,6 +141,10 @@ impl Capture {
         let own = own_process();
         let ring = Arc::new(Mutex::new(Ring::new(format!("输出设备 · Core Audio Tap · {} · {}{}", source.label, channel_label(&selected),
             if own.is_some() { " · 不含 KVJ 自己的声音" } else { "" }), source.format.mSampleRate as u32)));
+        if own.is_none() {
+            // Said once, as the session log's warning for the first poll's notice.
+            ring.lock().unwrap().notice = Some("未能找到 KVJ 自己的进程对象，捕获可能包含自己的声音".into());
+        }
         let mut capture = Self { tap: 0, aggregate: 0, io: None, state: None, stop: Arc::new(AtomicBool::new(false)), watch: None };
         unsafe {
             let class = AnyClass::get(c"CATapDescription").context("Core Audio Tap 不可用")?;

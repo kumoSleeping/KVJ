@@ -33,6 +33,8 @@ pub struct SoundStream {
     // After a seek: frames before this time are dropped.
     skip_to: Option<f64>,
     ended: bool,
+    /// A read or seek panicked: its state is not trusted again (`ffi`).
+    pub(crate) broken: bool,
 }
 
 impl SoundStream {
@@ -79,6 +81,7 @@ impl SoundStream {
             cursor: 0,
             skip_to: None,
             ended: false,
+            broken: false,
         };
         // Some files only tell their rate in the first decoded packet.
         if sound.rate == 0 {
