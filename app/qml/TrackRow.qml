@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Controls.impl
 import QtQuick.Layouts
+import QtQuick.Shapes
 import KVJ
 
 // One row of the timeline, as an editor's track on a clock of its own: its
@@ -1044,30 +1045,64 @@ Item {
             // strongly, with its word; an empty track takes it whole.
             Row {
                 visible: row.dropOnto
+                z: 50
                 width: lane.width
                 height: lane.height
-                spacing: 4
+                spacing: 6
                 Repeater {
                     model: row.clips.length ? [false, true] : [false]
-                    Rectangle {
+                    Item {
+                        id: half
                         required property bool modelData
                         readonly property bool hot: row.view.dropZone.append === modelData
-                        width: row.clips.length ? (lane.width - 4) / 2 : lane.width
+                        width: row.clips.length ? (lane.width - 6) / 2 : lane.width
                         height: lane.height
-                        radius: Theme.radius
-                        color: Qt.rgba(Theme.selected.r, Theme.selected.g, Theme.selected.b, hot ? 0.92 : 0.55)
-                        border.width: hot ? 2 : 1
-                        border.color: hot ? Theme.text : Theme.line
-                        Text {
-                            x: 10
-                            y: 8
-                            width: parent.width - 20
-                            text: !parent.hot ? (parent.modelData ? "追加" : "替换")
-                                : (!row.clips.length ? "放上：" : parent.modelData ? "追加：" : "替换为：") + row.view.dropTitle
-                            font.pixelSize: Theme.sizeXs
-                            font.weight: parent.hot ? Font.DemiBold : Font.Medium
-                            color: parent.hot ? Theme.text : Theme.muted
-                            elide: Text.ElideRight
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: Theme.radius
+                            color: half.hot ? Qt.rgba(Theme.bg.r, Theme.bg.g, Theme.bg.b, 0.9)
+                                            : Qt.rgba(Theme.bg.r, Theme.bg.g, Theme.bg.b, 0.6)
+                        }
+                        // A dashed edge, solid ink on the half it would go to.
+                        Shape {
+                            anchors.fill: parent
+                            preferredRendererType: Shape.CurveRenderer
+                            ShapePath {
+                                strokeColor: half.hot ? Theme.text : Theme.muted
+                                strokeWidth: half.hot ? 2 : 1.5
+                                strokeStyle: ShapePath.DashLine
+                                dashPattern: [5, 4]
+                                fillColor: "transparent"
+                                PathRectangle {
+                                    x: 1
+                                    y: 1
+                                    width: half.width - 2
+                                    height: half.height - 2
+                                    radius: Theme.radius
+                                }
+                            }
+                        }
+                        Column {
+                            anchors.centerIn: parent
+                            width: parent.width - 24
+                            spacing: 4
+                            Text {
+                                width: parent.width
+                                horizontalAlignment: Text.AlignHCenter
+                                text: !row.clips.length ? "放上" : half.modelData ? "追加到后面" : "替换"
+                                font.pixelSize: half.hot ? 22 : 18
+                                font.weight: Font.DemiBold
+                                color: half.hot ? Theme.text : Theme.muted
+                            }
+                            Text {
+                                width: parent.width
+                                visible: half.hot
+                                horizontalAlignment: Text.AlignHCenter
+                                text: row.view.dropTitle
+                                font.pixelSize: Theme.sizeSm
+                                color: Theme.body
+                                elide: Text.ElideMiddle
+                            }
                         }
                     }
                 }

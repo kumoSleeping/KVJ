@@ -22,8 +22,15 @@ Item {
 
     readonly property int count: Live.chain.count
     readonly property int gap: 3
-    // As large as the rail's height allows, between 26 and 40.
-    readonly property int key: Math.max(26, Math.min(40, Math.floor((height - menuKey.height - 8 - gap * count) / Math.max(1, count))))
+    // One size always; a rail taller than its room scrolls with the wheel.
+    readonly property int key: 36
+    property real scroll: 0
+    readonly property real maxScroll: Math.max(0, keys.height - view.height)
+    readonly property bool scrolls: maxScroll > 0
+    onMaxScrollChanged: scroll = Math.min(scroll, maxScroll)
+    function scrollBy(dy) {
+        scroll = Math.max(0, Math.min(maxScroll, scroll - dy))
+    }
 
     implicitWidth: 40
     Layout.preferredWidth: key
@@ -34,173 +41,188 @@ Item {
         return i >= 0 ? Live.effects[i].name : ""
     }
 
-    Column {
-        id: keys
+    Item {
+        id: view
         width: parent.width
-        spacing: rail.gap
-        Repeater {
-            model: Live.chain
-            Rectangle {
-                id: fx
-                required property string key
-                required property string name
-                required property int index
-                readonly property real level: Live.level[key] || 0
-                readonly property bool on: level > 0
-                readonly property bool focused: Live.focused === key
-                width: rail.key
-                height: rail.key
-                radius: Theme.radius - 1
-                color: hot.pressed && !on ? Theme.selected : hot.containsMouse ? Theme.hover : Theme.inset
-                border.width: rail.editing || on ? 1 : 0
-                border.color: on ? Theme.text : Theme.line
-                Behavior on color { ColorAnimation { duration: 90 } }
-
-                Glyph {
-                    anchors.centerIn: parent
-                    size: Math.round(rail.key * 0.62)
-                    kind: fx.key
-                    ink: hot.containsMouse || fx.on ? Theme.text : Theme.body
-                }
-                // The strength: ink filling it from the left, the drawing
-                // turned light where the ink is.
-                Item {
-                    width: Math.round(parent.width * fx.level)
-                    height: parent.height
-                    clip: true
-                    Rectangle {
-                        width: fx.width
-                        height: fx.height
-                        radius: fx.radius
-                        color: hot.pressed ? Theme.body : Theme.text
-                        Glyph {
-                            anchors.centerIn: parent
-                            size: Math.round(rail.key * 0.62)
-                            kind: fx.key
-                            ink: Theme.bg
-                            lit: true
-                        }
-                    }
-                }
-                // Its number key, for the first ten.
-                Text {
-                    x: 3
-                    y: 1
-                    visible: Live.keysOn && fx.index < 10 && rail.key >= 30
-                    text: String((fx.index + 1) % 10)
-                    font.pixelSize: 8
-                    font.features: { "tnum": 1 }
-                    font.weight: fx.focused ? Font.Bold : Font.Normal
-                    color: fx.level > 0.15 ? Theme.faint : Theme.muted
-                }
-                // A strength of its own was kept (see Live.tune).
+        height: parent.height - menuKey.height - 8
+        clip: true
+        Column {
+            id: keys
+            y: -rail.scroll
+            width: parent.width
+            spacing: rail.gap
+            Repeater {
+                model: Live.chain
                 Rectangle {
-                    visible: Live.custom[fx.key] !== undefined
-                    x: parent.width - 6
-                    y: 3
-                    width: 3
-                    height: 3
-                    radius: 1.5
-                    color: fx.level > 0.9 ? Theme.faint : Theme.muted
-                }
-                // The one , and . tune: a ring round it.
-                Rectangle {
-                    visible: fx.focused && !rail.editing
-                    anchors.fill: parent
-                    anchors.margins: -2
-                    radius: parent.radius + 2
-                    color: "transparent"
-                    border.width: 1
-                    border.color: Theme.muted
-                }
+                    id: fx
+                    required property string key
+                    required property string name
+                    required property int index
+                    readonly property real level: Live.level[key] || 0
+                    readonly property bool on: level > 0
+                    readonly property bool focused: Live.focused === key
+                    width: rail.key
+                    height: rail.key
+                    radius: Theme.radius - 1
+                    color: hot.pressed && !on ? Theme.selected : hot.containsMouse ? Theme.hover : Theme.inset
+                    border.width: rail.editing || on ? 1 : 0
+                    border.color: on ? Theme.text : Theme.line
+                    Behavior on color { ColorAnimation { duration: 90 } }
 
-                // Pressed, it switches (on at its best strength, or off);
-                // dragged on up or down over the others, it switches them the
-                // same way, and dragged back, those it leaves go back to how
-                // they were, the pressed one too once the drag has left it
-                // and returns. Dragged sideways instead, it sets the strength:
-                // the whole range over 150 px, finer with Shift.
-                MouseArea {
-                    id: hot
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    preventStealing: true
-                    cursorShape: rail.editing ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor)
-                                              : mode === "tune" ? Qt.SizeHorCursor : Qt.PointingHandCursor
-                    property bool turning: false
-                    property bool swept: false
-                    property var before: ({})
-                    property point from
-                    property real fromLevel: 0
-                    // "" until the drag shows its way, then "sweep" or "tune".
-                    property string mode: ""
-                    onPressed: mouse => {
-                        from = mapToItem(keys, mouse.x, mouse.y)
-                        mode = ""
-                        if (rail.editing)
-                            return
-                        before = Live.level
-                        fromLevel = fx.level
-                        swept = false
-                        turning = !fx.on
-                        Live.switchEffect(fx.key, turning)
+                    Glyph {
+                        anchors.centerIn: parent
+                        size: Math.round(rail.key * 0.62)
+                        kind: fx.key
+                        ink: hot.containsMouse || fx.on ? Theme.text : Theme.body
                     }
-                    onPositionChanged: mouse => {
-                        if (!pressed)
-                            return
-                        const p = mapToItem(keys, mouse.x, mouse.y)
-                        const to = Math.max(0, Math.min(rail.count - 1, Math.floor(p.y / (rail.key + rail.gap))))
-                        if (rail.editing) {
-                            Live.moveEffect(fx.index, to)
-                            return
-                        }
-                        const dx = p.x - from.x, dy = p.y - from.y
-                        if (mode === "" && Math.abs(dx) > 5 && Math.abs(dx) > Math.abs(dy)) {
-                            mode = "tune"
-                            // Not a switch after all: back as it was.
-                            Live.setLevel(fx.key, fromLevel)
-                        } else if (mode === "" && Math.abs(dy) > 5) {
-                            mode = "sweep"
-                        }
-                        if (mode === "tune") {
-                            const range = (mouse.modifiers & Qt.ShiftModifier) ? 600 : 150
-                            Live.focused = fx.key
-                            Live.setLevel(fx.key, Math.max(0, Math.min(1, fromLevel + dx / range)))
-                        } else if (mode === "sweep") {
-                            if (to !== fx.index)
-                                swept = true
-                            const back = swept && to === fx.index
-                            const lo = Math.min(fx.index, to)
-                            const hi = Math.max(fx.index, to)
-                            for (let i = 0; i < rail.count; ++i) {
-                                const k = Live.chain.get(i).key
-                                if (!back && i >= lo && i <= hi)
-                                    Live.switchEffect(k, turning)
-                                else if (Live.amount(k) !== (before[k] || 0))
-                                    Live.setLevel(k, before[k] || 0)
+                    // The strength: ink filling it from the left, the drawing
+                    // turned light where the ink is.
+                    Item {
+                        width: Math.round(parent.width * fx.level)
+                        height: parent.height
+                        clip: true
+                        Rectangle {
+                            width: fx.width
+                            height: fx.height
+                            radius: fx.radius
+                            color: hot.pressed ? Theme.body : Theme.text
+                            Glyph {
+                                anchors.centerIn: parent
+                                size: Math.round(rail.key * 0.62)
+                                kind: fx.key
+                                ink: Theme.bg
+                                lit: true
                             }
                         }
                     }
-                    onReleased: mode = ""
-                    onCanceled: mode = ""
-                    onDoubleClicked: {
-                        if (rail.editing)
-                            return
-                        Live.focused = fx.key
-                        Live.setLevel(fx.key, 0)
-                        Live.switchEffect(fx.key, true)
+                    // Its number key, for the first ten.
+                    Text {
+                        x: 3
+                        y: 1
+                        visible: Live.keysOn && fx.index < 10 && rail.key >= 30
+                        text: String((fx.index + 1) % 10)
+                        font.pixelSize: 8
+                        font.features: { "tnum": 1 }
+                        font.weight: fx.focused ? Font.Bold : Font.Normal
+                        color: fx.level > 0.15 ? Theme.faint : Theme.muted
                     }
-                    onWheel: wheel => {
-                        if (rail.editing)
-                            return
-                        const step = wheel.pixelDelta.x !== 0 || wheel.pixelDelta.y !== 0
-                                   ? (wheel.pixelDelta.y - wheel.pixelDelta.x) / 400 : wheel.angleDelta.y / 120 * 0.02
-                        Live.focused = fx.key
-                        Live.setLevel(fx.key, Math.max(0, Math.min(1, fx.level + step)))
+                    // A strength of its own was kept (see Live.tune).
+                    Rectangle {
+                        visible: Live.custom[fx.key] !== undefined
+                        x: parent.width - 6
+                        y: 3
+                        width: 3
+                        height: 3
+                        radius: 1.5
+                        color: fx.level > 0.9 ? Theme.faint : Theme.muted
                     }
-                    ToolTip.visible: (containsMouse && !rail.editing && mode !== "sweep") || mode === "tune"
-                    ToolTip.delay: mode === "tune" ? 0 : 500
-                    ToolTip.text: fx.name + " · " + (fx.on ? Math.round(fx.level * 100) + "%" : "关")
+                    // The one , and . tune: a ring round it.
+                    Rectangle {
+                        visible: fx.focused && !rail.editing
+                        anchors.fill: parent
+                        anchors.margins: -2
+                        radius: parent.radius + 2
+                        color: "transparent"
+                        border.width: 1
+                        border.color: Theme.muted
+                    }
+
+                    // Pressed, it switches (on at its best strength, or off);
+                    // dragged on up or down over the others, it switches them the
+                    // same way, and dragged back, those it leaves go back to how
+                    // they were, the pressed one too once the drag has left it
+                    // and returns. Dragged sideways instead, it sets the strength:
+                    // the whole range over 150 px, finer with Shift.
+                    MouseArea {
+                        id: hot
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        preventStealing: true
+                        cursorShape: rail.editing ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor)
+                                                  : mode === "tune" ? Qt.SizeHorCursor : Qt.PointingHandCursor
+                        property bool turning: false
+                        property bool swept: false
+                        property var before: ({})
+                        property point from
+                        property real fromLevel: 0
+                        // "" until the drag shows its way, then "sweep" or "tune".
+                        property string mode: ""
+                        onPressed: mouse => {
+                            from = mapToItem(keys, mouse.x, mouse.y)
+                            mode = ""
+                            if (rail.editing)
+                                return
+                            before = Live.level
+                            fromLevel = fx.level
+                            swept = false
+                            turning = !fx.on
+                            Live.switchEffect(fx.key, turning)
+                        }
+                        onPositionChanged: mouse => {
+                            if (!pressed)
+                                return
+                            const p = mapToItem(keys, mouse.x, mouse.y)
+                            const to = Math.max(0, Math.min(rail.count - 1, Math.floor(p.y / (rail.key + rail.gap))))
+                            if (rail.editing) {
+                                Live.moveEffect(fx.index, to)
+                                return
+                            }
+                            const dx = p.x - from.x, dy = p.y - from.y
+                            if (mode === "" && Math.abs(dx) > 5 && Math.abs(dx) > Math.abs(dy)) {
+                                mode = "tune"
+                                // Not a switch after all: back as it was.
+                                Live.setLevel(fx.key, fromLevel)
+                            } else if (mode === "" && Math.abs(dy) > 5) {
+                                mode = "sweep"
+                            }
+                            if (mode === "tune") {
+                                const range = (mouse.modifiers & Qt.ShiftModifier) ? 600 : 150
+                                Live.focused = fx.key
+                                Live.setLevel(fx.key, Math.max(0, Math.min(1, fromLevel + dx / range)))
+                            } else if (mode === "sweep") {
+                                if (to !== fx.index)
+                                    swept = true
+                                const back = swept && to === fx.index
+                                const lo = Math.min(fx.index, to)
+                                const hi = Math.max(fx.index, to)
+                                for (let i = 0; i < rail.count; ++i) {
+                                    const k = Live.chain.get(i).key
+                                    if (!back && i >= lo && i <= hi)
+                                        Live.switchEffect(k, turning)
+                                    else if (Live.amount(k) !== (before[k] || 0))
+                                        Live.setLevel(k, before[k] || 0)
+                                }
+                            }
+                        }
+                        onReleased: mode = ""
+                        onCanceled: mode = ""
+                        onDoubleClicked: {
+                            if (rail.editing)
+                                return
+                            Live.focused = fx.key
+                            Live.setLevel(fx.key, 0)
+                            Live.switchEffect(fx.key, true)
+                        }
+                        // The wheel up and down scrolls a rail that does not fit;
+                        // otherwise (and sideways) it sets the strength.
+                        onWheel: wheel => {
+                            const dy = wheel.pixelDelta.y !== 0 ? wheel.pixelDelta.y : wheel.angleDelta.y / 120 * 36
+                            const dx = wheel.pixelDelta.x !== 0 ? wheel.pixelDelta.x : wheel.angleDelta.x / 120 * 36
+                            if (rail.scrolls && Math.abs(dy) >= Math.abs(dx)) {
+                                rail.scrollBy(dy)
+                                return
+                            }
+                            if (rail.editing)
+                                return
+                            const step = wheel.pixelDelta.x !== 0 || wheel.pixelDelta.y !== 0
+                                       ? (wheel.pixelDelta.y - wheel.pixelDelta.x) / 400 : wheel.angleDelta.y / 120 * 0.02
+                            Live.focused = fx.key
+                            Live.setLevel(fx.key, Math.max(0, Math.min(1, fx.level + step)))
+                        }
+                        ToolTip.visible: (containsMouse && !rail.editing && mode !== "sweep") || mode === "tune"
+                        ToolTip.delay: mode === "tune" ? 0 : 500
+                        ToolTip.text: fx.name + " · " + (fx.on ? Math.round(fx.level * 100) + "%" : "关")
+                    }
                 }
             }
         }

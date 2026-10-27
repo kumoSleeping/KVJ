@@ -78,6 +78,10 @@ Column {
     // thread and a watch of its own, and a closed one must hold none.
     Loader {
         active: node.open
+        // Closed, it takes no room: a Loader keeps its last size, but a
+        // Column skips what is not visible. (No height of its own: a Loader
+        // squeezes what it loads into one.)
+        visible: node.open
         width: node.width
         sourceComponent: Column {
             width: node.width
@@ -178,7 +182,7 @@ Column {
                                 ToolTip.visible: containsMouse && !pressed
                                 ToolTip.delay: 900
                                 ToolTip.text: rowBox.video ? "拖到画面 1 或画面 2：左半边替换，右半边追加 · 双击放到空的画面"
-                                                           : "拖到上面的准备，或直接拖进画面贴出 · 双击放进准备"
+                                                           : "拖到上面的预备，或直接拖进画面贴出 · 双击放进预备"
                             }
                         }
                     }

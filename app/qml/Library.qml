@@ -6,10 +6,10 @@ import QtQuick.Layouts
 import KVJ
 
 // The column at the window's left, as wide as the one at its right: above,
-// 准备, what is ready to go on the picture (the sources waiting off it, and
+// 预备, what is ready to go on the picture (the sources waiting off it, and
 // pictures kept for stickers); under a line that can be dragged, the
 // folders on this computer (added with the folder key), with their videos
-// and pictures. Pictures are dragged up into 准备 or straight onto the
+// and pictures. Pictures are dragged up into 预备 or straight onto the
 // picture; videos only onto a track: its left half replaces what is on it,
 // its right half adds after it (Timeline). Rows are chosen as in a file
 // manager (⌘-click, Ctrl elsewhere, adds one; ⇧-click a run in one folder);
@@ -32,7 +32,7 @@ Item {
         return /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(url)
     }
 
-    // 准备's share of the height, the line under it dragged.
+    // 预备's share of the height, the line under it dragged.
     property real split: 0.42
     // The folders added (file URLs), and those opened or closed by hand.
     property var roots: []
@@ -109,7 +109,7 @@ Item {
         app.fileDragBegin(urls, urls.length > 1 ? name + " 等 " + urls.length + " 个" : name, at)
     }
     // A double-click: a video onto the first empty track (else after the
-    // first's), a picture into 准备.
+    // first's), a picture into 预备.
     function use(url) {
         const urls = selected[url] ? chosen : [url]
         const pictures = urls.filter(isImage)
@@ -149,7 +149,7 @@ Item {
 
     implicitWidth: 228
 
-    // —— 准备 ——
+    // —— 预备 ——
     Item {
         id: ready
         width: parent.width
@@ -159,7 +159,7 @@ Item {
             id: readyHead
             width: parent.width
             height: 26
-            Heading { text: "准备" }
+            Heading { text: "预备" }
         }
         Flickable {
             y: readyHead.height + 4
@@ -331,7 +331,7 @@ Item {
                             implicitHeight: 18
                             iconSize: 10
                             iconName: "x"
-                            tip: "从准备里拿掉"
+                            tip: "从预备里拿掉"
                             visible: keptArea.containsMouse || hovered
                             onClicked: lib.composer.forget(kept.modelData.id)
                         }
@@ -391,7 +391,7 @@ Item {
         }
     }
 
-    // —— The folders on this computer ——
+    // —— 媒体库: the folders on this computer ——
     Item {
         y: divider.y + divider.height
         width: parent.width
@@ -403,7 +403,7 @@ Item {
             height: 26
             Heading {
                 Layout.fillWidth: true
-                text: "电脑上"
+                text: "媒体库"
             }
             IconButton {
                 implicitWidth: 26

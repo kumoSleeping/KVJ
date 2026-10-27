@@ -8,7 +8,7 @@ import KVJ
 
 // The board: the one place the picture is seen and made. Every picture
 // source is a layer on it; a source newly there waits off the picture
-// (Switcher.stack), listed in 准备 at the window's left (Library) until it
+// (Switcher.stack), listed in 预备 at the window's left (Library) until it
 // is brought in; cameras are taken in with + 相机 and let go from their
 // layer's menu. Images dragged in are posted as stickers where they are let
 // go on the picture; the effects, the words (文字, beside + 相机) and the
@@ -148,10 +148,10 @@ ColumnLayout {
         }
     }
 
-    // The sources off the picture, waiting in 准备 (Library): { source, index }.
+    // The sources off the picture, waiting in 预备 (Library): { source, index }.
     readonly property var waiting: slots.map((s, i) => ({ source: s.source, index: i }))
                                         .filter(o => !Switcher.inPicture(slots[o.index]))
-    // A layer dragged from 准备: its source, and the pointer (composer
+    // A layer dragged from 预备: its source, and the pointer (composer
     // coordinates); dropLayer() lands it where the pointer is on the picture.
     property string layerCarried: ""
     property point layerAt
@@ -165,7 +165,7 @@ ColumnLayout {
             placeAt(i, p.x / screen.width, p.y / screen.height)
     }
     // Layer `i` onto the picture centred at (cx, cy) (picture shares), a
-    // quarter wide in its own shape, chosen and on top: dropped from 准备.
+    // quarter wide in its own shape, chosen and on top: dropped from 预备.
     function placeAt(i, cx, cy) {
         if (i < 0 || i >= slots.length)
             return
@@ -406,9 +406,9 @@ ColumnLayout {
         color: Theme.bg
         clip: true
 
-        // The picture, centred across the board with a small margin at the
-        // top (`room`), enough to reach a split line's point on its edge,
-        // and under it the strip where the chosen layer's keys show. The keys that put it on the air are on the timeline's top
+        // The picture, in the middle of the board with a small margin round
+        // it (`room`), enough to reach a split line's point on its edge, and
+        // right under it the strip where the chosen layer's keys show. The keys that put it on the air are on the timeline's top
         // line (keysHost). Zoomed out, it shrinks about the middle of the
         // room it fills at full size.
         Rectangle {
@@ -418,15 +418,17 @@ ColumnLayout {
             readonly property real toolsRoom: 72
             readonly property real fitWidth: Math.max(1, Math.min(box.width - 2 * room, (box.height - room - toolsRoom) * composer.aspect))
             readonly property real fitHeight: fitWidth / Math.max(0.2, composer.aspect)
-            // Where it starts at full size: centred across the board.
+            // Where it is at full size: in the middle of the board above the
+            // keys' strip, both ways.
             readonly property real fitX: (box.width - fitWidth) / 2
+            readonly property real fitY: room + (box.height - room - toolsRoom - fitHeight) / 2
             width: fitWidth * composer.zoom
             height: width / Math.max(0.2, composer.aspect)
             x: (box.width - width) / 2
-            y: room + fitHeight * (1 - composer.zoom) / 2
+            y: fitY + fitHeight * (1 - composer.zoom) / 2
             color: "black"
         }
-        // A layer being dragged in from 准备 (Library), as large as it will
+        // A layer being dragged in from 预备 (Library), as large as it will
         // land, while the pointer is over the board.
         Rectangle {
             readonly property point at: box.mapFromItem(composer, composer.layerAt.x, composer.layerAt.y)
@@ -864,7 +866,7 @@ ColumnLayout {
                             return { mode: "bend", line: k, piece: o.piece }
                     }
                 }
-                // Only what is on the picture: those off it wait in 准备.
+                // Only what is on the picture: those off it wait in 预备.
                 const order = composer.slots.map((s, i) => i).filter(i => Switcher.inPicture(composer.slots[i]))
                                             .sort((a, b) => (composer.slots[b].z - composer.slots[a].z) || (b - a))
                 for (const i of order) {
@@ -1463,7 +1465,8 @@ ColumnLayout {
             width: toolColumn.implicitWidth + 12
             height: toolColumn.implicitHeight + 8
             x: Math.max(4, Math.min(box.width - width - 4, screen.fitX + screen.fitWidth / 2 - width / 2))
-            y: box.height - height - 6
+            // Right under the picture as it is at full size.
+            y: screen.fitY + screen.fitHeight + 8
             // A soft shadow, in layers that fade outwards.
             Repeater {
                 model: 4

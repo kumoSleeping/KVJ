@@ -9,7 +9,7 @@ import KVJ
 // (未监听 red; 监听中 / 跟随中 green); following's own small picture
 // (FollowMonitor, its 16:9 room always kept, black until it finds); what
 // it found (the title, or the phase) and how fast it hears the music; the
-// input's level; 监听, 跟随 / 暂停 (the ink key), 跳至此处 (the
+// input's level; 监听, 跟随 / 暂停, 跳至此处 (the
 // crosshair) and 画面偏移 (dragged or wheeled); the input with its channels (a
 // device with more than two lists each pair), 现场模式, the Bluetooth DJs (a
 // key that shows while receiving or while one asks to pair) and 刷新; at the
@@ -110,8 +110,14 @@ Card {
     }
 
     implicitWidth: 228
-    // One block, as tall as what it holds.
+    // One block, as tall as what it holds; `compact` (set by the host when
+    // the column is short of room) folds what is under the keys into ⋯.
     implicitHeight: column.implicitHeight
+    property bool compact: false
+    // How tall it is unfolded, folded or not (from its parts, so that
+    // folding does not change it).
+    readonly property real fullHeight: headRow.implicitHeight + monitorBox.full + keysRow.implicitHeight
+                                       + details.implicitHeight + 3 * column.spacing
 
     Settings {
         category: "follow"
@@ -130,6 +136,7 @@ Card {
         // Its name; listening or not, at the corner: green while it listens,
         // red while not.
         RowLayout {
+            id: headRow
             Layout.fillWidth: true
             spacing: 6
             Heading {
@@ -143,63 +150,15 @@ Card {
             }
         }
 
-        // Which track it listens to, while there are two.
-        // Which track it listens to: a segmented plate, the one chosen raised.
-        RowLayout {
-            visible: (root.tracks || []).length > 1
-            Layout.fillWidth: true
-            spacing: 8
-            Caption { text: "监听" }
-            Rectangle {
-                Layout.fillWidth: true
-                implicitHeight: 28
-                radius: Theme.radius
-                color: Theme.inset
-                Row {
-                    id: trackKeys
-                    anchors.fill: parent
-                    anchors.margins: 2
-                    spacing: 2
-                    Repeater {
-                        model: root.tracks
-                        TextButton {
-                            required property int modelData
-                            readonly property bool on: root.followTrack === modelData
-                            readonly property bool heard: root.audioTracks.indexOf(modelData) >= 0
-                            width: (trackKeys.width - trackKeys.spacing * ((root.tracks || []).length - 1)) / Math.max(1, (root.tracks || []).length)
-                            height: 24
-                            leftPadding: 6
-                            rightPadding: 6
-                            background: Rectangle {
-                                radius: Theme.radius - 1
-                                color: parent.on ? Theme.raised : parent.hovered && parent.enabled ? Theme.hover : "transparent"
-                            }
-                            font.weight: on ? Font.DemiBold : Font.Medium
-                            text: root.trackName(modelData)
-                            enabled: on || (!root.running && heard)
-                            onClicked: root.followTrack = modelData
-                            ToolTip.visible: hovered
-                            ToolTip.delay: 600
-                            ToolTip.text: root.running && !on ? "先停止监听再换"
-                                          : !heard ? root.trackName(modelData) + " 上还没有带声音的素材"
-                                          : "声学追踪听" + root.trackName(modelData) + "的声音"
-                        }
-                    }
-                }
-            }
-        }
-
         // Following's own picture, where it puts the music: 16:9 at the
-        // card's width, black until following has found the music; the one
-        // thing that gives way (smaller, centred) when the column is short.
+        // card's width, black until following has found the music; its
+        // room always kept.
         Item {
             id: monitorBox
             readonly property real full: width * 9 / 16 + 3
             Layout.fillWidth: true
-            Layout.fillHeight: true
             Layout.preferredHeight: full
-            Layout.maximumHeight: full
-            Layout.minimumHeight: 40
+            Layout.minimumHeight: full
             Rectangle {
                 width: parent.width
                 height: parent.height - 3
@@ -304,6 +263,7 @@ Card {
 
         // Listen, follow or pause, go there once; the picture's offset.
         RowLayout {
+            id: keysRow
             Layout.fillWidth: true
             spacing: 2
             TextButton {
@@ -318,12 +278,11 @@ Card {
                 enabled: root.following || root.canStart
                 onClicked: root.following ? Engine.stop() : root.app.listen()
             }
-            // The one ink key: follow, or pause following.
+            // Follow, or pause following: a key like 监听.
             TextButton {
                 implicitHeight: 28
                 leftPadding: 8
                 rightPadding: 10
-                primary: true
                 iconName: root.app && root.app.aiLeads ? "pause" : "play"
                 text: root.app && root.app.aiLeads ? "暂停" : "跟随"
                 widest: "跟随"
@@ -348,61 +307,93 @@ Card {
                 onClicked: root.app.jumpToMatch()
             }
             Item { Layout.fillWidth: true }
-            // 画面偏移: dragged sideways or wheeled in 10 ms steps,
-            // double-clicked back to 0.
-            Item {
-                implicitWidth: offsetRow.implicitWidth + 8
-                implicitHeight: 24
-                Rectangle {
-                    anchors.fill: parent
-                    radius: Theme.radius - 2
-                    color: offsetArea.pressed ? Theme.selected : offsetArea.containsMouse ? Theme.hover : "transparent"
-                }
+            // Folded (the column short of room): the rest in a popover.
+            IconButton {
+                id: moreKey
+                visible: root.compact
+                implicitWidth: 28
+                implicitHeight: 28
+                iconName: "ellipsis"
+                active: more.visible
+                tip: "监听哪条、声音输入、对速和跳转监测"
+                onClicked: more.visible ? more.close() : more.open()
+            }
+            OffsetKey {
+                owner: root
+                visible: !root.compact
+            }
+        }
+
+
+        // Under it, the rest (details), unless folded into the popover.
+        Item {
+            id: detailsHome
+            visible: !root.compact
+            Layout.fillWidth: true
+            implicitHeight: root.compact ? 0 : details.implicitHeight
+        }
+    }
+
+    // Which track it listens to, the input, the two helpers: under the
+    // keys, or in a popover from ⋯ when the column is short of room.
+    ColumnLayout {
+        id: details
+        parent: root.compact ? moreBody : detailsHome
+        width: parent ? parent.width : 0
+        spacing: 5
+
+        // Folded, 画面偏移 is here instead of beside the keys.
+        RowLayout {
+            visible: root.compact
+            Layout.fillWidth: true
+            Caption {
+                Layout.fillWidth: true
+                text: "画面偏移"
+            }
+            OffsetKey { owner: root }
+        }
+        // Which track it listens to, while there are two: a segmented
+        // plate, the one chosen raised.
+        RowLayout {
+            visible: (root.tracks || []).length > 1
+            Layout.fillWidth: true
+            spacing: 8
+            Caption { text: "监听" }
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: 28
+                radius: Theme.radius
+                color: Theme.inset
                 Row {
-                    id: offsetRow
-                    anchors.centerIn: parent
-                    spacing: 3
-                    Text {
-                        text: "偏移"
-                        font.pixelSize: 11
-                        color: Theme.faint
-                    }
-                    Text {
-                        text: (root.offsetMs > 0 ? "+" : root.offsetMs < 0 ? "−" : "±") + Math.abs(root.offsetMs).toFixed(0) + "ms"
-                        font.pixelSize: 11
-                        font.features: { "tnum": 1 }
-                        color: root.offsetMs === 0 ? Theme.muted : Theme.text
-                    }
-                }
-                MouseArea {
-                    id: offsetArea
+                    id: trackKeys
                     anchors.fill: parent
-                    hoverEnabled: true
-                    preventStealing: true
-                    cursorShape: Qt.SizeHorCursor
-                    property real pressX: 0
-                    property real pressValue: 0
-                    property real spun: 0
-                    onPressed: mouse => {
-                        pressX = mouse.x
-                        pressValue = root.offsetMs
-                    }
-                    onPositionChanged: mouse => {
-                        if (pressed)
-                            root.setOffset(pressValue + Math.round((mouse.x - pressX) / 3) * 10)
-                    }
-                    onDoubleClicked: root.offsetMs = 0
-                    onWheel: wheel => {
-                        spun += wheel.angleDelta.y !== 0 ? wheel.angleDelta.y : wheel.angleDelta.x
-                        const steps = spun > 0 ? Math.floor(spun / 120) : Math.ceil(spun / 120)
-                        if (steps !== 0) {
-                            spun -= steps * 120
-                            root.setOffset(root.offsetMs + steps * 10)
+                    anchors.margins: 2
+                    spacing: 2
+                    Repeater {
+                        model: root.tracks
+                        TextButton {
+                            required property int modelData
+                            readonly property bool on: root.followTrack === modelData
+                            readonly property bool heard: root.audioTracks.indexOf(modelData) >= 0
+                            width: (trackKeys.width - trackKeys.spacing * ((root.tracks || []).length - 1)) / Math.max(1, (root.tracks || []).length)
+                            height: 24
+                            leftPadding: 6
+                            rightPadding: 6
+                            background: Rectangle {
+                                radius: Theme.radius - 1
+                                color: parent.on ? Theme.raised : parent.hovered && parent.enabled ? Theme.hover : "transparent"
+                            }
+                            font.weight: on ? Font.DemiBold : Font.Medium
+                            text: root.trackName(modelData)
+                            enabled: on || (!root.running && heard)
+                            onClicked: root.followTrack = modelData
+                            ToolTip.visible: hovered
+                            ToolTip.delay: 600
+                            ToolTip.text: root.running && !on ? "先停止监听再换"
+                                          : !heard ? root.trackName(modelData) + " 上还没有带声音的素材"
+                                          : "声学追踪听" + root.trackName(modelData) + "的声音"
                         }
                     }
-                    ToolTip.visible: containsMouse && !pressed
-                    ToolTip.delay: 600
-                    ToolTip.text: "画面偏移：跟随的画面比音乐早（−）或晚（+）多少\n左右拖动或滚轮调，每格 10 ms；双击归零"
                 }
             }
         }
@@ -464,6 +455,89 @@ Card {
             onTempoReset: root.app.resetTempo()
             view: root.view
             match: root.match
+        }
+    }
+    Popup {
+        id: more
+        parent: moreKey
+        x: moreKey.width - width
+        y: moreKey.height + 6
+        width: root.width + 24
+        padding: 12
+        margins: 8
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+        background: Rectangle {
+            radius: Theme.radiusLg
+            color: Theme.raised
+            border.width: 1
+            border.color: Theme.line
+        }
+        contentItem: Item {
+            id: moreBody
+            implicitWidth: root.width
+            implicitHeight: details.implicitHeight
+        }
+    }
+    onCompactChanged: if (!compact) more.close()
+
+    // 画面偏移: dragged sideways or wheeled in 10 ms steps,
+    // double-clicked back to 0.
+    component OffsetKey: Item {
+        id: offsetKey
+        // (An inline component does not see this file's ids.)
+        property var owner
+        implicitWidth: offsetRow.implicitWidth + 8
+        implicitHeight: 24
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.radius - 2
+            color: offsetArea.pressed ? Theme.selected : offsetArea.containsMouse ? Theme.hover : "transparent"
+        }
+        Row {
+            id: offsetRow
+            anchors.centerIn: parent
+            spacing: 3
+            Text {
+                text: "偏移"
+                font.pixelSize: 11
+                color: Theme.faint
+            }
+            Text {
+                text: (offsetKey.owner.offsetMs > 0 ? "+" : offsetKey.owner.offsetMs < 0 ? "−" : "±") + Math.abs(offsetKey.owner.offsetMs).toFixed(0) + "ms"
+                font.pixelSize: 11
+                font.features: { "tnum": 1 }
+                color: offsetKey.owner.offsetMs === 0 ? Theme.muted : Theme.text
+            }
+        }
+        MouseArea {
+            id: offsetArea
+            anchors.fill: parent
+            hoverEnabled: true
+            preventStealing: true
+            cursorShape: Qt.SizeHorCursor
+            property real pressX: 0
+            property real pressValue: 0
+            property real spun: 0
+            onPressed: mouse => {
+                pressX = mouse.x
+                pressValue = offsetKey.owner.offsetMs
+            }
+            onPositionChanged: mouse => {
+                if (pressed)
+                    offsetKey.owner.setOffset(pressValue + Math.round((mouse.x - pressX) / 3) * 10)
+            }
+            onDoubleClicked: offsetKey.owner.offsetMs = 0
+            onWheel: wheel => {
+                spun += wheel.angleDelta.y !== 0 ? wheel.angleDelta.y : wheel.angleDelta.x
+                const steps = spun > 0 ? Math.floor(spun / 120) : Math.ceil(spun / 120)
+                if (steps !== 0) {
+                    spun -= steps * 120
+                    offsetKey.owner.setOffset(offsetKey.owner.offsetMs + steps * 10)
+                }
+            }
+            ToolTip.visible: containsMouse && !pressed
+            ToolTip.delay: 600
+            ToolTip.text: "画面偏移：跟随的画面比音乐早（−）或晚（+）多少\n左右拖动或滚轮调，每格 10 ms；双击归零"
         }
     }
 

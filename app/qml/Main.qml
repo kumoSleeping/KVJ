@@ -479,7 +479,8 @@ ApplicationWindow {
     // second press does; "effect <key> <0–1>" sets an effect, "move <from>
     // <to>" reorders them; "set <no.>" chooses that Set as the sidebar does;
     // "library 0|1" puts the column at the left away or brings it out.
-    // "single 0|1" switches 单轨 on or off; "zoom <0.4–1>" sizes the board's view.
+    // "single 0|1" switches 单轨 on or off; "zoom <0.4–1>" sizes the board's view;
+    // "dragsim X Y | off" shows the track rows as a drag at (X, Y) would.
     function devCommand(line) {
         const w = String(line).trim().split(/\s+/)
         switch (w[0]) {
@@ -520,6 +521,13 @@ ApplicationWindow {
         case "library": app.libraryShown = Number(w[1] || 0) > 0; break
         case "single": app.setSingle(Number(w[1] || 0) > 0); break
         case "zoom": mixer.setZoom(Number(w[1] || 1)); break
+        case "dragsim":
+            timeline.dropTitle = "测试.mp4"
+            timeline.dragWidth = timeline.width
+            timeline.dragX = Number(w[1] || 0)
+            timeline.dragY = Number(w[2] || 0)
+            timeline.dragging = w[1] !== undefined && w[1] !== "off"
+            break
         case "noline": Switcher.setMask(Math.max(0, mixer.selected), { lines: [] }); break
         default: return "unknown"
         }
@@ -1133,6 +1141,7 @@ ApplicationWindow {
 
         // The canvas across the whole width.
         Item {
+            id: canvas
             Layout.fillWidth: true
             Layout.fillHeight: true
 
@@ -1182,6 +1191,7 @@ ApplicationWindow {
                     // —— At the right: what the audience sees, small, over
                     // smart following ——
                     ColumnLayout {
+                        id: rightColumn
                         Layout.preferredWidth: strip.implicitWidth
                         Layout.fillWidth: false
                         Layout.fillHeight: true
@@ -1189,6 +1199,7 @@ ApplicationWindow {
 
                         // 输出预览: projecting or not, at its right.
                         RowLayout {
+                            id: outHead
                             Layout.fillWidth: true
                             spacing: 6
                             Heading {
@@ -1230,12 +1241,27 @@ ApplicationWindow {
                         }
 
                         // —— Smart following: one, on the track chosen in it ——
-                        // Shorter than it wants only when the column is short of room.
+                        // Nothing here is squeezed: short of room, what is
+                        // under 声学追踪's keys folds into its ⋯.
                         FollowStrip {
                             id: strip
                             Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            Layout.maximumHeight: implicitHeight
+                            // Against the room the canvas has (the column itself
+                            // grows with what it holds), after each layout pass.
+                            function refold() {
+                                compact = canvas.height - 2 * Theme.gap < outHead.implicitHeight + rightColumn.width / Math.max(0.2, desk.aspect)
+                                                                          + fullHeight + 2 * rightColumn.spacing
+                            }
+                            onFullHeightChanged: Qt.callLater(refold)
+                            Component.onCompleted: Qt.callLater(refold)
+                            Connections {
+                                target: canvas
+                                function onHeightChanged() { Qt.callLater(strip.refold) }
+                            }
+                            Connections {
+                                target: rightColumn
+                                function onWidthChanged() { Qt.callLater(strip.refold) }
+                            }
                             app: app
                             surface: projection.surface
                             rowHeight: timeline.mainRowHeight
@@ -1308,7 +1334,7 @@ ApplicationWindow {
 
     // Files dragged from the left (Library): this stand-in follows the
     // pointer over the window and carries the drag (internal, keys
-    // "kvj-entry") to the track rows, 准备 and the board. It lives here, not
+    // "kvj-entry") to the track rows, 预备 and the board. It lives here, not
     // in the file's row, which may be made anew while the drag still runs.
     property bool draggingEntries: false
     function entryDragBegin(ids, title, at) {

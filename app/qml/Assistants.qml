@@ -178,8 +178,8 @@ Rectangle {
 }
             }
             IconButton {
-                // Kept in its place while off, so nothing moves when it starts.
-                opacity: root.active ? 1 : 0
+                // Shown while off too (faint), so the row reaches the
+                // column's edge and nothing moves when it starts.
                 enabled: root.active
                 iconName: root.tempoPaused ? "play" : "pause"
                 tip: root.tempoPaused ? "继续对速" : "暂停对速（速度交给播放器）"
@@ -323,8 +323,8 @@ Rectangle {
                 }
             }
             IconButton {
-                // Kept in its place while off, so nothing moves when it starts.
-                opacity: root.active ? 1 : 0
+                // Shown while off too (faint), so the row reaches the
+                // column's edge and nothing moves when it starts.
                 enabled: root.active
                 iconName: root.jumpPaused ? "play" : "pause"
                 tip: root.jumpPaused ? "继续跳转" : "暂停跳转（只跟速度）"
