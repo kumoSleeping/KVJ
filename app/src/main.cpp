@@ -5,6 +5,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -18,8 +19,83 @@
 #include <QQuickWindow>
 #include <QSaveFile>
 #include <QTimer>
+#include <QMutex>
+#include <QMutexLocker>
+
+#ifdef Q_OS_UNIX
+#include <sys/resource.h>
+#endif
 
 namespace {
+
+// Every thread, decoder, camera, open folder and socket is a file descriptor or
+// two, and a thread that cannot make its pipe ends KVJ at once (it did, at the
+// Mac's default ceiling of 256). Ask for the most the system allows, up to
+// 10240 (macOS's OPEN_MAX).
+void raiseFileLimit()
+{
+#ifdef Q_OS_UNIX
+    rlimit limit{};
+    if (getrlimit(RLIMIT_NOFILE, &limit) != 0)
+        return;
+    rlim_t wanted = 10240;
+    if (limit.rlim_max != RLIM_INFINITY && limit.rlim_max < wanted)
+        wanted = limit.rlim_max;
+    if (limit.rlim_cur != RLIM_INFINITY && limit.rlim_cur < wanted) {
+        limit.rlim_cur = wanted;
+        setrlimit(RLIMIT_NOFILE, &limit);
+    }
+#endif
+}
+
+// Qt's own messages (QML errors, the camera's and the sound's notes) go to the
+// data folder's logs as well as to stderr: a Windows build has no console, and
+// what the window said last night is otherwise gone. One file a day,
+// `logs/qt-<date>.log`, the ones older than two weeks removed at start.
+QtMessageHandler stderrHandler = nullptr;
+
+void logToDisk(QtMsgType type, const QMessageLogContext &context, const QString &text)
+{
+    static QMutex mutex;
+    static QFile file;
+    static QString day;
+    static thread_local bool inside = false;
+    if (!inside) {
+        inside = true;
+        QMutexLocker lock(&mutex);
+        const QDateTime now = QDateTime::currentDateTime();
+        const QString today = now.toString(QStringLiteral("yyyy-MM-dd"));
+        if (today != day) {
+            file.close();
+            const QDir dir(Engine::defaultDataDir() + QStringLiteral("/logs"));
+            QDir().mkpath(dir.path());
+            file.setFileName(dir.filePath(QStringLiteral("qt-%1.log").arg(today)));
+            file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+            day = today;
+        }
+        if (file.isOpen()) {
+            const char *level = type == QtDebugMsg ? "debug" : type == QtInfoMsg ? "info"
+                : type == QtWarningMsg ? "warn" : type == QtCriticalMsg ? "error" : "fatal";
+            file.write((now.toString(QStringLiteral("HH:mm:ss.zzz ")) + QLatin1String(level) + QLatin1Char(' ')
+                        + text + QLatin1Char('\n')).toUtf8());
+            file.flush();
+        }
+        inside = false;
+    }
+    if (stderrHandler)
+        stderrHandler(type, context, text);
+}
+
+void keepQtLogs()
+{
+    const QDir dir(Engine::defaultDataDir() + QStringLiteral("/logs"));
+    const QDateTime oldest = QDateTime::currentDateTime().addDays(-14);
+    for (const QFileInfo &info : dir.entryInfoList({QStringLiteral("qt-*.log")}, QDir::Files)) {
+        if (info.lastModified() < oldest)
+            QFile::remove(info.filePath());
+    }
+    stderrHandler = qInstallMessageHandler(logToDisk);
+}
 
 bool isTextBox(const QQuickItem *item)
 {
@@ -195,11 +271,13 @@ int main(int argc, char *argv[])
         qputenv("QT_MEDIA_BACKEND", "windows");
 #endif
     }
+    raiseFileLimit();
     QGuiApplication app(argc, argv);
     QGuiApplication::setOrganizationName(QStringLiteral("kumo"));
     QGuiApplication::setApplicationName(QStringLiteral("KVJ"));
     QGuiApplication::setApplicationDisplayName(QStringLiteral("KVJ"));
     QQuickStyle::setStyle(QStringLiteral("Basic"));
+    keepQtLogs();
 
     const QStringList args = app.arguments();
     for (const QString flag : {QStringLiteral("--ble-scan-test"), QStringLiteral("--ble-connect-test"), QStringLiteral("--ble-send-test")}) {
@@ -303,8 +381,12 @@ int main(int argc, char *argv[])
             }
             if (QFile::exists(dir.filePath("snap"))) {
                 QFile::remove(dir.filePath("snap"));
-                if (QQuickWindow *shown = shownWindow())
-                    shown->grabWindow().save(dir.filePath("window.png"));
+                // Written whole: a reader polling for it never gets half a picture.
+                if (QQuickWindow *shown = shownWindow()) {
+                    QSaveFile png(dir.filePath("window.png"));
+                    if (png.open(QIODevice::WriteOnly) && shown->grabWindow().save(&png, "PNG"))
+                        png.commit();
+                }
             }
         });
         tick->start(1000);

@@ -185,8 +185,8 @@ ApplicationWindow {
     // again, once the player has taken the picture over.
     onAiLeadsChanged: if (!aiLeads) Qt.callLater(giveTempoBack)
     onEntriesChanged: {
-        cue()
         Qt.callLater(app.switchAfterReplace)
+        cue()
     }
 
     function takeOver() {
@@ -269,7 +269,8 @@ ApplicationWindow {
     // Something on the screen from the start: the first entry of the main
     // track that is on, paused.
     function cue() {
-        const first = app.mainEntries.find(e => e.enabled !== false)
+        // (On the first entries change the bindings above may not have run yet.)
+        const first = (app.mainEntries || []).find(e => e.enabled !== false)
         if (!transport.entry && first)
             transport.load(first, 0, false)
     }
@@ -523,7 +524,7 @@ ApplicationWindow {
         case "revert": Switcher.revert(); break
         case "library": app.libraryShown = Number(w[1] || 0) > 0; break
         case "single": app.setSingle(Number(w[1] || 0) > 0); break
-        case "zoom": mixer.setZoom(Number(w[1] || 1)); break
+        case "boardzoom": mixer.setZoom(Number(w[1] || 1)); break
         case "dragsim":
             timeline.dropTitle = "测试.mp4"
             timeline.dragWidth = timeline.width

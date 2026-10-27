@@ -354,12 +354,14 @@ void Engine::start(const QString &setId, const QString &device, int channelStart
     }, true);
 }
 
+// Off the window's thread: the engine may be busy opening an input or a tap
+// just then, and the picture must not wait for it.
 void Engine::stop()
 {
     call({{"cmd", "stop"}}, [this](const QJsonValue &ok) {
         m_view = ok.toObject().toVariantMap();
         emit viewChanged();
-    }, false);
+    }, true);
 }
 
 void Engine::scanBluetooth()
