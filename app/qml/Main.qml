@@ -1128,9 +1128,8 @@ ApplicationWindow {
             Layout.fillWidth: true
             inset: app.visibility === Window.FullScreen ? 0 : app.titleInset
             titleHeight: app.visibility === Window.FullScreen ? 0 : app.titleHeight
-            status: [projection.visible ? "投放中" : projection.waiting ? "投放屏已断开，接回后自动恢复" : "",
-                     app.running ? app.phaseText(app.phase) : ""].filter(t => t).join(" · ")
-            live: projection.visible
+            // Projecting or not is told by 输出预览's light, not here.
+            status: app.running ? app.phaseText(app.phase) : ""
             canSend: !app.following
             onSend: app.openSender()
             drawerOpen: app.libraryShown
