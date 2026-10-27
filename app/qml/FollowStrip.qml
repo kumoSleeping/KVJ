@@ -248,8 +248,10 @@ Card {
                         sourceSize: Qt.size(20, 20)
                         color: Theme.faint
                     }
+                    // Only where there is room for it under the ear.
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
+                        visible: monitorBox.height >= 76
                         text: "监听后，这里显示对上的画面"
                         font.pixelSize: Theme.sizeXs
                         color: Theme.faint

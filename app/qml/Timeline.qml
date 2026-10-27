@@ -58,7 +58,7 @@ Rectangle {
     property var tracks: []
     property SourceTextures textures: null
     property int followTrack: 0
-    property int rowHeight: 136
+    property int rowHeight: 172
     readonly property int mainRowHeight: rowHeight
     readonly property int rowGap: 6
 

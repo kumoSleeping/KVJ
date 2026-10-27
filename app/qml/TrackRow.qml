@@ -847,7 +847,7 @@ Item {
             height: parent.height - y
             clip: true
             readonly property int tempoHeight: 14
-            readonly property int waveHeight: Math.round((height - tempoHeight - 1) * 0.42)
+            readonly property int waveHeight: Math.round((height - tempoHeight - 1) * 0.36)
             readonly property int filmHeight: height - tempoHeight - 1 - waveHeight
 
             // Nothing on the track: a faint outline where its entries would lie.
