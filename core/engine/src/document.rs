@@ -521,6 +521,12 @@ mod merge_tests {
 mod tests {
     use super::*;
 
+    /// Test documents name files as `/a.mp4`; on Windows an absolute path
+    /// needs a drive, or validation turns the document away.
+    fn local(raw: &str) -> String {
+        if cfg!(windows) { raw.replace(r#""path":"/"#, r#""path":"C:/"#) } else { raw.to_owned() }
+    }
+
     #[test]
     fn entries_are_on_unless_turned_off() {
         // Documents written before the switch existed load with every entry on.
@@ -541,7 +547,7 @@ mod tests {
         let raw = r#"{"version":1,"revision":3,"sets":[{"id":"s","name":"Set 1","entries":[
             {"id":"a","path":"/a.mp4","title":"a","duration":60,"video":true,"presentation":"video"},
             {"id":"b","path":"/b.mp4","title":"b","duration":60,"video":true,"presentation":"video"}]}]}"#;
-        let mut doc: Document = serde_json::from_str(raw).unwrap();
+        let mut doc: Document = serde_json::from_str(&local(raw)).unwrap();
         assert!(doc.sets[0].entries.iter().all(|e| e.track == 0));
         doc.validate().unwrap();
         doc.edit(Edit::Track { set_id: "s".into(), entry_ids: vec!["b".into()], track: 2 }).unwrap();
@@ -580,7 +586,7 @@ mod tests {
             r#"{"version":1,"revision":1,"sets":[{"id":"s","name":"Set 1","entries":[
             {"id":"a","path":"/a.mp4","title":"a","duration":60,"video":true,"presentation":"video","track":0}]}]}"#,
         ] {
-            fs::write(dir.join("kvj-sets.json"), raw).unwrap();
+            fs::write(dir.join("kvj-sets.json"), local(raw)).unwrap();
             let mut store = Store::open(&dir).unwrap();
             let mut next = store.doc.clone();
             next.edit(Edit::Track { set_id: "s".into(), entry_ids: vec!["a".into()], track: 1 }).unwrap();
@@ -588,8 +594,8 @@ mod tests {
             assert_eq!(saved.revision, 2);
             assert_eq!(Store::open(&dir).unwrap().doc.sets[0].entries[0].track, 1);
         }
-        fs::write(dir.join("kvj-sets.json"), r#"{"version":1,"revision":1,"sets":[{"id":"s","name":"Set 1","entries":[
-            {"id":"a","path":"/a.mp4","title":"a","duration":60,"video":true,"presentation":"video","track":7}]}]}"#).unwrap();
+        fs::write(dir.join("kvj-sets.json"), local(r#"{"version":1,"revision":1,"sets":[{"id":"s","name":"Set 1","entries":[
+            {"id":"a","path":"/a.mp4","title":"a","duration":60,"video":true,"presentation":"video","track":7}]}]}"#)).unwrap();
         assert!(Store::open(&dir).is_err());
         let _ = fs::remove_dir_all(&dir);
     }
