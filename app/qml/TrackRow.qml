@@ -7,7 +7,7 @@ import KVJ
 // One row of the timeline, as an editor's track on a clock of its own: at
 // its right end the header (the source's own picture, which a press chooses
 // on the preview; an ear, lit while following listens to it, pressed to make
-// it do so; ⋯ under the pointer), across the rest the row's play bar, its
+// it do so; ⋯ for its menu), across the rest the row's play bar, its
 // ruler and its lane. The bar
 // drives this track's player: play and pause, where it is, its cursor and the
 // key that plays from it, the whole row at a glance, the speed with − / +
@@ -23,7 +23,8 @@ import KVJ
 // one Enter, 跳至光标处 and the zoom keys act on (its picture sits on a deeper tone);
 // a press or drag on its timeline (the overview, the ruler, the lane) only
 // places this row's cursor: nothing a click does moves a picture. A
-// right click on an entry offers 移出轨道. A camera has no timeline, and an
+// right click on an entry offers 移出轨道, elsewhere on the lane or on the
+// picture the track's menu (移除轨道, also under ⋯). A camera has no timeline, and an
 // empty track's lane is left blank. While entries or files dragged here would
 // land on this track (the Timeline judges where a drag drops), the row lights
 // up and a block after its last entry shows them.
@@ -344,30 +345,38 @@ Item {
             radius: Theme.radius + 2
             color: Theme.selected
         }
+        // The track's menu: ⋯ on its picture, or a right click on the picture
+        // or on an empty part of its lane. Removing a track puts what is on
+        // it back in the library, and the tracks under it move one up; the
+        // only track left is emptied instead.
         PopMenu {
             id: trackMenu
+            readonly property bool alone: row.view.rows.filter(r => r.kind !== "camera").length <= 1
             PopAction {
-                enabled: !!row.player
+                enabled: !!row.player && !row.main
                 text: row.player && row.player.followMain ? "不再跟随画面 1 的速度" : "跟随画面 1 的速度"
                 onTriggered: row.player.followMain = !row.player.followMain
             }
             MenuSeparator {}
             PopAction {
-                // A track with entries is emptied first, by moving them on.
-                enabled: row.entries.length === 0
-                text: row.entries.length === 0 ? "移除轨道" : "移除轨道（先把素材移走）"
-                risky: row.onAir
+                enabled: !row.view.running && (!trackMenu.alone || row.entries.length > 0)
+                text: row.view.running ? "移除轨道（先停止监听）"
+                    : trackMenu.alone ? "清空轨道（素材回到素材库）"
+                    : row.entries.length ? "移除轨道（素材回到素材库）" : "移除轨道"
+                risky: true
                 onTriggered: row.view.removeRow(row.key)
             }
         }
         PopMenu {
             id: cameraMenu
             PopAction {
-                enabled: row.camera || row.entries.length === 0
-                text: row.camera || row.entries.length === 0 ? "移除轨道" : "移除轨道（先把素材移走）"
-                risky: row.onAir
+                text: "移除相机"
+                risky: true
                 onTriggered: row.view.removeRow(row.key)
             }
+        }
+        function openMenu(item, x, y) {
+            (row.camera ? cameraMenu : trackMenu).popup(item, x, y)
         }
 
         // The source's own picture, fitted; on the air an ink edge. Over it
@@ -425,12 +434,15 @@ Item {
             }
             HoverHandler { id: pictureHover }
             MouseArea {
+                id: pictureTap
                 anchors.fill: parent
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
                 cursorShape: Qt.PointingHandCursor
-                onClicked: row.view.pickSource(row.key)
+                onClicked: mouse => mouse.button === Qt.RightButton ? header.openMenu(pictureTap, mouse.x, mouse.y)
+                                                                    : row.view.pickSource(row.key)
                 ToolTip.visible: pictureHover.hovered && !earKey.hovered && !moreKey.hovered
                 ToolTip.delay: 700
-                ToolTip.text: row.name + " · 点一下在合成预览中选中"
+                ToolTip.text: row.name + " · 点一下在画板上选中 · 右键：移除轨道"
             }
             // The ear: which track following listens to.
             Rectangle {
@@ -462,7 +474,6 @@ Item {
             }
             IconButton {
                 id: moreKey
-                visible: pictureHover.hovered || trackMenu.visible || cameraMenu.visible
                 x: parent.width - width - 4
                 y: 4
                 implicitWidth: 22
@@ -470,12 +481,12 @@ Item {
                 iconSize: 13
                 iconName: "ellipsis"
                 icon.color: "#ffffff"
-                tip: row.camera ? "这个相机" : "这条轨道"
+                tip: row.camera ? "这个相机：移除" : "这条轨道：移除、跟随速度"
                 background: Rectangle {
                     radius: 11
                     color: moreKey.hovered ? "#cc000000" : "#8c000000"
                 }
-                onClicked: (row.camera || row.main ? cameraMenu : trackMenu).popup(moreKey, 0, moreKey.height + 2)
+                onClicked: header.openMenu(moreKey, 0, moreKey.height + 2)
             }
         }
     }
@@ -972,7 +983,8 @@ Item {
                 }
             }
             // A press or drag places the cursor, never the picture (Enter or
-            // 跳至 plays from it); a right click on an entry offers 移出轨道.
+            // 跳至 plays from it); a right click on an entry offers 移出轨道,
+            // elsewhere the track's menu.
             // The wheel and a pinch move and zoom this row.
             MouseArea {
                 id: laneArea
@@ -991,6 +1003,8 @@ Item {
                         if (c) {
                             pieceMenu.entryId = c.entry.id
                             pieceMenu.popup()
+                        } else {
+                            header.openMenu(laneArea, mouse.x, mouse.y)
                         }
                         return
                     }

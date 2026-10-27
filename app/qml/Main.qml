@@ -8,8 +8,9 @@ import KVJ
 
 // The operator's one window, a player first: a top bar (in the title bar's row
 // on macOS) with the way into the sender and the light or dark look, and under
-// it the canvas: the live desk (preview and output, words, reactions, stickers,
-// effects) and smart following as cards, the Sets and their entries in a drawer
+// it the canvas: the board (the picture, made and seen in one place, with the
+// gallery of stickers, words and reactions under it), smart following and the
+// effects as cards, the Sets and their entries in a drawer
 // over its left side; across the whole foot the player's timeline. While smart following is on it plays the
 // picture from the music (where, and how fast) and the player's own keys rest;
 // paused or stopped, the player carries on from there. The sender for the DJ's
@@ -430,7 +431,8 @@ ApplicationWindow {
     // words and chooses it; "nudge <±1> <ms>" holds a nudge key that long;
     // "drop" turns the entry on the screen off as the sidebar's confirmed
     // second press does; "effect <key> <0–1>" sets an effect, "move <from>
-    // <to>" reorders them; "set <no.>" chooses that Set as the sidebar does.
+    // <to>" reorders them; "set <no.>" chooses that Set as the sidebar does;
+    // "drawer 0|1" puts the library's drawer away or brings it out.
     function devCommand(line) {
         const w = String(line).trim().split(/\s+/)
         switch (w[0]) {
@@ -468,6 +470,7 @@ ApplicationWindow {
         case "pick": mixer.selected = Number(w[1] || 0); break
         case "fill": mixer.fill(Math.max(0, mixer.selected)); break
         case "revert": Switcher.revert(); break
+        case "drawer": app.setsOpen = Number(w[1] || 0) > 0; break
         case "noline": Switcher.setMask(Math.max(0, mixer.selected), { lines: [] }); break
         default: return "unknown"
         }
@@ -713,11 +716,39 @@ ApplicationWindow {
         if (t)
             app.setAddedTracks(app.addedTracks.concat([t]))
     }
+    // A row taken off the timeline. A camera goes, its layer with it. A track's
+    // entries go back to the library and the tracks under it move one up (画面
+    // 3 becomes 画面 2…), their layers renamed along, so what the mixer shows
+    // stays where it was; the track's own layer goes. The only track left is
+    // emptied instead. Not while following runs (moving tracks is an edit).
     function removeRow(key) {
-        if (key.startsWith("camera:"))
+        if (key.startsWith("camera:")) {
             app.setCameras(app.cameraIds.filter(c => "camera:" + c !== key))
-        else
-            app.setAddedTracks(app.addedTracks.filter(t => "track:" + t !== key))
+            Switcher.rename({ [key]: "" })
+            return
+        }
+        if (!app.editable || !app.currentSet)
+            return
+        const t = Number(key.substring(6))
+        const placed = app.placedOn(t).map(e => e.id)
+        if (placed.length)
+            Engine.enableEntries(app.currentSet.id, placed, false)
+        const shown = [0].concat(app.shownAux)
+        if (shown.length <= 1)
+            return
+        const order = shown.filter(k => k !== t)
+        const moves = order.map((from, to) => ({ from: from, to: to, ids: app.entries.filter(e => (e.track || 0) === from).map(e => e.id) }))
+                           .filter(m => m.from !== m.to)
+        for (const m of moves)
+            if (m.ids.length)
+                Engine.setTrack(app.currentSet.id, m.ids, m.to)
+        app.setAddedTracks(order.map((from, to) => to > 0 && app.addedTracks.indexOf(from) >= 0 ? to : -1).filter(to => to > 0))
+        const names = {}
+        for (let k = 0; k < 4; ++k)
+            names["track:" + k] = order.indexOf(k) >= 0 ? "track:" + order.indexOf(k) : ""
+        Switcher.rename(names)
+        const followed = order.indexOf(strip.followTrack)
+        strip.followTrack = Math.max(0, followed)
     }
     function setAddedTracks(list) {
         app.addedTracks = list
@@ -912,46 +943,35 @@ ApplicationWindow {
                     Layout.fillHeight: true
                     spacing: Theme.gap
 
-                    // The program as the audience sees it, the output, and
-                    // what goes over the picture under them.
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        Layout.preferredWidth: 100
-                        Layout.horizontalStretchFactor: 1
-                        spacing: Theme.gap
-                        Desk {
-                            id: desk
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            Layout.maximumHeight: implicitHeight
-                            source: projection.surface
-                            entry: projection.entry
-                            projection: projection
-                            sound: sound
-                            sourceIds: app.sources.map(s => s.id)
-                        }
-                        LiveBar {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            Layout.minimumHeight: 120
-                            composer: mixer
-                        }
-                    }
-
-                    // —— The preview, a canvas where the next picture is made ——
+                    // —— The board: the picture as the audience sees it and
+                    // where it is made, and under it what goes over it ——
                     Card {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        Layout.preferredWidth: 100
-                        Layout.horizontalStretchFactor: 1
-                        Composer {
-                            id: mixer
+                        ColumnLayout {
                             anchors.fill: parent
                             anchors.margins: Theme.gap
-                            sources: app.sources
-                            textures: desk.textures
-                            aspect: desk.aspect
+                            spacing: 6
+                            Composer {
+                                id: mixer
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                // The drawer's key sits over the board's top left.
+                                headLeft: 30
+                                sources: app.sources
+                                textures: desk.textures
+                                aspect: desk.aspect
+                                entry: projection.entry
+                                output: desk
+                            }
+                            LiveBar {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 104
+                                color: "transparent"
+                                border.width: 0
+                                margin: 0
+                                composer: mixer
+                            }
                         }
                     }
 
@@ -974,6 +994,17 @@ ApplicationWindow {
                         Layout.fillHeight: true
                     }
                 }
+            }
+
+            // The output and the sources' light copies; it takes no room.
+            Desk {
+                id: desk
+                source: projection.surface
+                entry: projection.entry
+                projection: projection
+                sound: sound
+                sourceIds: app.sources.map(s => s.id)
+                monitorWidth: mixer.pictureWidth
             }
 
             // While the drawer is out a press anywhere else on the canvas puts

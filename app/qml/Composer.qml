@@ -7,12 +7,14 @@ import QtQuick.Shapes
 import QtQuick.Window
 import KVJ
 
-// The mixer's preview (PVW), a canvas where the next picture is put together:
-// the projected picture in the middle of a wide stage. Every picture source is
-// a layer on it; a source newly there waits on the stage at the picture's
-// right (Switcher.stack) until it is dragged in. Stickers from the gallery
-// (LiveBar) are posted here too. Nothing here reaches the audience until 投放
-// (Switcher.apply), or at once while 跟随 is on.
+// The board: the one place the picture is seen and made, the projected
+// picture in the middle of a wide stage. Every picture source is a layer on
+// it; a source newly there waits on the stage at the picture's right
+// (Switcher.stack) until it is dragged in. Stickers from the gallery (LiveBar)
+// are posted here too; the effects, the words and the reactions on the air
+// show on it as they do for the audience. In 跟随 every change here is on the
+// air at once; in 投放 the audience keeps what was last put out until 投放
+// (Switcher.apply), and meanwhile a small PGM at the stage's left shows it.
 //
 // A layer is chosen by pressing it, moved by dragging it (its edges snap to
 // the picture's edges and middle and to the other layers'; laid nearly over
@@ -26,12 +28,20 @@ import KVJ
 //   sources:  [{ id, name }] the picture sources (the timeline's rows)
 //   textures: the window's SourceTextures
 //   aspect:   the projected picture's width / height
+//   entry:    the entry the picture shows (an audio-only one shows its title)
+//   output:   the Desk, whose popover the head's output key opens
+//   headLeft: room kept at the head's left (the drawer's key sits there)
 ColumnLayout {
     id: composer
 
     property var sources: []
     property SourceTextures textures: null
     property real aspect: 16 / 9
+    property var entry: null
+    property var output: null
+    property real headLeft: 0
+    // How wide the picture is drawn here: the sources' light copies are made this large.
+    readonly property real pictureWidth: screen.width
 
     // The chosen layer (in Switcher.preview.slots), and on it a line and a point.
     property int selected: -1
@@ -91,9 +101,16 @@ ColumnLayout {
         }
         Qt.callLater(stackSources)
     }
+    // Once a run, those already waiting are parked anew (see Switcher.restack).
+    property bool restacked: false
     function stackSources() {
-        if (Switcher.loaded)
-            Switcher.stack(sourceIds, id => ratio(id), aspect)
+        if (!Switcher.loaded)
+            return
+        Switcher.stack(sourceIds, id => ratio(id), aspect)
+        if (!restacked) {
+            restacked = true
+            Switcher.restack(id => ratio(id), aspect)
+        }
     }
 
     // —— Layer keys ——
@@ -260,17 +277,62 @@ ColumnLayout {
         }
     }
 
-    // —— The head: what it is, and the keys that put it on the air ——
+    // —— The head: the mode, and the keys that put it on the air ——
     RowLayout {
         Layout.fillWidth: true
+        Layout.leftMargin: composer.headLeft
         spacing: 8
         Heading {
-            text: "合成预览"
+            text: "主画面"
+        }
+        // 跟随 or 投放, a segmented key: the mode shown in ink on a plate.
+        Rectangle {
+            implicitWidth: modes.implicitWidth + 4
+            implicitHeight: Theme.control
+            radius: Theme.radius
+            color: Theme.inset
+            Row {
+                id: modes
+                anchors.centerIn: parent
+                spacing: 2
+                Repeater {
+                    model: [{ text: "跟随", follow: true, tip: "跟随：在这里的每一下改动，观众立刻看到" },
+                            { text: "投放", follow: false, tip: "投放：观众一直看上一次投放的画面，在这里改好后按「投放」才换" }]
+                    Rectangle {
+                        required property var modelData
+                        readonly property bool on: Switcher.follow === modelData.follow
+                        width: modeText.implicitWidth + 20
+                        height: Theme.control - 4
+                        radius: Theme.radius - 1
+                        color: on ? Theme.raised : modeMouse.containsMouse ? Theme.hover : "transparent"
+                        border.width: on && Theme.dark ? 1 : 0
+                        border.color: Theme.line
+                        Text {
+                            id: modeText
+                            anchors.centerIn: parent
+                            text: parent.modelData.text
+                            font.pixelSize: Theme.sizeSm
+                            font.weight: parent.on ? Font.DemiBold : Font.Medium
+                            color: parent.on ? Theme.text : Theme.muted
+                        }
+                        MouseArea {
+                            id: modeMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Switcher.follow = parent.modelData.follow
+                            ToolTip.visible: containsMouse
+                            ToolTip.delay: 600
+                            ToolTip.text: parent.modelData.tip
+                        }
+                    }
+                }
+            }
         }
         Caption {
-            text: "PVW"
+            visible: Switcher.follow
+            text: "改动实时给观众"
         }
-        Item { Layout.fillWidth: true }
         // Waiting to go on the air.
         Rectangle {
             visible: Switcher.pending && !Switcher.follow
@@ -287,16 +349,17 @@ ColumnLayout {
         }
         IconButton {
             iconName: "undo-2"
-            tip: "还原成观众正在看的"
+            tip: "撤回：画板回到观众正在看的样子"
             visible: !Switcher.follow
             enabled: Switcher.pending
             onClicked: Switcher.revert()
         }
+        Item { Layout.fillWidth: true }
         // The dissolve: on or off, and how long, a click each.
         Toggle {
+            visible: !Switcher.follow
             text: "渐变"
             checked: Switcher.fadeMs > 0
-            enabled: !Switcher.follow
             onToggled: Switcher.fadeMs = checked ? Switcher.fadeLength : 0
         }
         TextButton {
@@ -316,24 +379,40 @@ ColumnLayout {
                 Switcher.fadeMs = next
             }
         }
-        Toggle {
-            text: "跟随"
-            checked: Switcher.follow
-            onToggled: Switcher.follow = checked
+        // The output: where it goes and the key that projects, in a popover;
+        // red while the picture is out.
+        TextButton {
+            id: outputKey
+            readonly property bool out: !!composer.output && !!composer.output.projection && composer.output.projection.visible
+            outlined: true
+            iconName: "monitor"
+            text: out ? "投屏中" : "投屏"
+            leftPadding: 8
+            rightPadding: 10
+            onClicked: composer.output.outputOpen ? null : composer.output.openOutput(outputKey)
             ToolTip.visible: hovered
             ToolTip.delay: 600
-            ToolTip.text: "跟随：在这里的每一下改动，观众立刻看到"
+            ToolTip.text: "投屏：屏幕、清晰度、帧率、全屏、画面声音，打开或收起投屏"
+            icon.color: out ? Theme.danger : contentColor
+            font.weight: out ? Font.DemiBold : Font.Medium
         }
         TextButton {
             primary: true
             iconName: "cast"
             text: "投放"
-            enabled: !Switcher.follow && Switcher.pending
+            visible: !Switcher.follow
+            enabled: Switcher.pending
             onClicked: Switcher.apply()
             ToolTip.visible: hovered
             ToolTip.delay: 600
-            ToolTip.text: Switcher.follow ? "跟随中，改动已经实时给观众" : "把合成预览（画面和贴图）给观众"
+            ToolTip.text: "把画板上的画面和贴图给观众（" + (Qt.platform.os === "osx" ? "⌘" : "Ctrl+") + "回车）"
         }
+    }
+    Shortcut {
+        sequences: ["Ctrl+Return", "Ctrl+Enter"]
+        context: Qt.ApplicationShortcut
+        enabled: !Switcher.follow && Switcher.pending
+        onActivated: Switcher.apply()
     }
 
     // —— The canvas ——
@@ -357,9 +436,15 @@ ColumnLayout {
         // The picture, with a wide stage all round.
         Rectangle {
             id: screen
-            width: Math.max(1, Math.min(box.width * 0.56, box.height * 0.6 * composer.aspect))
+            // Room left and right for the stage (the parked sources at the
+            // right, the PGM at the left); above it only its caption, under
+            // it the tool plate.
+            readonly property real roomTop: 22
+            readonly property real roomFoot: 42
+            width: Math.max(1, Math.min(box.width * 0.6, (box.height - roomTop - roomFoot) * composer.aspect))
             height: width / Math.max(0.2, composer.aspect)
-            anchors.centerIn: parent
+            x: (box.width - width) / 2
+            y: roomTop + Math.max(0, box.height - roomTop - roomFoot - height) / 2
             color: "black"
         }
         Compositor {
@@ -371,6 +456,29 @@ ColumnLayout {
             layout: Switcher.preview
             textures: composer.textures
             operator: true
+        }
+        // The picture itself as the audience will see it: the layers inside
+        // it through the effects, with the words and reactions on the air.
+        // (The stickers waiting here are drawn over it, with their handles.)
+        Stage {
+            x: screen.x
+            y: screen.y
+            width: screen.width
+            height: screen.height
+            lite: true
+            entry: composer.entry
+            showStickers: false
+            Rectangle {
+                anchors.fill: parent
+                color: "black"
+            }
+            Compositor {
+                anchors.fill: parent
+                clip: true
+                layout: Switcher.preview
+                textures: composer.textures
+                operator: true
+            }
         }
         // The stage veiled, so what lies there reads as off the picture.
         Repeater {
@@ -401,9 +509,64 @@ ColumnLayout {
         Text {
             x: screen.x
             y: screen.y - height - 3
-            text: Switcher.follow ? "跟随中 · 观众实时看到" : "投放后观众看到这里"
+            text: Switcher.follow ? "跟随中 · 观众实时看到" : Switcher.pending ? "投放后观众看到这里" : "观众正在看的画面"
             font.pixelSize: Theme.sizeXs
             color: Switcher.follow ? Theme.text : Theme.faint
+        }
+
+        // What the audience sees now, while the board holds changes not yet
+        // put out (投放): small, on the stage at the picture's left, where no
+        // source is parked. It only shows; presses go through to the stage.
+        Item {
+            id: onAir
+            readonly property real room: screen.x - 20
+            visible: Switcher.pending && !Switcher.follow && room >= 90
+            x: 10
+            y: Math.max(26, screen.y)
+            width: Math.min(room, 300)
+            height: width / Math.max(0.2, composer.aspect)
+            z: 7
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: -2
+                radius: 4
+                color: Theme.raised
+                border.width: 1
+                border.color: Theme.line
+            }
+            Rectangle {
+                anchors.fill: parent
+                color: "black"
+                clip: true
+                Stage {
+                    id: onAirStage
+                    anchors.fill: parent
+                    lite: true
+                    entry: composer.entry
+                    Program {
+                        anchors.fill: parent
+                        now: onAirStage.now
+                        textures: composer.textures
+                        operator: true
+                    }
+                }
+            }
+            Rectangle {
+                x: 4
+                y: 4
+                width: onAirTag.implicitWidth + 10
+                height: 16
+                radius: 4
+                color: composer.output && composer.output.projection && composer.output.projection.visible ? Theme.danger : "#8c000000"
+                Text {
+                    id: onAirTag
+                    anchors.centerIn: parent
+                    text: "PGM · 观众正在看"
+                    font.pixelSize: 9
+                    font.weight: Font.DemiBold
+                    color: "white"
+                }
+            }
         }
 
         // Presses, drags and the wheel on layers and lines.
@@ -937,17 +1100,18 @@ ColumnLayout {
 
         // The hint for what is chosen, at the canvas's foot.
         Text {
-            anchors.left: parent.left
-            anchors.bottom: parent.bottom
-            anchors.margins: 8
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 7
             z: 7
+            horizontalAlignment: Text.AlignRight
             text: composer.chosenLine ? "拖点改形 · 按住线拉出新点 · Shift 或「直线」拉直 · 右键更多"
                 : composer.slot ? "拖动摆放 · 角点等比缩放（Shift 自由） · 双击铺满 · 右键更多"
                 : "所有画面都在右侧画外，拖进中间摆放"
             font.pixelSize: Theme.sizeXs
             color: Theme.faint
-            elide: Text.ElideRight
-            width: parent.width - 16
+            elide: Text.ElideLeft
+            width: Math.max(0, parent.width - 260)
         }
 
         // Images from elsewhere dropped on the canvas: into the gallery and posted.
@@ -1025,125 +1189,156 @@ ColumnLayout {
                 }
             }
         }
-    }
 
-    // —— The layers, and keys for the chosen one ——
-    RowLayout {
-        Layout.fillWidth: true
-        spacing: 2
-        // Every layer by name, on the picture in ink, on the stage faint.
-        Flickable {
-            Layout.fillWidth: true
-            Layout.preferredHeight: Theme.control
-            contentWidth: chips.implicitWidth
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            Row {
-                id: chips
+        // The layers by name and the keys for the chosen one, on a plate at
+        // the stage's foot; presses on the plate stay on it.
+        Rectangle {
+            id: tools
+            z: 8
+            // Under the picture and the stage at its left, clear of the
+            // sources parked at its right.
+            anchors.left: parent.left
+            anchors.bottom: parent.bottom
+            anchors.margins: 4
+            width: Math.min(parent.width - 8, Math.max(screen.x + screen.width - 4, 660))
+            height: toolColumn.implicitHeight + 4
+            radius: Theme.radius
+            color: Theme.raised
+            border.width: Theme.dark ? 1 : 0
+            border.color: Theme.line
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.AllButtons
+                onWheel: wheel => wheel.accepted = true
+            }
+            ColumnLayout {
+                id: toolColumn
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: 4
+                anchors.rightMargin: 4
                 spacing: 2
-                height: parent.height
-                Repeater {
-                    model: composer.slots.length
-                    TextButton {
-                        required property int index
-                        readonly property var s: composer.slots[index]
-                        readonly property bool shown: Switcher.inPicture(s)
-                        leftPadding: 8
-                        rightPadding: 8
-                        flat: index !== composer.selected
-                        text: composer.sourceName(s.source)
-                        font.weight: index === composer.selected ? Font.DemiBold : Font.Medium
-                        opacity: shown ? 1 : 0.55
-                        onClicked: composer.selected = index
-                        ToolTip.visible: hovered
-                        ToolTip.delay: 600
-                        ToolTip.text: shown ? "在画面里" : "在画外，观众看不到"
+                // —— The layers, and keys for the chosen one ——
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    // Every layer by name, on the picture in ink, on the stage faint.
+                    Flickable {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Theme.control
+                        contentWidth: chips.implicitWidth
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        Row {
+                            id: chips
+                            spacing: 2
+                            height: parent.height
+                            Repeater {
+                                model: composer.slots.length
+                                TextButton {
+                                    required property int index
+                                    readonly property var s: composer.slots[index]
+                                    readonly property bool shown: Switcher.inPicture(s)
+                                    leftPadding: 8
+                                    rightPadding: 8
+                                    flat: index !== composer.selected
+                                    text: composer.sourceName(s.source)
+                                    font.weight: index === composer.selected ? Font.DemiBold : Font.Medium
+                                    opacity: shown ? 1 : 0.55
+                                    onClicked: composer.selected = index
+                                    ToolTip.visible: hovered
+                                    ToolTip.delay: 600
+                                    ToolTip.text: shown ? "在画面里" : "在画外，观众看不到"
+                                }
+                            }
+                        }
+                    }
+                    // Small keys, a word each in its tip.
+                    Repeater {
+                        model: [
+                            { icon: "maximize", tip: "铺满画面（双击画面也可）", act: () => composer.fill(composer.selected) },
+                            { icon: "proportions", tip: "恢复画面本身的比例", act: () => composer.trueShape(composer.selected) },
+                            { icon: "fit-contain", tip: "完整显示（留边）", fit: "contain", act: () => Switcher.updateSlot(composer.selected, { fit: "contain" }) },
+                            { icon: "crop", tip: "裁切填满", fit: "cover", act: () => Switcher.updateSlot(composer.selected, { fit: "cover" }) },
+                            { sep: true },
+                            { icon: "square-sharp", tip: "直角", shape: "rect", act: () => Switcher.setMask(composer.selected, { shape: "rect" }) },
+                            { icon: "square-round", tip: "圆角", shape: "round", act: () => Switcher.setMask(composer.selected, { shape: "round" }) },
+                            { icon: "circle", tip: "圆形", shape: "circle", act: () => Switcher.setMask(composer.selected, { shape: "circle" }) },
+                            { sep: true },
+                            { icon: "spline", tip: "加分割线：上面遮住、下面露出，中间渐变", act: () => composer.addLine() },
+                            { icon: "polyline", tip: "直线拉点（同按住 Shift）", toggle: true, act: () => composer.straight = !composer.straight },
+                            { sep: true },
+                            { icon: "arrow-up-to-line", tip: "置顶", act: () => Switcher.raiseSlot(composer.selected) },
+                            { icon: "arrow-down-to-line", tip: "置底", act: () => Switcher.lowerSlot(composer.selected) },
+                            { icon: "arrow-right-to-line", tip: "移到画外（Delete）", act: () => composer.park(composer.selected) }
+                        ]
+                        Item {
+                            id: key
+                            required property var modelData
+                            implicitWidth: modelData.sep ? 7 : 26
+                            implicitHeight: 26
+                            Rectangle {
+                                visible: !!key.modelData.sep
+                                anchors.centerIn: parent
+                                width: 1
+                                height: 14
+                                color: Theme.line
+                            }
+                            IconButton {
+                                visible: !key.modelData.sep
+                                anchors.fill: parent
+                                iconSize: 14
+                                iconName: key.modelData.icon || ""
+                                tip: key.modelData.tip || ""
+                                enabled: !!composer.slot || !!key.modelData.toggle
+                                active: !!composer.slot && (key.modelData.fit ? composer.slot.fit === key.modelData.fit
+                                                            : key.modelData.shape ? composer.slot.mask.shape === key.modelData.shape : false)
+                                        || (!!key.modelData.toggle && composer.straight)
+                                onClicked: key.modelData.act()
+                            }
+                        }
+                    }
+                }
+                // The chosen layer's round corners or split lines' band, when it has them.
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: !!composer.slot && (composer.slot.mask.shape === "round" || composer.slot.mask.lines.length > 0)
+                    spacing: 8
+                    Caption {
+                        visible: !!composer.slot && composer.slot.mask.shape === "round"
+                        text: "圆角"
+                    }
+                    Seek {
+                        Layout.fillWidth: true
+                        visible: !!composer.slot && composer.slot.mask.shape === "round"
+                        from: 0
+                        to: 0.5
+                        value: composer.slot ? composer.slot.mask.radius : 0
+                        onMoved: Switcher.setMask(composer.selected, { radius: value })
+                    }
+                    Caption {
+                        visible: !!composer.slot && composer.slot.mask.lines.length > 0
+                        text: "渐变"
+                    }
+                    Seek {
+                        Layout.fillWidth: true
+                        visible: !!composer.slot && composer.slot.mask.lines.length > 0
+                        from: 0
+                        to: 0.5
+                        value: composer.slot ? composer.slot.mask.blend : 0
+                        onMoved: Switcher.setMask(composer.selected, { blend: value })
+                    }
+                    Caption { text: "边缘羽化" }
+                    Seek {
+                        Layout.fillWidth: true
+                        from: 0
+                        to: 0.3
+                        value: composer.slot ? composer.slot.mask.feather : 0
+                        onMoved: Switcher.setMask(composer.selected, { feather: value })
                     }
                 }
             }
-        }
-        // Small keys, a word each in its tip.
-        Repeater {
-            model: [
-                { icon: "maximize", tip: "铺满画面（双击画面也可）", act: () => composer.fill(composer.selected) },
-                { icon: "proportions", tip: "恢复画面本身的比例", act: () => composer.trueShape(composer.selected) },
-                { icon: "fit-contain", tip: "完整显示（留边）", fit: "contain", act: () => Switcher.updateSlot(composer.selected, { fit: "contain" }) },
-                { icon: "crop", tip: "裁切填满", fit: "cover", act: () => Switcher.updateSlot(composer.selected, { fit: "cover" }) },
-                { sep: true },
-                { icon: "square-sharp", tip: "直角", shape: "rect", act: () => Switcher.setMask(composer.selected, { shape: "rect" }) },
-                { icon: "square-round", tip: "圆角", shape: "round", act: () => Switcher.setMask(composer.selected, { shape: "round" }) },
-                { icon: "circle", tip: "圆形", shape: "circle", act: () => Switcher.setMask(composer.selected, { shape: "circle" }) },
-                { sep: true },
-                { icon: "spline", tip: "加分割线：上面遮住、下面露出，中间渐变", act: () => composer.addLine() },
-                { icon: "polyline", tip: "直线拉点（同按住 Shift）", toggle: true, act: () => composer.straight = !composer.straight },
-                { sep: true },
-                { icon: "arrow-up-to-line", tip: "置顶", act: () => Switcher.raiseSlot(composer.selected) },
-                { icon: "arrow-down-to-line", tip: "置底", act: () => Switcher.lowerSlot(composer.selected) },
-                { icon: "arrow-right-to-line", tip: "移到画外（Delete）", act: () => composer.park(composer.selected) }
-            ]
-            Item {
-                id: key
-                required property var modelData
-                implicitWidth: modelData.sep ? 7 : 26
-                implicitHeight: 26
-                Rectangle {
-                    visible: !!key.modelData.sep
-                    anchors.centerIn: parent
-                    width: 1
-                    height: 14
-                    color: Theme.line
-                }
-                IconButton {
-                    visible: !key.modelData.sep
-                    anchors.fill: parent
-                    iconSize: 14
-                    iconName: key.modelData.icon || ""
-                    tip: key.modelData.tip || ""
-                    enabled: !!composer.slot || !!key.modelData.toggle
-                    active: !!composer.slot && (key.modelData.fit ? composer.slot.fit === key.modelData.fit
-                                                : key.modelData.shape ? composer.slot.mask.shape === key.modelData.shape : false)
-                            || (!!key.modelData.toggle && composer.straight)
-                    onClicked: key.modelData.act()
-                }
-            }
-        }
-    }
-    // The chosen layer's round corners or split lines' band, when it has them.
-    RowLayout {
-        Layout.fillWidth: true
-        visible: !!composer.slot && (composer.slot.mask.shape === "round" || composer.slot.mask.lines.length > 0)
-        spacing: 8
-        Caption {
-            visible: !!composer.slot && composer.slot.mask.shape === "round"
-            text: "圆角"
-        }
-        Seek {
-            Layout.fillWidth: true
-            visible: !!composer.slot && composer.slot.mask.shape === "round"
-            from: 0
-            to: 0.5
-            value: composer.slot ? composer.slot.mask.radius : 0
-            onMoved: Switcher.setMask(composer.selected, { radius: value })
-        }
-        Caption {
-            visible: !!composer.slot && composer.slot.mask.lines.length > 0
-            text: "渐变"
-        }
-        Seek {
-            Layout.fillWidth: true
-            visible: !!composer.slot && composer.slot.mask.lines.length > 0
-            from: 0
-            to: 0.5
-            value: composer.slot ? composer.slot.mask.blend : 0
-            onMoved: Switcher.setMask(composer.selected, { blend: value })
-        }
-        Caption { text: "边缘羽化" }
-        Seek {
-            Layout.fillWidth: true
-            from: 0
-            to: 0.3
-            value: composer.slot ? composer.slot.mask.feather : 0
-            onMoved: Switcher.setMask(composer.selected, { feather: value })
         }
     }
 

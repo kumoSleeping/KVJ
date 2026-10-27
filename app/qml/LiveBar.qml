@@ -4,7 +4,7 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import KVJ
 
-// What goes over the picture, in one panel under the program monitor, two
+// What goes over the picture, in one panel at the board's foot, two
 // pages sharing it: the sticker gallery (the page it opens on: stickers are
 // what the operator reaches for most), and the words (scrolling, held at the
 // top or the foot, or large in the middle) with the reactions. Each page
@@ -34,11 +34,13 @@ Card {
         property alias wordSize: bar.size
     }
 
+    // Room round the content: none where the bar sits inside another card.
+    property int margin: 8
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 8
-        anchors.leftMargin: Theme.gap
-        anchors.rightMargin: Theme.gap
+        anchors.margins: bar.margin
+        anchors.leftMargin: bar.margin > 0 ? Theme.gap : 0
+        anchors.rightMargin: bar.margin > 0 ? Theme.gap : 0
         spacing: 6
 
         // —— The two pages' keys, and the page's own tools ——
@@ -138,7 +140,7 @@ Card {
                 }
                 IconButton {
                     iconName: "trash"
-                    tip: "撤下合成预览上的全部贴图（投放后观众那边也撤下）"
+                    tip: "撤下画板上的全部贴图（投放后观众那边也撤下）"
                     enabled: Live.staged.count > 0
                     onClicked: {
                         Live.clearStickers()
@@ -267,7 +269,7 @@ Card {
                         onDoubleClicked: bar.composer.postAt(tile.modelData, 0.5, 0.5)
                         ToolTip.visible: containsMouse && !pressed
                         ToolTip.delay: 900
-                        ToolTip.text: "拖到合成预览上贴出 · 双击贴在中间"
+                        ToolTip.text: "拖到画板上贴出 · 双击贴在中间"
                     }
                     // Only while editing, on a plate so it reads over the picture.
                     IconButton {

@@ -229,19 +229,39 @@ QtObject {
         updateSlot(i, { z: bottom })
     }
     // Where the next source waits: down the stage at the picture's right, a
-    // column at a time. `ratio`: its picture's width / height; `aspect`: the
-    // projection's.
+    // column at a time, within the picture's height (the board's stage is
+    // narrow above and below it). `ratio`: its picture's width / height;
+    // `aspect`: the projection's.
     function parking(layout, ratio, aspect) {
-        const w = 0.3
+        const w = 0.24
         const h = w * aspect / Math.max(0.1, ratio)
         const taken = (layout ? layout.slots : []).filter(s => s.x >= 1)
         for (let col = 0; col < 4; ++col) {
-            const x = 1.06 + col * (w + 0.04)
-            for (let y = -0.3; y + h <= 1.3; y += h + 0.05)
+            const x = 1.05 + col * (w + 0.04)
+            for (let y = -0.04; y + h <= 1.08; y += h + 0.04)
                 if (!taken.some(s => s.x < x + w && x < s.x + s.w && s.y < y + h && y < s.y + s.h))
                     return { x: x, y: y, w: w, h: h }
         }
-        return { x: 1.06, y: -0.3, w: w, h: h }
+        return { x: 1.05, y: -0.04, w: w, h: h }
+    }
+    // Every source waiting on the stage at the right parked anew, in the order
+    // they wait there: their places of before may lie where the board no
+    // longer shows. Off the picture, so on the air too.
+    function restack(ratio, aspect) {
+        const pass = layout => {
+            const next = copy(layout)
+            const off = next.slots.filter(s => s.x >= 1).sort((a, b) => (a.x - b.x) || (a.y - b.y))
+            next.slots = next.slots.filter(s => s.x < 1)
+            for (const s of off)
+                next.slots.push(slot(Object.assign({}, s, parking(next, ratio(s.source), aspect)), s.z))
+            return next
+        }
+        const air = pass(program)
+        const next = pass(preview)
+        if (JSON.stringify(air) !== JSON.stringify(program))
+            program = air
+        if (JSON.stringify(next) !== JSON.stringify(preview))
+            preview = next
     }
     // Every source of `ids` not yet in the preview, stacked at its right
     // (`ratio(id)`: its picture's shape). Off the picture it changes nothing
@@ -286,6 +306,24 @@ QtObject {
         const next = copy(preview)
         next.slots.splice(i, 1)
         preview = next
+    }
+
+    // Sources renamed or gone (a track removed, the ones under it moved up):
+    // `names` maps an id to its new one, or to "" when it is gone; ids not in
+    // it stay. On the air too, at once: a source that is gone shows nothing.
+    function rename(names) {
+        const pass = layout => {
+            const next = copy(layout)
+            next.slots = next.slots.filter(s => names[s.source] !== "")
+            for (const s of next.slots)
+                if (names[s.source])
+                    s.source = names[s.source]
+            return next
+        }
+        done.stop()
+        transition = null
+        program = pass(program)
+        preview = pass(preview)
     }
 
     // —— The two layouts ——

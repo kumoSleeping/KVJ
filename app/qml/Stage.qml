@@ -14,6 +14,9 @@ Item {
     default property alias picture: picture.data
     // How each posted sticker is drawn; the operator's preview puts handles on them.
     property Component stickerDelegate: posted
+    // The stickers on the air drawn here; the board draws its own (those it
+    // stages) over it instead.
+    property bool showStickers: true
 
     // One clock for everything that moves, running only while something does.
     property real now: Date.now()
@@ -113,7 +116,7 @@ Item {
         }
     }
     Repeater {
-        model: Live.stickers
+        model: stage.showStickers ? Live.stickers : null
         delegate: stage.stickerDelegate
     }
     Overlay {
