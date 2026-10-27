@@ -151,6 +151,18 @@ Item {
         viewStart = Math.max(0, Math.min(t - x / next, extent - laneWidth / next))
         touch()
     }
+    // The lane shows seconds `left` on, or `a` to `b` (the overview's frame
+    // dragged, or its ends).
+    function moveView(left) {
+        viewStart = Math.max(0, Math.min(left, extent - span))
+        touch()
+    }
+    function setView(a, b) {
+        a = Math.max(0, a)
+        zoom = laneWidth / Math.max(laneWidth / maxScale, Math.min(extent, b) - a)
+        viewStart = a
+        touch()
+    }
     function pan(pixels) {
         viewStart = Math.max(0, Math.min(viewLeft + pixels / pps, extent - span))
         touch()
@@ -624,6 +636,29 @@ Item {
             function timeAt(x) {
                 return Math.max(0, Math.min(1, x / width)) * row.total
             }
+            // The frame round what the lane shows, in the bar's pixels, never
+            // too thin to take hold of.
+            readonly property bool framed: row.zoomed && row.total > 0
+            readonly property real frameW: Math.min(width, Math.max(12, width * row.span / row.extent))
+            readonly property real frameX: Math.max(0, Math.min(width - frameW, width * (row.viewLeft + row.span / 2) / row.extent - frameW / 2))
+            // What a press at `x` takes hold of: the frame ("move"), one of its
+            // ends ("left", "right"), nothing ("near", a band round it) or the
+            // cursor ("mark"). A press on the frame never goes through to the bar.
+            function zoneAt(x) {
+                if (!framed)
+                    return "mark"
+                const a = frameX, b = frameX + frameW
+                const grip = Math.min(6, frameW / 4)
+                if (x >= a + grip && x <= b - grip)
+                    return "move"
+                if (x >= a - 8 && x < a + grip)
+                    return "left"
+                if (x > b - grip && x <= b + 8)
+                    return "right"
+                if (x >= a - 28 && x <= b + 28)
+                    return "near"
+                return "mark"
+            }
             // The whole track: each entry a soft segment, what has played of
             // it a shade deeper (not ink), a gap where one meets the next.
             Item {
@@ -651,16 +686,32 @@ Item {
                     }
                 }
             }
-            // The part the lane shows, while zoomed in: a clear window over it.
+            // The part the lane shows, while zoomed in: a clear window over it
+            // that drags along, its ends (grips) wider or narrower.
             Rectangle {
-                visible: row.zoomed && row.total > 0
-                x: Math.max(0, Math.min(seek.width - width, seek.width * row.viewLeft / row.extent))
-                width: Math.max(10, seek.width * row.span / row.extent)
+                id: frame
+                readonly property string held: seekArea.zone
+                visible: seek.framed
+                x: seek.frameX
+                width: seek.frameW
                 height: parent.height
                 radius: 5
-                color: Theme.dark ? "#22ffffff" : "#14000000"
-                border.width: 1.5
-                border.color: Theme.dark ? "#c3c8d0" : "#55555c"
+                color: Theme.dark ? (held === "move" ? "#38ffffff" : "#22ffffff") : (held === "move" ? "#24000000" : "#14000000")
+                border.width: held === "move" || held === "left" || held === "right" ? 2 : 1.5
+                border.color: held ? Theme.text : (Theme.dark ? "#c3c8d0" : "#55555c")
+                Repeater {
+                    model: ["left", "right"]
+                    Rectangle {
+                        required property string modelData
+                        visible: frame.width >= 24
+                        x: modelData === "left" ? 4 : frame.width - 4 - width
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 2
+                        height: 10
+                        radius: 1
+                        color: frame.held === modelData ? Theme.text : Theme.muted
+                    }
+                }
             }
             // The playhead: an upright capsule.
             Rectangle {
@@ -682,11 +733,11 @@ Item {
                 color: Theme.raised
                 border.width: 2
                 border.color: row.active ? Theme.text : Theme.muted
-                scale: seekArea.pressed ? 1.2 : 1
+                scale: seekArea.pressed && seekArea.held === "mark" ? 1.2 : 1
             }
             // Where a press would put the cursor.
             Rectangle {
-                visible: seekArea.containsMouse && !seekArea.pressed && seekArea.enabled
+                visible: seekArea.hoverZone === "mark" && !seekArea.pressed && seekArea.enabled
                 x: seekArea.mouseX - width / 2
                 anchors.verticalCenter: parent.verticalCenter
                 width: 11
@@ -702,16 +753,44 @@ Item {
                 enabled: row.clips.length > 0
                 hoverEnabled: true
                 preventStealing: true
-                cursorShape: Qt.PointingHandCursor
-                onPressed: mouse => row.markTime(seek.timeAt(mouse.x))
-                onPositionChanged: mouse => {
-                    if (pressed)
+                // What the press took hold of, and where the frame was then.
+                property string held: ""
+                property real grabX: 0
+                property real grabLeft: 0
+                property real grabRight: 0
+                readonly property string hoverZone: containsMouse ? seek.zoneAt(mouseX) : ""
+                readonly property string zone: pressed ? held : hoverZone
+                cursorShape: zone === "move" ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor)
+                             : zone === "left" || zone === "right" ? Qt.SizeHorCursor
+                             : zone === "mark" ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onPressed: mouse => {
+                    held = seek.zoneAt(mouse.x)
+                    grabX = mouse.x
+                    grabLeft = row.viewLeft
+                    grabRight = row.viewLeft + row.span
+                    if (held === "mark")
                         row.markTime(seek.timeAt(mouse.x))
                 }
+                onPositionChanged: mouse => {
+                    if (!pressed)
+                        return
+                    const d = (mouse.x - grabX) / width * row.extent
+                    const least = row.laneWidth / row.maxScale
+                    if (held === "mark")
+                        row.markTime(seek.timeAt(mouse.x))
+                    else if (held === "move")
+                        row.moveView(grabLeft + d)
+                    else if (held === "left")
+                        row.setView(Math.min(grabLeft + d, grabRight - least), grabRight)
+                    else if (held === "right")
+                        row.setView(grabLeft, Math.max(grabRight + d, grabLeft + least))
+                }
+                onReleased: held = ""
+                onCanceled: held = ""
                 onWheel: wheel => row.scroll(wheel, row.laneWidth / 2)
-                ToolTip.visible: containsMouse && !pressed
+                ToolTip.visible: containsMouse && !pressed && hoverZone === "mark"
                 ToolTip.delay: 900
-                ToolTip.text: "按下或拖动放光标；回车或「跳至」从光标处播放"
+                ToolTip.text: "按下或拖动放光标；回车或「跳至」从光标处播放 · 放大后：拖方框移动显示的区间，拖两端改宽窄"
             }
         }
 
