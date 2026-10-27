@@ -13,7 +13,7 @@ import KVJ
 // move the picture.
 Rectangle {
     id: root
-    implicitHeight: column.implicitHeight + 20
+    implicitHeight: column.implicitHeight
     radius: Theme.radiusLg
     color: "transparent"
 
@@ -95,8 +95,7 @@ Rectangle {
     ColumnLayout {
         id: column
         anchors.fill: parent
-        anchors.margins: 10
-        spacing: 6
+        spacing: 2
 
         // —— Tempo ——
         RowLayout {
@@ -105,7 +104,7 @@ Rectangle {
 
             Item {
                 implicitWidth: 28
-                implicitHeight: 28
+                implicitHeight: 24
                 Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     x: 2
@@ -137,7 +136,6 @@ Rectangle {
                 RowLayout {
                     Layout.fillWidth: true
                     Text {
-                        Layout.fillWidth: true
                         text: "对速"
                         font.pixelSize: Theme.sizeSm
                         font.weight: Font.DemiBold
@@ -151,32 +149,33 @@ Rectangle {
                         color: Theme.text
                         MouseArea { anchors.fill: parent; onDoubleClicked: root.tempoReset() }
                     }
-                }
-                Text {
-                    Layout.fillWidth: true
-                    text: {
-                        if (!root.active)
-                            return "未开启"
-                        if (root.quiet)
-                            return "等声音"
-                        if (!root.match)
-                            return "等找到位置"
-                        if (root.tempoPaused)
-                            return "只监听 · " + (root.lost ? "等重新对上" : root.match.rate_confidence < 0.3 ? "按音频估速中"
-                                                  : "听到 " + root.percent(root.match.rate) + " · 把握 " + Math.round(root.match.rate_confidence * 100) + "%")
-                        if (root.musicAway)
-                            return "音乐不在画面这里，速度保持不动"
-                        if (root.lost)
-                            return "保持当前速度，等重新对上"
-                        if (root.match.rate_confidence < 0.3)
-                            return "按音频估速中"
-                        return "跟着音乐调速 · 把握 " + Math.round(root.match.rate_confidence * 100) + "%"
+                    Text {
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignRight
+                        text: {
+                            if (!root.active)
+                                return "未开启"
+                            if (root.quiet)
+                                return "没有声音"
+                            if (!root.match)
+                                return "找位置中"
+                            if (root.tempoPaused)
+                                return "只监听 · " + (root.lost ? "等重新对上" : root.match.rate_confidence < 0.3 ? "按音频估速中"
+                                                      : "听到 " + root.percent(root.match.rate) + " · 把握 " + Math.round(root.match.rate_confidence * 100) + "%")
+                            if (root.musicAway)
+                                return "音乐不在画面这里，速度保持不动"
+                            if (root.lost)
+                                return "保持当前速度，等重新对上"
+                            if (root.match.rate_confidence < 0.3)
+                                return "按音频估速中"
+                            return "跟着音乐调速 · 把握 " + Math.round(root.match.rate_confidence * 100) + "%"
+                        }
+                        font.pixelSize: Theme.sizeXs
+                        font.features: { "tnum": 1 }
+                        color: Theme.muted
+                        elide: Text.ElideRight
                     }
-                    font.pixelSize: Theme.sizeXs
-                    font.features: { "tnum": 1 }
-                    color: Theme.muted
-                    elide: Text.ElideRight
-                }
+}
             }
             IconButton {
                 // Kept in its place while off, so nothing moves when it starts.
@@ -196,7 +195,7 @@ Rectangle {
             Item {
                 id: watch
                 implicitWidth: 28
-                implicitHeight: 28
+                implicitHeight: 24
                 readonly property color tone: root.alert ? Theme.warn : root.working ? Theme.text : Theme.faint
 
                 SequentialAnimation {
@@ -265,45 +264,39 @@ Rectangle {
                 RowLayout {
                     Layout.fillWidth: true
                     Text {
-                        Layout.fillWidth: true
                         text: "跳转监测"
                         font.pixelSize: Theme.sizeSm
                         font.weight: Font.DemiBold
                         color: root.working ? Theme.text : Theme.muted
                     }
                     Text {
-                        text: "阈值 " + (root.jumpMs / 1000).toFixed(1) + " s"
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignRight
+                        text: {
+                            if (!root.active)
+                                return "未开启"
+                            if (root.inputState === "stalled")
+                                return "音频中断"
+                            if (root.inputState === "quiet")
+                                return "没有声音"
+                            if (root.inputState === "waiting")
+                                return "等待音频"
+                            if (!root.match)
+                                return "找位置中"
+                            const only = root.jumpPaused ? "只监听 · " : ""
+                            if (root.lost || root.pressure >= 1)
+                                return only + "正在重新找位置"
+                            if (root.jumped)
+                                return only + (root.jumpPaused ? "听到在 " : root.lock > 1 ? "已跳转到 " : "找到了 ")
+                                       + root.match.entry.title + " " + root.clock(root.match.position)
+                            return only + "偏差 " + root.deviation.toFixed(0) + " ms"
+                        }
                         font.pixelSize: Theme.sizeXs
                         font.features: { "tnum": 1 }
-                        color: Theme.faint
+                        color: root.alert ? Theme.warn : Theme.muted
+                        elide: Text.ElideRight
                     }
-                }
-                Text {
-                    Layout.fillWidth: true
-                    text: {
-                        if (!root.active)
-                            return "未开启"
-                        if (root.inputState === "stalled")
-                            return "音频中断"
-                        if (root.inputState === "quiet")
-                            return "没有声音"
-                        if (root.inputState === "waiting")
-                            return "等待音频"
-                        if (!root.match)
-                            return "听音频，在 Set 里找位置"
-                        const only = root.jumpPaused ? "只监听 · " : ""
-                        if (root.lost || root.pressure >= 1)
-                            return only + "超出阈值 · 正在重新找位置"
-                        if (root.jumped)
-                            return only + (root.jumpPaused ? "听到在 " : root.lock > 1 ? "已跳转到 " : "找到了 ")
-                                   + root.match.entry.title + " " + root.clock(root.match.position)
-                        return only + "偏差 " + root.deviation.toFixed(0) + " ms"
-                    }
-                    font.pixelSize: Theme.sizeXs
-                    font.features: { "tnum": 1 }
-                    color: root.alert ? Theme.warn : Theme.muted
-                    elide: Text.ElideRight
-                }
+}
                 // How near to a jump: the right end is the threshold.
                 Rectangle {
                     Layout.fillWidth: true

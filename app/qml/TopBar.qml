@@ -44,13 +44,6 @@ Rectangle {
         anchors.rightMargin: 8
         spacing: 10
 
-        Text {
-            text: "KVJ"
-            font.pixelSize: Theme.sizeSm
-            font.weight: Font.Bold
-            font.letterSpacing: 0.6
-            color: Theme.text
-        }
         // What is going on: listening, following, projecting.
         Rectangle {
             visible: top.status.length > 0

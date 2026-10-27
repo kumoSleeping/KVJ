@@ -124,14 +124,14 @@ ApplicationWindow {
     property real titleHeight: 0
     property bool titleReachesContent: false
 
-    // The player's keys (keysOn, switched on the timeline): ←/→, A/D or 4/6 on
+    // The player's keys, always on: ←/→, A/D or 4/6 on
     // the number pad, held, play the picture at 0.7 or 1.5 of its speed until
     // let go (never a jump; paused, a press steps a second); ↑/↓, W/S or 8/2
     // change the speed by 1%; Enter plays from the timeline's cursor; − and =
     // zoom the timeline out and in, \ shows the whole Set, as in Premiere.
     // None while words are typed.
     // Space is the board's 投放 (only in 投放 mode, with changes waiting).
-    property bool keysOn: true
+    readonly property bool keysOn: true
     readonly property bool typing: !!activeFocusItem && typeof activeFocusItem.selectedText === "string"
     // They work from the projection window too (it takes the focus when it
     // opens), not while the sender stands in for the player.
@@ -296,7 +296,7 @@ ApplicationWindow {
         transport.toggle()
         app.tick()
     }
-    // A paused track that comes onto the picture (a quick cut, [ / ], ⌘ Enter,
+    // A paused track that comes onto the picture (a quick cut, [ / ], 跳转置顶,
     // 投放, dragged in while following) starts playing. What is on the picture
     // as KVJ starts is only noted.
     property var shownBefore: null
@@ -354,6 +354,17 @@ ApplicationWindow {
     // The picture ahead (direction > 0) or back by playing faster or slower
     // until `letGo` (or for `ms`), instead of a jump.
     function nudge(direction, ms) {
+        // 同步变速: 画面 1 is bent and 画面 2 plays at its speed, bend and
+        // all; paused, both step.
+        if (timeline.tempoLinked) {
+            if (!app.manualSeek || !app.manualTempo || !transport.entry)
+                return
+            transport.nudge(direction, ms || 0)
+            if (!transport.playing && aux1.entry && !aux1.lead)
+                aux1.clock.nudge(direction, ms || 0)
+            app.tick()
+            return
+        }
         if (app.keyPlayer) {
             const p = app.keyPlayer
             if (!p.lead && p.entry)
@@ -506,7 +517,7 @@ ApplicationWindow {
         case "fill": mixer.fill(Math.max(0, mixer.selected)); break
         case "revert": Switcher.revert(); break
         case "drawer": app.setsOpen = Number(w[1] || 0) > 0; break
-        case "panel": if (w[1] === "off") liveBar.open = false; else liveBar.show(Number(w[1] || 0)); break
+        case "panel": liveBar.show(Number(w[1] || 0)); break
         case "noline": Switcher.setMask(Math.max(0, mixer.selected), { lines: [] }); break
         default: return "unknown"
         }
@@ -650,9 +661,10 @@ ApplicationWindow {
         track: 1
         entries: app.auxEntries.filter(e => (e.track || 0) === 1)
         lead: app.aiPicture && app.followTrack === 1 ? { match: app.match, offsetMs: strip.offsetMs } : null
-        mainRate: app.shownTempo
+        // Linked (同步变速), 画面 1's speed as played, a held bend included.
+        mainRate: timeline.tempoLinked ? app.shownSpeed : app.shownTempo
     }
-    // 两轨同步变速 on: 画面 2 at 画面 1's speed exactly; off: it keeps the
+    // 同步变速 on: 画面 2 at 画面 1's speed exactly; off: it keeps the
     // speed it had, on its own again.
     Connections {
         target: timeline
@@ -822,7 +834,6 @@ ApplicationWindow {
         category: "player"
         property alias fade: app.fadeOn
         property alias fadeMs: app.fadeMs
-        property alias keys: app.keysOn
         property alias loop: app.loopOn
     }
     Shortcut {
@@ -883,13 +894,6 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: app.keysLive && timeline.canJump
         onActivated: timeline.jump()
-    }
-    // ⌘ Enter (Ctrl on Windows): that track put on the air, then the jump.
-    Shortcut {
-        sequences: ["Ctrl+Return", "Ctrl+Enter"]
-        context: Qt.ApplicationShortcut
-        enabled: app.keysLive && timeline.canJump
-        onActivated: timeline.takeAndJump()
     }
     Shortcut {
         sequences: ["-", "Num+-"]
@@ -1020,7 +1024,6 @@ ApplicationWindow {
                             entry: projection.entry
                             output: desk
                             cameraIds: app.cameraIds
-                            cover: liveBar.shown
                             onAddCamera: id => app.addCamera(id)
                             onRemoveCamera: key => app.removeCamera(key)
                         }

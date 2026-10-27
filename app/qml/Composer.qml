@@ -44,9 +44,6 @@ ColumnLayout {
     property var entry: null
     property var output: null
     property var cameraIds: []
-    // How much of the board's right side a panel lies over: the keys under
-    // the picture and the hint stay clear of it.
-    property real cover: 0
     signal addCamera(string id)
     signal removeCamera(string key)
     // How wide the picture is drawn here: the sources' light copies are made this large.
@@ -462,7 +459,7 @@ ColumnLayout {
             z: 8
             x: screen.x
             y: screen.y + screen.height + screen.room
-            width: Math.min(screen.width, box.width - x - composer.cover - 8)
+            width: Math.min(screen.width, box.width - x - 8)
             spacing: 8
             // 跟随 or 投放, a segmented key: the mode shown in ink on a plate.
             Rectangle {
@@ -1194,24 +1191,6 @@ ColumnLayout {
             }
         }
 
-        // The hint for what is chosen, beside the keys under the picture.
-        Text {
-            x: Math.max(screen.x + screen.width, airRow.x + airRow.width) + 14
-            y: airRow.y
-            width: Math.max(0, box.width - x - composer.cover - 10)
-            height: airRow.height
-            z: 7
-            verticalAlignment: Text.AlignVCenter
-            text: composer.chosenLine ? "拖两端或中间点改形 · 在直线上按住拉出中间点（只有一个） · Delete 删除 · 右键更多"
-                : composer.slot ? "拖动摆放 · 角点等比缩放（Shift 自由） · 双击铺满 · 右键更多"
-                : Switcher.follow ? "跟随：改动实时给观众 · 右边是画外（观众看不到），拖进画面里摆放"
-                : "右边是画外（观众看不到），拖进画面里摆放"
-            font.pixelSize: Theme.sizeXs
-            color: Theme.faint
-            wrapMode: Text.Wrap
-            maximumLineCount: 2
-            elide: Text.ElideRight
-        }
 
         // Images from elsewhere dropped on the canvas: into the gallery and posted.
         DropArea {
@@ -1338,7 +1317,7 @@ ColumnLayout {
             visible: !!composer.slot
             width: toolColumn.implicitWidth + 12
             height: toolColumn.implicitHeight + 8
-            x: Math.max(4, Math.min(box.width - composer.cover - width - 4, at.x + at.width / 2 - width / 2))
+            x: Math.max(4, Math.min(box.width - width - 4, at.x + at.width / 2 - width / 2))
             y: {
                 // Over the picture, the keys under it are not to be covered.
                 const floor = at.x < screen.x + screen.width ? airRow.y - 6 : box.height - 4

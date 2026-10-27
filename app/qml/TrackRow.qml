@@ -65,7 +65,7 @@ Item {
     readonly property var shown: main ? view.shown : player ? player.entry : null
     // The keys a hand may use: none of them while following leads the player.
     readonly property bool canSeek: main ? view.manualSeek : !!player && !player.lead
-    // 两轨同步变速: this aux track plays at the main one's speed, and its
+    // 同步变速: this aux track plays at the main one's speed, and its
     // speed keys change the main one's (so both).
     readonly property bool linked: !main && view.tempoLinked
     readonly property bool canTempo: main || linked ? view.manualTempo : !!player && !player.lead
@@ -269,11 +269,25 @@ Item {
     }
     // The other track row, the one this one syncs to.
     readonly property var other: view.rowItems.find(r => !!r && r !== row && !r.camera) || null
+    // This row's own player, whichever row is active (the window's toggle
+    // acts on the active row).
     function togglePlay() {
-        if (main)
-            view.player.toggle()
-        else if (player)
+        if (main) {
+            if (view.manualSeek && view.transport) {
+                view.transport.toggle()
+                view.player.tick()
+            }
+        } else if (player) {
             player.toggle()
+        }
+    }
+    // Where its playhead is this instant, in the track's own seconds (not as
+    // of the last tick): what another row lines up with.
+    function liveT() {
+        if (!playClip)
+            return -1
+        const at = main ? (view.player && view.player.aiMain ? position : view.transport.now()) : player.now()
+        return playClip.start + Math.min(at, playClip.length)
     }
     function nudgeSpeed(step) {
         if (!canTempo)
@@ -522,7 +536,7 @@ Item {
                                   : row.bending ? (row.view.speed > row.view.tempo ? "按住加速" : "按住减速")
                                   : row.view.manual ? "手动" : "智能跟随")
                       : row.player && row.player.lead ? "智能跟随"
-                      : row.linked ? "两轨同步变速"
+                      : row.linked ? "同步变速"
                       : row.player && row.player.followMain ? "跟画面 1 速度" : "手动"
                 font.pixelSize: 11
                 color: Theme.faint
@@ -608,16 +622,6 @@ Item {
                 ToolTip.delay: 600
                 ToolTip.text: row.other ? row.name + " 跳到" + row.other.name + "正在播放的时间，两条一起播放" : ""
             }
-            // The cursor and the key that plays from it (Enter, on the active row).
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                width: 86
-                text: row.markClip ? "光标 " + (row.clips.length > 1 ? row.markClip.n + " · " : "") + row.view.clock(row.markAt, true) : "光标 —"
-                font.pixelSize: Theme.sizeXs
-                font.features: { "tnum": 1 }
-                color: row.markClip ? (row.active ? Theme.text : Theme.muted) : Theme.faint
-                elide: Text.ElideRight
-            }
             TextButton {
                 anchors.verticalCenter: parent.verticalCenter
                 implicitHeight: 20
@@ -627,34 +631,10 @@ Item {
                 font.pixelSize: 11
                 text: "跳至"
                 enabled: row.canJump
-                onClicked: {
-                    row.view.activate(row.key)
-                    row.jump()
-                }
+                onClicked: row.view.jumpRow(row)
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "从光标处播放" + row.name + "（快捷键开着时，选中的轨道也可按回车）"
-            }
-            // The track floated to the top on the air, and played from its
-            // cursor: from 画面 2 on top straight to 画面 1 where its cursor
-            // was just put.
-            TextButton {
-                anchors.verticalCenter: parent.verticalCenter
-                implicitHeight: 20
-                leftPadding: 6
-                rightPadding: 6
-                outlined: true
-                font.pixelSize: 11
-                text: "投放并跳至"
-                enabled: row.canJump
-                onClicked: {
-                    row.view.activate(row.key)
-                    row.view.takeLive(row.key)
-                    row.jump()
-                }
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "把" + row.name + "浮到最上层投给观众（快切）并从光标处播放（选中的轨道也可按 " + (Qt.platform.os === "osx" ? "⌘" : "Ctrl+") + "回车）"
+                ToolTip.text: "从光标处播放" + row.name + "（选中的轨道也可按回车）"
             }
         }
 

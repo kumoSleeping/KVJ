@@ -8,9 +8,9 @@ import KVJ
 // The track area across the foot of the window, laid out like a video
 // editor's, as a DJ's two decks (画面 1, 画面 2), each on a clock of its
 // own, alike. On top a slim bar
-// for the active row (the track row pressed last, its name inked): what it
-// shows, its cursor and 跳至光标处 (Enter does the same), its zoom keys −
-// 全览 + (− = \ too), then 快捷键 and how jumps look. Then the rows
+// for the active row (the track row pressed last, its name inked): its
+// cursor and 跳至光标处 (Enter does the same), its zoom keys −
+// 全览 + (− = \ too), then the switches and how jumps look. Then the rows
 // (TrackRow), each its own play bar (its name at the left; pressed, its
 // layer is chosen on the board), its own ruler and view (zoom and scroll
 // are a row's own) and its own cursor: a press on a row's timeline only
@@ -41,7 +41,7 @@ import KVJ
 //   dropEntries(ids, track), dropFiles(urls, track): onto a track, in place
 //             of what is on it
 //   removeEntry(id): an entry's 移出轨道 (right click on it)
-//   jump(), takeAndJump(), syncPlay(row), zoomAt(x, factor), zoomStep(factor), fit(), setMark(x): the
+//   jump(), jumpRow(row), syncPlay(row), zoomAt(x, factor), zoomStep(factor), fit(), setMark(x): the
 //             active row's (Enter, − = \)
 Rectangle {
     id: line
@@ -156,26 +156,33 @@ Rectangle {
     onSetIdChanged: Qt.callLater(() => line.activeKey = line.states[line.setId + "|active"] || "")
 
     // The keys, on the active row: Enter plays it from its cursor, − = \ zoom it.
-    function jump() {
-        if (activeItem)
-            activeItem.jump()
+    // Enter, 跳至光标处 and a row's 跳至: played from its cursor and, with
+    // 跳转置顶 on, its layer floated to the top on the air first.
+    property bool jumpRaises: false
+    function jumpRow(r) {
+        if (!r || !r.canJump)
+            return
+        activate(r.key)
+        if (jumpRaises)
+            takeLive(r.key)
+        r.jump()
     }
-    // A row's 同步播放: to the time the other row plays at, both playing.
+    function jump() {
+        jumpRow(activeItem)
+    }
+    // A row's 同步播放: the other row playing (started if paused), this one
+    // put at the other's time at this very instant and playing too, so the
+    // same videos run (and sound) as one.
     function syncPlay(r) {
         const o = r ? r.other : null
         if (!o || o.playT < 0)
             return
         activate(r.key)
-        r.playAtTime(o.playT)
         if (!o.playing)
             o.togglePlay()
-    }
-    // ⌘ Enter: the active row's track on the air alone, then played from its cursor.
-    function takeAndJump() {
-        if (!activeItem)
-            return
-        takeLive(activeItem.key)
-        activeItem.jump()
+        r.playAtTime(o.liveT())
+        if (!r.playing)
+            r.togglePlay()
     }
     function zoomAt(x, factor) {
         if (activeItem)
@@ -189,17 +196,18 @@ Rectangle {
         if (activeItem)
             activeItem.fit()
     }
-    // 两轨缩放同步: every track row shows the same seconds at the same scale as the
+    // 缩放同步: every track row shows the same seconds at the same scale as the
     // one moved last (the same two videos line up, each with its own
     // playhead). Only the active row brings the view along with its playhead.
     property bool viewsLocked: false
-    // 两轨同步变速: 画面 2 plays at 画面 1's speed; either row's speed keys
+    // 同步变速: 画面 2 plays at 画面 1's speed; either row's speed keys
     // change both (the host links the players).
     property bool tempoLinked: false
     Settings {
         category: "timeline"
         property alias viewsLocked: line.viewsLocked
         property alias tempoLinked: line.tempoLinked
+        property alias jumpRaises: line.jumpRaises
     }
     function mirror(from) {
         if (!viewsLocked || !from)
@@ -337,32 +345,7 @@ Rectangle {
             Layout.preferredHeight: 28
             spacing: 8
             readonly property var act: line.activeItem
-            Text {
-                Layout.fillWidth: true
-                Layout.minimumWidth: 80
-                textFormat: Text.StyledText
-                text: {
-                    const r = parent.act
-                    if (!r)
-                        return ""
-                    const esc = t => t.replace(/&/g, "&amp;").replace(/</g, "&lt;")
-                    const what = r.shown ? esc(r.shown.title)
-                               : r.main && line.running ? (line.phase === "searching" ? "重新搜索" : "等待识别") : ""
-                    return "<font color='" + Theme.muted + "'>" + esc(r.name) + (what ? "  ·  " : "") + "</font>" + what
-                }
-                font.pixelSize: Theme.sizeSm
-                font.weight: Font.DemiBold
-                color: Theme.text
-                elide: Text.ElideRight
-            }
-            Text {
-                text: parent.act && parent.act.markClip
-                      ? "光标 " + (parent.act.clips.length > 1 ? parent.act.markClip.n + " · " : "") + line.clock(parent.act.markAt, true)
-                      : "光标 —"
-                font.pixelSize: Theme.sizeSm
-                font.features: { "tnum": 1 }
-                color: parent.act && parent.act.markClip ? Theme.muted : Theme.faint
-            }
+            Item { Layout.fillWidth: true }
             TextButton {
                 implicitHeight: 26
                 text: "跳至光标处"
@@ -371,7 +354,7 @@ Rectangle {
                 onClicked: line.jump()
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "从光标处播放" + (parent.act ? parent.act.name : "") + "（快捷键开着时也可按回车）\n点轨道的进度条、标尺或画面条只放光标，不动画面"
+                ToolTip.text: "从光标处播放" + (parent.act ? parent.act.name : "") + "（也可按回车）\n点轨道的进度条、标尺或画面条只放光标，不动画面"
             }
             Item { implicitWidth: 6 }
             // The active row's zoom.
@@ -409,7 +392,7 @@ Rectangle {
                 }
             }
             Toggle {
-                text: "两轨缩放同步"
+                text: "缩放同步"
                 checked: line.viewsLocked
                 onToggled: line.viewsLocked = checked
                 ToolTip.visible: hovered
@@ -417,24 +400,20 @@ Rectangle {
                 ToolTip.text: "画面 1 和画面 2 用同样的缩放、显示同一段时间，调一条另一条跟着变；各自播到哪里互不影响。\n同一段视频放在两条轨道上时，上下完全对齐"
             }
             Toggle {
-                text: "两轨同步变速"
+                text: "同步变速"
                 checked: line.tempoLinked
                 onToggled: line.tempoLinked = checked
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
                 ToolTip.text: "画面 2 和画面 1 一起变速：调任一条的速度（键、滑条、复原、↑↓），两条都变；画面 1 跟随音乐时画面 2 也跟着同样的速度"
             }
-            Item { implicitWidth: 6 }
             Toggle {
-                text: "快捷键"
-                checked: !!line.player && line.player.keysOn
-                onToggled: line.player.keysOn = checked
+                text: "跳转置顶"
+                checked: line.jumpRaises
+                onToggled: line.jumpRaises = checked
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "画面 1：← / →、A / D：按住时画面以 0.7 / 1.5 倍速播放，松开即恢复；暂停时按一下退后 / 前进 1 秒\n"
-                              + "↑ / ↓、W / S：速度 +1% / −1%\n"
-                              + "选中的轨道：回车从光标处播放；− / =：缩小 / 放大，\\：整条显示\n"
-                              + "空格不再暂停播放"
+                ToolTip.text: "开着时，回车、跳至光标处和轨道上的「跳至」会先把这条轨道的画面升到最上层投给观众（保留它的大小和位置），再从光标处播放"
             }
             Item { implicitWidth: 6 }
             Toggle {

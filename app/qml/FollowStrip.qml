@@ -7,9 +7,9 @@ import KVJ
 
 // 音频对位, as a narrow column under the PGM monitor, at the window's right. Top to bottom: its name and a light with its word
 // (未监听 red; 监听中 / 跟随中 green); following's own small picture
-// (FollowMonitor; the card's tone until following has found the music); what
+// (FollowMonitor, its 16:9 room always kept, black until it finds); what
 // it found (the title, or the phase) and how fast it hears the music; the
-// input's level; 开始监听 (the ear), 跟随 / 暂停 (the ink key), 跳至此处 (the
+// input's level; 监听, 跟随 / 暂停 (the ink key), 跳至此处 (the
 // crosshair) and 画面偏移 (dragged or wheeled); the input with its channels (a
 // device with more than two lists each pair), 现场模式, the Bluetooth DJs (a
 // key that shows while receiving or while one asks to pair) and 刷新; at the
@@ -121,8 +121,7 @@ Card {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.topMargin: 4
-        spacing: 8
+        spacing: 5
 
         // Its name; listening or not, at the corner: green while it listens,
         // red while not.
@@ -212,14 +211,21 @@ Card {
 
         // Following's own picture, where it puts the music: 16:9 at the card's
         // width, smaller (centred) when the card is short.
+        // Its room always kept, 16:9 at the card's width, black until
+        // following has found the music: never squeezed.
         Item {
             id: monitorBox
             readonly property real full: width * 9 / 16 + 3
             Layout.fillWidth: true
-            Layout.fillHeight: true
             Layout.preferredHeight: full
             Layout.maximumHeight: full
-            Layout.minimumHeight: 48
+            Layout.minimumHeight: full
+            Rectangle {
+                width: parent.width
+                height: parent.height - 3
+                radius: Theme.radius
+                color: "black"
+            }
             FollowMonitor {
                 id: monitor
                 width: Math.min(parent.width, (parent.height - 3) * 16 / 9)
@@ -230,112 +236,91 @@ Card {
                 offsetMs: root.offsetMs
                 source: root.surface
             }
-            // Nothing found yet: the card's inset tone, never a black box;
-            // an ear while it does not listen, a word while it searches.
+            // What following found, how fast the music is heard, and the input's
+            // level, along the foot of its picture (no room taken under it).
             Rectangle {
-                visible: !root.match
-                width: parent.width
-                height: parent.height - 3
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 3
+                height: foot.implicitHeight + 16
                 radius: Theme.radius
-                color: Theme.inset
-                Column {
-                    anchors.centerIn: parent
-                    visible: !root.following
-                    spacing: 8
-                    ColorImage {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        source: "icons/ear.svg"
-                        sourceSize: Qt.size(20, 20)
-                        color: Theme.faint
-                    }
-                    // Only where there is room for it under the ear.
-                    Text {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        visible: monitorBox.height >= 76
-                        text: "监听后，这里显示对上的画面"
-                        font.pixelSize: Theme.sizeXs
-                        color: Theme.faint
-                    }
-                }
-                Text {
-                    anchors.centerIn: parent
-                    visible: root.following
-                    width: parent.width - 16
-                    horizontalAlignment: Text.AlignHCenter
-                    wrapMode: Text.Wrap
-                    text: root.quiet ? "等声音…" : "听音频，找位置…"
-                    font.pixelSize: Theme.sizeXs
-                    color: Theme.faint
+                gradient: Gradient {
+                    GradientStop { position: 0; color: "transparent" }
+                    GradientStop { position: 1; color: "#99000000" }
                 }
             }
-        }
-
-        // What following found, how fast the music is heard, and the input's level.
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 4
-            RowLayout {
-                Layout.fillWidth: true
+            ColumnLayout {
+                id: foot
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.margins: 8
                 spacing: 4
-                Text {
-                    id: status
+                RowLayout {
                     Layout.fillWidth: true
-                    readonly property bool warn: Engine.error.length > 0 || root.asking
-                    text: Engine.error.length > 0 ? Engine.error
-                          : root.asking ? "有 DJ 请求连接 · 点这里"
-                          : root.match ? root.match.entry.title
-                          : root.following ? root.app.phaseText(root.app.phase) : "跟随" + root.trackName(root.followTrack)
-                    font.pixelSize: Theme.sizeXs
-                    font.weight: Font.DemiBold
-                    color: warn ? Theme.warn : root.match && !root.app.followPaused ? Theme.text : Theme.muted
-                    elide: Text.ElideRight
-                    MouseArea {
-                        id: statusArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: status.warn ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: {
-                            if (Engine.error.length > 0)
-                                Engine.clearError()
-                            else if (root.asking)
-                                djs.open()
+                    spacing: 4
+                    Text {
+                        id: status
+                        Layout.fillWidth: true
+                        readonly property bool warn: Engine.error.length > 0 || root.asking
+                        text: Engine.error.length > 0 ? Engine.error
+                              : root.asking ? "有 DJ 请求连接 · 点这里"
+                              : root.match ? root.match.entry.title
+                              : root.following && root.app.phase === "indexing" ? root.app.phaseText(root.app.phase) : ""
+                        font.pixelSize: Theme.sizeXs
+                        font.weight: Font.DemiBold
+                        color: warn ? Theme.warn : root.match && !root.app.followPaused ? "#ffffff" : "#b3ffffff"
+                        elide: Text.ElideRight
+                        MouseArea {
+                            id: statusArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: status.warn ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: {
+                                if (Engine.error.length > 0)
+                                    Engine.clearError()
+                                else if (root.asking)
+                                    djs.open()
+                            }
                         }
-                    }
-                    ToolTip.visible: statusArea.containsMouse
-                    ToolTip.delay: 600
-                    ToolTip.text: Engine.error.length > 0 ? Engine.error + "\n（点一下清除）"
-                                  : root.asking ? "有 DJ 电脑请求连接，点一下允许或拒绝"
-                                  : root.match ? (root.app.followPaused ? "只监听" : "跟随中") + " · " + root.match.entry.title + " · "
-                                                 + root.app.clock(root.match.position, true) + " · " + root.trackName(root.followTrack)
-                                  : (root.following ? root.app.phaseText(root.app.phase) + " · " : "") + "跟随" + root.trackName(root.followTrack)
+                        ToolTip.visible: statusArea.containsMouse
+                        ToolTip.delay: 600
+                        ToolTip.text: Engine.error.length > 0 ? Engine.error + "\n（点一下清除）"
+                                      : root.asking ? "有 DJ 电脑请求连接，点一下允许或拒绝"
+                                      : root.match ? (root.app.followPaused ? "只监听" : "跟随中") + " · " + root.match.entry.title + " · "
+                                                     + root.app.clock(root.match.position, true) + " · " + root.trackName(root.followTrack)
+                                      : (root.following ? root.app.phaseText(root.app.phase) + " · " : "") + "跟随" + root.trackName(root.followTrack)
 
+                    }
+                    Text {
+                        visible: !!root.match
+                        text: root.match ? "×" + root.match.rate.toFixed(3) : ""
+                        font.pixelSize: Theme.sizeXs
+                        font.features: { "tnum": 1 }
+                        color: "#b3ffffff"
+                    }
                 }
-                Text {
-                    visible: !!root.match
-                    text: root.match ? "×" + root.match.rate.toFixed(3) : ""
-                    font.pixelSize: Theme.sizeXs
-                    font.features: { "tnum": 1 }
-                    color: Theme.muted
-                }
-            }
-            // The input's level, of the chosen channels.
-            // The input's level, while listening (its room kept, so nothing moves).
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 3
-                radius: 1.5
-                color: Theme.inset
-                opacity: root.following ? 1 : 0
+                // The input's level, of the chosen channels.
+                // The input's level, while listening (its room kept, so nothing moves).
                 Rectangle {
-                    readonly property real db: root.following && root.view.input && root.view.input.rms_dbfs !== null ? root.view.input.rms_dbfs : -70
-                    width: parent.width * Math.max(0, Math.min(1, (db + 70) / 70))
-                    height: parent.height
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 3
                     radius: 1.5
-                    color: Theme.text
-                    Behavior on width { NumberAnimation { duration: 120 } }
+                    color: "#33ffffff"
+                    opacity: root.following ? 1 : 0
+                    Rectangle {
+                        readonly property real db: root.following && root.view.input && root.view.input.rms_dbfs !== null ? root.view.input.rms_dbfs : -70
+                        width: parent.width * Math.max(0, Math.min(1, (db + 70) / 70))
+                        height: parent.height
+                        radius: 1.5
+                        color: "#ffffff"
+                        Behavior on width { NumberAnimation { duration: 120 } }
+                    }
                 }
             }
         }
+
 
         // Listen, follow or pause, go there once; the picture's offset.
         RowLayout {
@@ -345,7 +330,6 @@ Card {
                 implicitHeight: 28
                 leftPadding: 8
                 rightPadding: 10
-                iconName: root.following ? "square" : "ear"
                 text: root.following ? "停止" : "监听"
                 widest: "监听"
                 ToolTip.visible: hovered

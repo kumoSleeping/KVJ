@@ -59,15 +59,6 @@ Card {
         RowLayout {
             Layout.fillWidth: true
             spacing: 2
-            Toggle {
-                leftPadding: 0
-                text: "快捷键"
-                checked: Live.keysOn
-                onToggled: Live.keysOn = checked
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "1–9、0 开关效果，, / . 调强度；关掉后这些键不起作用"
-            }
             Item { Layout.fillWidth: true }
             TextButton {
                 implicitHeight: 26

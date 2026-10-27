@@ -285,8 +285,8 @@ QtObject {
     // keep that strength as their own preset.
     property var tuned: ({})
     // The number keys (1–0, the number pad too) switch the first ten effects
-    // in the list; , and . tune the last one. On unless turned off.
-    property bool keysOn: true
+    // in the list; , and . tune the last one. Always on.
+    readonly property bool keysOn: true
 
     function setLevel(key, value) {
         const next = Object.assign({}, level)
@@ -367,7 +367,6 @@ QtObject {
         category: "effects"
         property string order: ""
         property string presets: "{}"
-        property alias keys: live.keysOn
     }
 
     function kind(key) {

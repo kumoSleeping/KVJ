@@ -8,10 +8,8 @@ import KVJ
 // What goes over the picture, in one panel at the board's right, three pages
 // sharing it: the sticker gallery, the words (scrolling, held at the top or
 // the foot, or large in the middle) with the reactions, and the effects. A
-// column of keys on the board's right edge brings it out on a page, or puts
-// it away when that page's key is pressed again; it stays out (between runs
-// too) until then, laid over the board's right side (the stage where sources
-// wait) rather than taking room from it. Stickers are dragged onto
+// column of keys at its right edge shows one page or another; the panel is
+// always there, a fixed column (it never slides or folds). Stickers are dragged onto
 // the board (`composer`, which holds the gallery) and go on the air with it;
 // words and reactions go on the air at once.
 Item {
@@ -20,7 +18,6 @@ Item {
     property var composer
     // 0 stickers, 1 words and reactions, 2 effects.
     property int page: 0
-    property bool open: true
     readonly property int panelWidth: 232
     readonly property int railWidth: 44
 
@@ -33,12 +30,7 @@ Item {
     property int mode: 0
     property int size: 1
     function show(index) {
-        if (open && page === index) {
-            open = false
-        } else {
-            page = index
-            open = true
-        }
+        page = index
     }
 
     Settings {
@@ -46,46 +38,17 @@ Item {
         property alias wordMode: bar.mode
         property alias wordSize: bar.size
         property alias panelPage: bar.page
-        property alias panelOpen: bar.open
     }
 
-    property real shown: open ? panelWidth : 0
-    Behavior on shown { NumberAnimation { duration: Theme.quick; easing.type: Easing.OutCubic } }
-    // Only the keys take room; the panel lies over the board at their left.
-    implicitWidth: railWidth
+    implicitWidth: panelWidth + railWidth
     Layout.preferredWidth: implicitWidth
     Layout.fillWidth: false
-    z: 2
 
-    // —— The panel, sliding out from the keys over the board ——
+    // —— The panel: the page chosen with the keys at its right ——
     Item {
         id: panel
-        x: -bar.shown
-        width: bar.shown
+        width: bar.panelWidth
         height: parent.height
-        visible: width > 0
-
-        // A soft shade where it meets the board, not a line.
-        Rectangle {
-            x: -10
-            width: 10
-            height: parent.height
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0; color: "transparent" }
-                GradientStop { position: 1; color: Theme.dark ? "#30000000" : "#0f000000" }
-            }
-        }
-        Rectangle {
-            anchors.fill: parent
-            color: Theme.bg
-        }
-        // Presses and the wheel on it stay off the board under it.
-        MouseArea {
-            anchors.fill: parent
-            acceptedButtons: Qt.AllButtons
-            onWheel: wheel => wheel.accepted = true
-        }
 
         StackLayout {
             x: 8
@@ -448,6 +411,7 @@ Item {
     // —— The keys on the board's right edge: a page each ——
     Column {
         id: rail
+        x: bar.panelWidth
         y: 4
         width: bar.railWidth
         spacing: 4
@@ -459,7 +423,7 @@ Item {
                 id: railKey
                 required property var modelData
                 required property int index
-                readonly property bool on: bar.open && bar.page === index
+                readonly property bool on: bar.page === index
                 width: rail.width
                 height: 36
                 IconButton {
@@ -469,7 +433,7 @@ Item {
                     iconSize: 16
                     iconName: railKey.modelData.icon
                     active: railKey.on
-                    tip: railKey.modelData.tip + (railKey.on ? " · 再点一下收起" : "")
+                    tip: railKey.modelData.tip
                     onClicked: bar.show(railKey.index)
                 }
                 // Something of this page is on the air while the panel is
