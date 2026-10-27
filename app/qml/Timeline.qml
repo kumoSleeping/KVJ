@@ -41,7 +41,7 @@ import KVJ
 //   dropEntries(ids, track), dropFiles(urls, track): onto a track, in place
 //             of what is on it
 //   removeEntry(id): an entry's 移出轨道 (right click on it)
-//   jump(), takeAndJump(), zoomAt(x, factor), zoomStep(factor), fit(), setMark(x): the
+//   jump(), takeAndJump(), syncPlay(row), zoomAt(x, factor), zoomStep(factor), fit(), setMark(x): the
 //             active row's (Enter, − = \)
 Rectangle {
     id: line
@@ -160,6 +160,16 @@ Rectangle {
         if (activeItem)
             activeItem.jump()
     }
+    // A row's 同步播放: to the time the other row plays at, both playing.
+    function syncPlay(r) {
+        const o = r ? r.other : null
+        if (!o || o.playT < 0)
+            return
+        activate(r.key)
+        r.playAtTime(o.playT)
+        if (!o.playing)
+            o.togglePlay()
+    }
     // ⌘ Enter: the active row's track on the air alone, then played from its cursor.
     function takeAndJump() {
         if (!activeItem)
@@ -183,9 +193,13 @@ Rectangle {
     // one moved last (the same two videos line up, each with its own
     // playhead). Only the active row brings the view along with its playhead.
     property bool viewsLocked: false
+    // 两轨同步变速: 画面 2 plays at 画面 1's speed; either row's speed keys
+    // change both (the host links the players).
+    property bool tempoLinked: false
     Settings {
         category: "timeline"
         property alias viewsLocked: line.viewsLocked
+        property alias tempoLinked: line.tempoLinked
     }
     function mirror(from) {
         if (!viewsLocked || !from)
@@ -401,6 +415,14 @@ Rectangle {
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
                 ToolTip.text: "画面 1 和画面 2 用同样的缩放、显示同一段时间，调一条另一条跟着变；各自播到哪里互不影响。\n同一段视频放在两条轨道上时，上下完全对齐"
+            }
+            Toggle {
+                text: "两轨同步变速"
+                checked: line.tempoLinked
+                onToggled: line.tempoLinked = checked
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: "画面 2 和画面 1 一起变速：调任一条的速度（键、滑条、复原、↑↓），两条都变；画面 1 跟随音乐时画面 2 也跟着同样的速度"
             }
             Item { implicitWidth: 6 }
             Toggle {

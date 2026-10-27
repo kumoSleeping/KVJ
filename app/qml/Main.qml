@@ -343,7 +343,7 @@ ApplicationWindow {
         app.tick()
     }
     function nudgeTempo(step) {
-        if (app.keyPlayer) {
+        if (app.keyPlayer && !timeline.tempoLinked) {
             if (!app.keyPlayer.lead)
                 app.keyPlayer.setSpeed(app.keyPlayer.speed + step)
             return
@@ -651,6 +651,21 @@ ApplicationWindow {
         entries: app.auxEntries.filter(e => (e.track || 0) === 1)
         lead: app.aiPicture && app.followTrack === 1 ? { match: app.match, offsetMs: strip.offsetMs } : null
         mainRate: app.shownTempo
+    }
+    // 两轨同步变速 on: 画面 2 at 画面 1's speed exactly; off: it keeps the
+    // speed it had, on its own again.
+    Connections {
+        target: timeline
+        function onTempoLinkedChanged() { app.linkTempo() }
+    }
+    function linkTempo() {
+        if (timeline.tempoLinked) {
+            aux1.speed = 1
+            aux1.followMain = true
+        } else if (aux1.followMain) {
+            aux1.speed = Math.round(app.shownTempo * 1000) / 1000
+            aux1.followMain = false
+        }
     }
     TrackPlayer {
         id: aux2
@@ -1299,6 +1314,8 @@ ApplicationWindow {
     // `--add <file or folder>` adds it at start, the same way the add keys do.
     Component.onCompleted: {
         Qt.callLater(app.noteShown)
+        if (timeline.tempoLinked)
+            Qt.callLater(app.linkTempo)
         if (advertising)
             Engine.listenBluetooth(true, receiving)
         const args = Qt.application.arguments

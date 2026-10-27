@@ -65,14 +65,17 @@ Item {
     readonly property var shown: main ? view.shown : player ? player.entry : null
     // The keys a hand may use: none of them while following leads the player.
     readonly property bool canSeek: main ? view.manualSeek : !!player && !player.lead
-    readonly property bool canTempo: main ? view.manualTempo : !!player && !player.lead
+    // 两轨同步变速: this aux track plays at the main one's speed, and its
+    // speed keys change the main one's (so both).
+    readonly property bool linked: !main && view.tempoLinked
+    readonly property bool canTempo: main || linked ? view.manualTempo : !!player && !player.lead
     readonly property bool playing: main ? !!view.match || (!!view.transport && view.transport.playing) : !!player && player.playing
     readonly property bool canPlay: main ? view.manualSeek && !!view.transport && !!view.transport.entry : canSeek && clips.length > 0
     // The speed played (the main one bent while a nudge key is held), and the setting it comes back to.
     readonly property real speed: main ? view.speed : player ? player.effectiveSpeed : 1
-    readonly property real setting: main ? view.tempo : player ? player.speed : 1
-    readonly property real minSpeed: main ? (view.transport ? view.transport.minTempo : 0.5) : player ? player.minSpeed : 0.5
-    readonly property real maxSpeed: main ? (view.transport ? view.transport.maxTempo : 1.5) : player ? player.maxSpeed : 1.5
+    readonly property real setting: main || linked ? view.tempo : player ? player.speed : 1
+    readonly property real minSpeed: main || linked ? (view.transport ? view.transport.minTempo : 0.5) : player ? player.minSpeed : 0.5
+    readonly property real maxSpeed: main || linked ? (view.transport ? view.transport.maxTempo : 1.5) : player ? player.maxSpeed : 1.5
     readonly property bool bending: main && view.bending !== 0
     readonly property bool loop: main ? !!view.player && view.player.loopOn : !!player && player.loop
     readonly property bool followed: !camera && view.followTrack === track
@@ -252,6 +255,20 @@ Item {
         else
             player.play(markClip.entry, markAt)
     }
+    // Played from second `t` of the track (its own time), the cursor left
+    // where it is.
+    function playAtTime(t) {
+        const c = clips.find(c => t >= c.start && t < c.start + c.length) || clips[clips.length - 1]
+        if (!c)
+            return
+        const at = Math.max(0, Math.min(c.entry.duration, t - c.start))
+        if (main)
+            view.player.play(c.entry, at)
+        else if (player)
+            player.play(c.entry, at)
+    }
+    // The other track row, the one this one syncs to.
+    readonly property var other: view.rowItems.find(r => !!r && r !== row && !r.camera) || null
     function togglePlay() {
         if (main)
             view.player.toggle()
@@ -263,13 +280,15 @@ Item {
             return
         if (main)
             view.player.nudgeTempo(step)
+        else if (linked)
+            view.transport.setTempo(view.transport.tempo + step)
         else
             player.setSpeed(player.speed + step)
     }
     function setSpeedTo(value) {
         if (!canTempo)
             return
-        if (main)
+        if (main || linked)
             view.transport.setTempo(value)
         else
             player.setSpeed(value)
@@ -277,7 +296,7 @@ Item {
     function resetSpeed() {
         if (!canTempo)
             return
-        if (main)
+        if (main || linked)
             view.player.resetTempo()
         else
             player.setSpeed(1)
@@ -341,7 +360,7 @@ Item {
         PopMenu {
             id: trackMenu
             PopAction {
-                enabled: !!row.player && !row.main
+                enabled: !!row.player && !row.main && !row.view.tempoLinked
                 text: row.player && row.player.followMain ? "不再跟随画面 1 的速度" : "跟随画面 1 的速度"
                 onTriggered: row.player.followMain = !row.player.followMain
             }
@@ -503,6 +522,7 @@ Item {
                                   : row.bending ? (row.view.speed > row.view.tempo ? "按住加速" : "按住减速")
                                   : row.view.manual ? "手动" : "智能跟随")
                       : row.player && row.player.lead ? "智能跟随"
+                      : row.linked ? "两轨同步变速"
                       : row.player && row.player.followMain ? "跟画面 1 速度" : "手动"
                 font.pixelSize: 11
                 color: Theme.faint
@@ -571,6 +591,22 @@ Item {
                 }
                 tip: (row.playing ? "暂停" : "播放") + row.name
                 onClicked: row.togglePlay()
+            }
+            // To the other track's time, both playing: the same videos line
+            // up, the timeline as one.
+            TextButton {
+                anchors.verticalCenter: parent.verticalCenter
+                implicitHeight: 20
+                leftPadding: 6
+                rightPadding: 6
+                outlined: true
+                font.pixelSize: 11
+                text: "同步播放"
+                enabled: row.canSeek && row.clips.length > 0 && !!row.other && row.other.playT >= 0
+                onClicked: row.view.syncPlay(row)
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: row.other ? row.name + " 跳到" + row.other.name + "正在播放的时间，两条一起播放" : ""
             }
             // The cursor and the key that plays from it (Enter, on the active row).
             Text {
