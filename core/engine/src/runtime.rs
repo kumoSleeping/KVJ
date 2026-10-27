@@ -345,6 +345,12 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
         // reopened while the session goes on.
         let mut source = Some(super::feature_input::Input::start(engine, input)?);
         let mut reopen_at = Instant::now();
+        // A loopback that went quiet is reopened (no error ever comes): when it
+        // was (re)opened, the next wait in seconds, and whether one was.
+        let loopback = input.loopback();
+        let (mut opened, mut stall_wait, mut stall_reopened) = (Instant::now(), 3u64, false);
+        // A loopback that never heard music hints at an output it cannot hear.
+        let (session_started, mut heard_music, mut hinted) = (Instant::now(), false, false);
         publish(engine, session, |v| v.phase = "listening".into());
         log(
             engine,
@@ -374,6 +380,8 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
         let mut candidates: Vec<Candidate> = Vec::new();
         // Jumps away from the shown place, heard once, not yet confirmed.
         let mut pending: Vec<Evidence> = Vec::new();
+        // When local tracking began to hold, round after round.
+        let mut held_since: Option<Instant> = None;
         let mut generation = 0;
         let mut input_epoch = 0;
         let mut features = FeatureCache(VecDeque::new());
@@ -418,7 +426,11 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         match super::feature_input::Input::start(engine, input) {
                             Ok(reopened) => {
                                 source = Some(reopened);
-                                log(engine, session, Level::Info, Stage::Input, "声音输入已恢复".into());
+                                opened = Instant::now();
+                                // Reopened for want of packets: recovered once they come.
+                                if !stall_reopened {
+                                    log(engine, session, Level::Info, Stage::Input, "声音输入已恢复".into());
+                                }
                                 continue;
                             }
                             Err(error) => {
@@ -461,7 +473,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
             let feature_ms = polled.feature_ms;
             let packet = polled.observation;
             publish(engine, session, |v| v.bluetooth = polled.bluetooth);
-            let input = polled.status.unwrap_or_else(|| super::diagnostics::InputStatus {
+            let mut input = polled.status.unwrap_or_else(|| super::diagnostics::InputStatus {
                 state: InputState::Waiting, source: "蓝牙".into(), sample_rate: 8000,
                 channels: vec![], rms_dbfs: None, peak_dbfs: None, buffered_seconds: 0.,
                 packet_age_ms: None, packets: 0, gaps: 0,
@@ -481,6 +493,43 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                     ),
                 );
                 last_input_state = Some(input.state);
+            }
+            // WASAPI loopback does not fail when the default output changes or
+            // its device is reset: the packets just stop. With none for 3 s it
+            // is opened again, then after 6, 12, up to 30 s while none come (as
+            // when nothing plays at all; a reopen costs little).
+            if loopback {
+                let silent = input.packet_age_ms.map_or_else(|| opened.elapsed().as_secs_f64(), |ms| ms / 1000.);
+                if silent < 1. {
+                    if stall_reopened {
+                        stall_reopened = false;
+                        log(engine, session, Level::Info, Stage::Input, "声音输入已恢复".into());
+                    }
+                    stall_wait = 3;
+                } else if silent >= stall_wait as f64 {
+                    log(engine, session, Level::Warn, Stage::Input, format!("声音输入 {silent:.0} 秒无数据，正在重新打开"));
+                    stall_wait = (stall_wait * 2).min(30);
+                    stall_reopened = true;
+                    source = None;
+                    reopen_at = Instant::now();
+                    if current.is_some() {
+                        publish(engine, session, |v| v.phase = "searching".into());
+                    }
+                    current = None; estimate = None; lost = false;
+                    generation = 0; search_cursor = 0; corroboration.clear(); pending.clear();
+                    continue;
+                }
+                // Only silence (or nothing) for 10 s since the start: DJ software
+                // playing through ASIO or an exclusive output is not in the mix.
+                heard_music |= matches!(input.state, InputState::Buffering | InputState::Receiving);
+                if !heard_music && session_started.elapsed() >= Duration::from_secs(10) {
+                    const HINT: &str = "（DJ 软件若用 ASIO/独占输出，回环听不到，请改选声卡的输入或回送通道）";
+                    input.source.push_str(HINT);
+                    if !hinted {
+                        hinted = true;
+                        log(engine, session, Level::Warn, Stage::Input, format!("系统混音 10 秒未听到声音{HINT}"));
+                    }
+                }
             }
             let audible = !matches!(
                 input.state,
@@ -659,7 +708,16 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         // 0.80–1.25×. Verify after EACH bin and stop on the first
                         // accepted result. Yield between bins after 125 ms so
                         // the next attempt uses fresh audio, not an old query.
-                        let preferred = current.map_or(1., |c| c.rate.clamp(0.80, 1.25));
+                        // A jump heard once is looked for again at its own
+                        // tempo first: its second hearing must not wait behind
+                        // the old tempo's bins (nor miss the pending window).
+                        let preferred = pending
+                            .iter()
+                            .rev()
+                            .find(|p| on[p.recording] && at.saturating_duration_since(p.at).as_secs_f64() <= PENDING_SECONDS)
+                            .copied()
+                            .or(current)
+                            .map_or(1., |c| c.rate.clamp(0.80, 1.25));
                         let mut rates: [f64; 19] = std::array::from_fn(|i| 0.80 + i as f64 * 0.025);
                         rates.sort_by(|a, b| {
                             (a - preferred).abs().total_cmp(&(b - preferred).abs())
@@ -870,9 +928,17 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                             error_ms: None,
                         };
                     }
-                    // The music is where the picture is: earlier jumps heard elsewhere go.
+                    // The music is where the picture is, heard so for CONFIRM_AFTER:
+                    // earlier jumps heard elsewhere go. One round at the old place
+                    // can align by chance too (a looped phrase), and must not
+                    // starve a real jump; unconfirmed, those age out instead.
                     if tracking {
-                        pending.clear();
+                        let since = *held_since.get_or_insert(at);
+                        if at.saturating_duration_since(since).as_secs_f64() >= CONFIRM_AFTER {
+                            pending.clear();
+                        }
+                    } else {
+                        held_since = None;
                     }
                     // A jump away from the shown place waits for its confirmation
                     // (CONFIRM_AFTER); the picture stays meanwhile.

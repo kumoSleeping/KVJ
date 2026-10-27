@@ -319,6 +319,11 @@ impl Selection {
         let (device, loopback) = resolved.native_device()?;
         channel_range(resolved.channel_start, native_config(&device, loopback)?.channels()).map(|_| ())
     }
+    /// A WASAPI loopback of a render device. When that device changes or is
+    /// reset, its packets just stop: no error comes.
+    pub(super) fn loopback(&self) -> bool {
+        cfg!(windows) && (["auto", "system"].contains(&self.device.as_str()) || self.device.starts_with("loopback:"))
+    }
     fn native_device(&self) -> Result<(cpal::Device, bool)> {
         let host = cpal::default_host();
         // Building an input stream on a WASAPI render endpoint enables loopback.
