@@ -380,6 +380,14 @@ ColumnLayout {
         }
     }
 
+    // ⌘Z (Ctrl+Z elsewhere) is 撤回: the board back as the audience sees it,
+    // never while words are typed.
+    Shortcut {
+        sequences: [StandardKey.Undo]
+        context: Qt.ApplicationShortcut
+        enabled: !Switcher.follow && Switcher.pending && !composer.typing
+        onActivated: Switcher.revert()
+    }
     // Space puts the board on the air (投放), never while words are typed;
     // Enter stays the timeline's.
     Shortcut {
@@ -605,7 +613,7 @@ ColumnLayout {
             }
             IconButton {
                 iconName: "undo-2"
-                tip: "撤回：画板回到观众正在看的样子"
+                tip: "撤回：画板回到观众正在看的样子（" + (Qt.platform.os === "osx" ? "⌘Z" : "Ctrl+Z") + "）"
                 // Kept in 跟随 too (there is nothing to take back), so the row stays put.
                 enabled: !Switcher.follow && Switcher.pending
                 onClicked: Switcher.revert()
