@@ -517,7 +517,6 @@ ApplicationWindow {
         case "fill": mixer.fill(Math.max(0, mixer.selected)); break
         case "revert": Switcher.revert(); break
         case "drawer": app.setsOpen = Number(w[1] || 0) > 0; break
-        case "panel": liveBar.show(Number(w[1] || 0)); break
         case "noline": Switcher.setMask(Math.max(0, mixer.selected), { lines: [] }); break
         default: return "unknown"
         }
@@ -798,7 +797,7 @@ ApplicationWindow {
     // picture is a mix, the sound is chosen per track; both on, one mix.
     AudioFollower {
         id: sound
-        enabled: desk.soundOn
+        enabled: desk.hears1
         source: app.shownEntry && !app.shownEntry.silent ? app.shownEntry.path : ""
         position: projection.position
         rate: projection.rate
@@ -810,7 +809,7 @@ ApplicationWindow {
     AudioFollower {
         id: sound2
         readonly property var timing: app.auxTiming(1)
-        enabled: desk.soundOn2
+        enabled: desk.hears2
         source: timing.entry && !timing.entry.silent ? timing.entry.path : ""
         position: timing.position
         rate: timing.rate
@@ -1017,9 +1016,12 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         spacing: 0
+                        // As wide as its picture is at this height; the panel
+                        // of what goes over it takes the rest.
                         Composer {
                             id: mixer
-                            Layout.fillWidth: true
+                            Layout.fillWidth: false
+                            Layout.preferredWidth: mixer.fitWidth
                             Layout.fillHeight: true
                             sources: app.sources
                             textures: desk.textures
@@ -1088,6 +1090,7 @@ ApplicationWindow {
                 projection: projection
                 sound: sound
                 sound2: sound2
+                topSource: timeline.onTop
                 sourceIds: app.sources.map(s => s.id)
                 monitorWidth: mixer.pictureWidth
             }

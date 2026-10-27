@@ -5,22 +5,16 @@ import QtQuick.Controls.impl
 import QtQuick.Layouts
 import KVJ
 
-// What goes over the picture, in one panel at the board's right, three pages
-// sharing it: the sticker gallery, the words (scrolling, held at the top or
-// the foot, or large in the middle) with the reactions, and the effects. A
-// column of keys at its right edge shows one page or another; the panel is
-// always there, a fixed column (it never slides or folds). Stickers are dragged onto
-// the board (`composer`, which holds the gallery) and go on the air with it;
-// words and reactions go on the air at once.
+// What goes over the picture, in one panel taking the board's right (where
+// nothing of the picture lies), its three parts side by side, all in sight
+// at once: the sticker gallery, the words (scrolling, held at the top or the
+// foot, or large in the middle) with the reactions, and the effects.
+// Stickers are dragged onto the board (`composer`, which holds the gallery)
+// and go on the air with it; words and reactions go on the air at once.
 Item {
     id: bar
 
     property var composer
-    // 0 stickers, 1 words and reactions, 2 effects.
-    property int page: 0
-    readonly property int panelWidth: 232
-    readonly property int railWidth: 44
-
     function send(text) {
         if (bar.mode < 3)
             Live.say(text, "", { mode: ["scroll", "top", "bottom"][bar.mode], size: Live.sizes[bar.size] })
@@ -29,37 +23,44 @@ Item {
     }
     property int mode: 0
     property int size: 1
-    function show(index) {
-        page = index
-    }
 
     Settings {
         category: "desk"
         property alias wordMode: bar.mode
         property alias wordSize: bar.size
-        property alias panelPage: bar.page
     }
 
-    implicitWidth: panelWidth + railWidth
-    Layout.preferredWidth: implicitWidth
-    Layout.fillWidth: false
+    implicitWidth: 300
+    Layout.preferredWidth: 300
+    Layout.fillWidth: true
 
-    // —— The panel: the page chosen with the keys at its right ——
-    Item {
-        id: panel
-        width: bar.panelWidth
-        height: parent.height
+    // One column, top to bottom: the effects, the stickers, the words and
+    // reactions, all in sight; it scrolls only when the board is too short.
+    Flickable {
+        id: column
+        anchors.fill: parent
+        anchors.leftMargin: 4
+        contentHeight: parts.implicitHeight + 8
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        interactive: !bar.composer.carrying
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+    ColumnLayout {
+        id: parts
+        y: 4
+        width: column.width - 10
+        spacing: 18
 
-        StackLayout {
-            x: 8
-            y: 4
-            width: bar.panelWidth - 8 - 2
-            height: parent.height - 8
-            clip: true
-            currentIndex: bar.page
+            // —— The effects ——
+            Effects {
+                Layout.fillWidth: true
+                bare: true
+                compact: true
+            }
 
             // —— Stickers: words made into one, images added, the size, the gallery ——
             ColumnLayout {
+                Layout.fillWidth: true
                 spacing: 6
                 RowLayout {
                     Layout.fillWidth: true
@@ -127,7 +128,8 @@ Item {
                 GridView {
                     id: grid
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    // A row in sight, the rest a scroll away.
+                    Layout.preferredHeight: cellHeight
                     clip: true
                     cellWidth: Math.floor(width / Math.max(1, Math.floor(width / 72)))
                     cellHeight: 58
@@ -247,11 +249,9 @@ Item {
             }
 
             // —— Words, then the reactions ——
-            Flickable {
-                clip: true
-                contentHeight: wordsPage.implicitHeight
-                boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            Item {
+                Layout.fillWidth: true
+                implicitHeight: wordsPage.implicitHeight
                 ColumnLayout {
                     id: wordsPage
                     width: parent.width
@@ -261,34 +261,37 @@ Item {
                         Layout.preferredHeight: 26
                         Heading { text: "弹幕 · 表情" }
                     }
-                    // How they show, and how large, a key each.
-                    Flow {
+                    // How they show and how large, on one line (the sizes kept in
+                    // place, dimmed, for the words in the middle).
+                    RowLayout {
                         Layout.fillWidth: true
-                        spacing: 2
+                        spacing: 0
                         Repeater {
-                            model: ["滚动", "顶部", "底部", "居中大字"]
+                            model: ["滚动", "顶部", "底部", "居中"]
                             TextButton {
                                 required property string modelData
                                 required property int index
-                                leftPadding: 7
-                                rightPadding: 7
+                                implicitHeight: 26
+                                leftPadding: 6
+                                rightPadding: 6
+                                font.pixelSize: Theme.sizeXs
                                 flat: bar.mode !== index
                                 font.weight: bar.mode === index ? Font.DemiBold : Font.Medium
                                 text: modelData
                                 onClicked: bar.mode = index
                             }
                         }
-                    }
-                    Row {
-                        visible: bar.mode < 3
-                        spacing: 2
+                        Item { Layout.fillWidth: true }
                         Repeater {
                             model: ["小", "中", "大"]
                             TextButton {
                                 required property string modelData
                                 required property int index
-                                leftPadding: 10
-                                rightPadding: 10
+                                implicitHeight: 26
+                                leftPadding: 7
+                                rightPadding: 7
+                                font.pixelSize: Theme.sizeXs
+                                enabled: bar.mode < 3
                                 flat: bar.size !== index
                                 font.weight: bar.size === index ? Font.DemiBold : Font.Medium
                                 text: modelData
@@ -317,17 +320,13 @@ Item {
                         }
                     }
 
-                    Caption {
-                        Layout.topMargin: 6
-                        text: "表情 · 按住连发，按住拖动换表情"
-                    }
                     // Reactions, as in Google Meet: hover plays one, holding sends a
                     // stream from anywhere along the foot of the screen. Held and
                     // swept across them, the stream changes to the emoji under the
                     // pointer. They wrap to the panel's width.
                     Item {
                         id: reactionBar
-                        readonly property real key: Math.floor((width - 2 * 5) / 6)
+                        readonly property real key: Math.floor((width - 2 * 7) / 8)
                         readonly property int perRow: Math.max(1, Math.floor(width / (key + 2)))
                         Layout.fillWidth: true
                         implicitHeight: Math.ceil(Live.emoji.length / perRow) * (key + 2)
@@ -401,57 +400,6 @@ Item {
                 }
             }
 
-            // —— The effects ——
-            Effects {
-                bare: true
-            }
-        }
     }
-
-    // —— The keys on the board's right edge: a page each ——
-    Column {
-        id: rail
-        x: bar.panelWidth
-        y: 4
-        width: bar.railWidth
-        spacing: 4
-        Repeater {
-            model: [{ icon: "image", tip: "贴图" },
-                    { icon: "message-square", tip: "弹幕 · 表情" },
-                    { icon: "sparkles", tip: "效果（1–9、0 开关）" }]
-            Item {
-                id: railKey
-                required property var modelData
-                required property int index
-                readonly property bool on: bar.page === index
-                width: rail.width
-                height: 36
-                IconButton {
-                    anchors.centerIn: parent
-                    implicitWidth: 32
-                    implicitHeight: 32
-                    iconSize: 16
-                    iconName: railKey.modelData.icon
-                    active: railKey.on
-                    tip: railKey.modelData.tip
-                    onClicked: bar.show(railKey.index)
-                }
-                // Something of this page is on the air while the panel is
-                // elsewhere: effects on, stickers posted.
-                Rectangle {
-                    readonly property bool lit: railKey.index === 2 ? Live.effectsOn
-                                              : railKey.index === 0 ? Live.staged.count > 0 : false
-                    visible: lit && !railKey.on
-                    x: parent.width / 2 + 8
-                    y: 4
-                    width: 7
-                    height: 7
-                    radius: 3.5
-                    color: Theme.text
-                    border.width: 1.5
-                    border.color: Theme.bg
-                }
-            }
-        }
     }
 }

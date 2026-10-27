@@ -78,12 +78,19 @@ Item {
     property var sound2: null
     property bool soundOn: false
     property bool soundOn2: false
-    readonly property bool anySound: soundOn || soundOn2
+    // 只播放顶层声音: only the track whose layer is on top on the air is
+    // heard (each its own volume); the switches above wait meanwhile.
+    property bool soundTopOnly: false
+    // The source on top on the air (Timeline.onTop), set by the host.
+    property string topSource: ""
+    readonly property bool hears1: soundTopOnly ? topSource === "track:0" : soundOn
+    readonly property bool hears2: soundTopOnly ? topSource === "track:1" : soundOn2
+    readonly property bool anySound: soundTopOnly || soundOn || soundOn2
     property string soundDevice: ""
     property real soundVolume: 0.8
     property real soundVolume2: 0.8
-    readonly property string soundError: soundOn && sound && sound.error ? sound.error
-                                       : soundOn2 && sound2 && sound2.error ? sound2.error : ""
+    readonly property string soundError: hears1 && sound && sound.error ? sound.error
+                                       : hears2 && sound2 && sound2.error ? sound2.error : ""
 
     // The picture's shape, the projection's (Projection.aspect): the monitors,
     // the stickers and the danmaku lanes all take it.
@@ -99,6 +106,7 @@ Item {
         property alias soundVolume: desk.soundVolume
         property alias sound2: desk.soundOn2
         property alias soundVolume2: desk.soundVolume2
+        property alias soundTopOnly: desk.soundTopOnly
     }
     // The shape the projection will have before it opens: the chosen screen's
     // when it fills it, else its 16:9 window.
@@ -285,6 +293,7 @@ Item {
                     spacing: 4
                     Toggle {
                         Layout.rightMargin: 4
+                        enabled: !desk.soundTopOnly
                         text: "画面 " + (soundRow.index + 1)
                         checked: soundRow.on
                         onToggled: soundRow.index === 0 ? desk.soundOn = checked : desk.soundOn2 = checked
@@ -324,9 +333,17 @@ Item {
                         text: Math.round(soundRow.volume * 100) + "%"
                         font.pixelSize: Theme.sizeSm
                         font.features: { "tnum": 1 }
-                        color: soundRow.on ? Theme.body : Theme.faint
+                        color: (desk.soundTopOnly ? (soundRow.index === 0 ? desk.hears1 : desk.hears2) : soundRow.on) ? Theme.body : Theme.faint
                     }
                 }
+            }
+            Toggle {
+                text: "只播放顶层声音"
+                checked: desk.soundTopOnly
+                onToggled: desk.soundTopOnly = checked
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: "只听观众画面最上层那条轨道的声音，换到另一条在最上层时声音跟着换（各自的音量照旧）"
             }
             Select {
                 id: outputBox

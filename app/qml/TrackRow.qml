@@ -247,6 +247,8 @@ Item {
     // From the cursor: the main track as its jumps go (app.play), an aux
     // track the same way (TrackPlayer.play): within the entry shown it keeps
     // playing or paused, another entry starts playing.
+    // Played from its cursor: a jump always plays (within the same entry a
+    // seek alone would leave a paused track paused).
     function jump() {
         if (!canJump)
             return
@@ -254,6 +256,8 @@ Item {
             view.player.play(markClip.entry, markAt)
         else
             player.play(markClip.entry, markAt)
+        if (!playing)
+            togglePlay()
     }
     // Played from second `t` of the track (its own time), the cursor left
     // where it is.

@@ -48,6 +48,11 @@ ColumnLayout {
     signal removeCamera(string key)
     // How wide the picture is drawn here: the sources' light copies are made this large.
     readonly property real pictureWidth: screen.width
+    // The width the board wants: its picture at the height it has, with the
+    // margins round it (nothing is kept at the picture's right).
+    readonly property real fitWidth: Math.max(240, (box.height - screen.roomTop - screen.roomFoot) * aspect + screen.roomLeft + 12 + shelfWidth + 8)
+    // 画外: the column at the picture's right where the sources not on it wait.
+    readonly property real shelfWidth: 112
 
     // The chosen layer (in Switcher.preview.slots), and on it a line and a point.
     property int selected: -1
@@ -135,6 +140,30 @@ ColumnLayout {
         }
     }
 
+    // Layer `i` onto the picture centred at (cx, cy) (picture shares), a
+    // quarter wide in its own shape, chosen and on top: dropped from the shelf.
+    function placeAt(i, cx, cy) {
+        if (i < 0 || i >= slots.length)
+            return
+        const id = slots[i].source
+        const w = 0.4
+        const h = Math.min(0.9, w * aspect / Math.max(0.1, ratio(id)))
+        Switcher.updateSlot(i, { x: Math.max(-w / 2, Math.min(1 - w / 2, cx - w / 2)), y: Math.max(-h / 2, Math.min(1 - h / 2, cy - h / 2)), w: w, h: h })
+        choose(i)
+    }
+    // Source `id` onto the picture, chosen and on top: one waiting off it
+    // comes in at the lower right, a quarter wide, in its own shape.
+    function bringIn(id) {
+        const i = slots.findIndex(s => s.source === id)
+        if (i < 0)
+            return
+        if (!Switcher.inPicture(slots[i])) {
+            const w = 0.4
+            const h = Math.min(0.9, w * aspect / Math.max(0.1, ratio(id)))
+            Switcher.updateSlot(i, { x: 1 - w - 0.04, y: 1 - h - 0.05, w: w, h: h })
+        }
+        choose(i)
+    }
     // The quick cut (a track's 投放): `id`'s layer floated to the top as it is
     // sized, on the air with the dissolve set here.
     function takeLive(id) {
@@ -215,6 +244,9 @@ ColumnLayout {
             Switcher.removeLine(selected, lineAt)
             lineAt = -1
             point = -1
+        } else if (slot && slot.source.startsWith("camera:")) {
+            // A camera goes for good (it stops), not off the picture.
+            dropCamera()
         } else if (slot) {
             park(selected)
         }
@@ -330,6 +362,14 @@ ColumnLayout {
             composer.chosenSid = ""
         }
     }
+    // The chosen layer (or its line) with Delete / Backspace, wherever the
+    // keys are: a camera is let go, a track goes off the picture.
+    Shortcut {
+        sequences: [StandardKey.Delete, "Backspace"]
+        context: Qt.ApplicationShortcut
+        enabled: composer.chosenSid === "" && composer.selected >= 0 && !composer.typing
+        onActivated: composer.takeAway()
+    }
     // Esc lets the chosen sticker or layer go and ends editing.
     Shortcut {
         sequence: "Esc"
@@ -371,30 +411,138 @@ ColumnLayout {
             // Fixed, so the picture never changes size as the tools do.
             readonly property real roomFoot: room + airRow.implicitHeight + 10
             // At least one column of parked sources fits at its right.
-            width: Math.max(1, Math.min((box.width - roomLeft) / 1.36, (box.height - roomTop - roomFoot) * composer.aspect))
+            width: Math.max(1, Math.min(box.width - roomLeft - 12 - composer.shelfWidth - 8, (box.height - roomTop - roomFoot) * composer.aspect))
             height: width / Math.max(0.2, composer.aspect)
             x: roomLeft
             y: roomTop
             color: "black"
         }
-        // The sources waiting off the picture, on the stage at its right.
-        // Only those wholly off it: a layer on the picture shows only what
-        // the audience sees of it (its frame, when chosen, shows its whole
-        // size), so nothing of it spills round the picture's edge.
+        // —— 画外: the sources not on the picture, a column at its right ——
+        // Each a small picture with its name: a click brings it onto the
+        // picture (lower right), a drag puts it where it is let go. A layer
+        // moved wholly off the picture comes here. + 相机 at the foot.
         Item {
-            width: box.width
-            height: screen.y + screen.height
-            clip: true
-            Compositor {
-                id: layers
-                x: screen.x
-                y: screen.y
-                width: screen.width
-                height: screen.height
-                layout: ({ slots: Switcher.preview.slots.filter(s => !Switcher.inPicture(s)) })
-                textures: composer.textures
-                operator: true
+            id: shelf
+            z: 7
+            x: screen.x + screen.width + 12
+            y: screen.y
+            width: composer.shelfWidth
+            height: screen.height
+            readonly property var waiting: composer.slots.map((s, i) => ({ source: s.source, index: i }))
+                                                          .filter(o => !Switcher.inPicture(composer.slots[o.index]))
+            Flickable {
+                width: parent.width
+                height: parent.height - cameraKey.height - 8
+                contentHeight: shelfColumn.implicitHeight
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                interactive: !shelf.carrying
+                Column {
+                    id: shelfColumn
+                    width: parent.width
+                    spacing: 8
+                    Repeater {
+                        model: shelf.waiting
+                        Item {
+                            id: tile
+                            required property var modelData
+                            width: shelfColumn.width
+                            height: thumb.height + 18
+                            Rectangle {
+                                id: thumb
+                                width: parent.width
+                                height: Math.round(width * 9 / 16)
+                                radius: Theme.radius
+                                color: "black"
+                                clip: true
+                                opacity: shelf.carrying && shelf.carried === tile.modelData.source ? 0.4 : 1
+                                Compositor {
+                                    anchors.fill: parent
+                                    layout: ({ slots: [Switcher.slot({ source: tile.modelData.source, x: 0, y: 0, w: 1, h: 1, fit: "contain" }, 0)] })
+                                    textures: composer.textures
+                                    operator: true
+                                }
+                            }
+                            Text {
+                                y: thumb.height + 3
+                                width: parent.width
+                                text: composer.sourceName(tile.modelData.source)
+                                font.pixelSize: Theme.sizeXs
+                                color: tileArea.containsMouse ? Theme.text : Theme.muted
+                                elide: Text.ElideRight
+                            }
+                            MouseArea {
+                                id: tileArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                preventStealing: true
+                                cursorShape: shelf.carrying ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+                                property point from
+                                onPressed: mouse => from = Qt.point(mouse.x, mouse.y)
+                                onPositionChanged: mouse => {
+                                    if (!pressed)
+                                        return
+                                    if (!shelf.carrying && Math.hypot(mouse.x - from.x, mouse.y - from.y) > 6) {
+                                        shelf.carried = tile.modelData.source
+                                        shelf.carrying = true
+                                    }
+                                    if (shelf.carrying)
+                                        shelf.at = mapToItem(box, mouse.x, mouse.y)
+                                }
+                                onReleased: mouse => {
+                                    const i = composer.slots.findIndex(s => s.source === tile.modelData.source)
+                                    if (shelf.carrying) {
+                                        const p = mapToItem(screen, mouse.x, mouse.y)
+                                        if (p.x >= 0 && p.y >= 0 && p.x <= screen.width && p.y <= screen.height)
+                                            composer.placeAt(i, p.x / screen.width, p.y / screen.height)
+                                    } else {
+                                        composer.bringIn(tile.modelData.source)
+                                    }
+                                    shelf.carrying = false
+                                }
+                                onCanceled: shelf.carrying = false
+                                ToolTip.visible: containsMouse && !pressed
+                                ToolTip.delay: 600
+                                ToolTip.text: "在画外，观众看不到 · 点一下放进画面右下角，或拖进画面里"
+                            }
+                        }
+                    }
+                }
             }
+            // A drag from the shelf: where the layer would go, at the pointer.
+            property bool carrying: false
+            property string carried: ""
+            property point at
+            // + 相机: a camera taken in comes onto the picture, at its lower
+            // right. Listed only while the menu is open (listing wakes the
+            // camera stack).
+            TextButton {
+                id: cameraKey
+                anchors.bottom: parent.bottom
+                flat: true
+                iconName: "plus"
+                text: "相机"
+                leftPadding: 6
+                rightPadding: 8
+                onClicked: cameraMenu.popup(cameraKey, 0, cameraKey.height + 2)
+                ToolTip.visible: hovered && !cameraMenu.visible
+                ToolTip.delay: 600
+                ToolTip.text: "加一个相机画面，放在画面右下角"
+            }
+        }
+        // The layer being dragged in from the shelf, as large as it will land.
+        Rectangle {
+            visible: shelf.carrying
+            z: 9
+            readonly property real w: screen.width * 0.4
+            width: w
+            height: Math.min(screen.height * 0.9, w / Math.max(0.1, composer.ratio(shelf.carried)))
+            x: shelf.at.x - width / 2
+            y: shelf.at.y - height / 2
+            radius: Theme.radius
+            color: "#33ffffff"
+            border.width: 1.5
+            border.color: "#ffffff"
         }
         // The picture itself as the audience will see it: the layers inside
         // it through the effects, with the words and reactions on the air.
@@ -549,6 +697,7 @@ ColumnLayout {
                 outlined: true
                 iconName: out && out.anySound ? "volume-2" : "volume-x"
                 text: !out || !out.anySound ? "声音关"
+                      : out.soundTopOnly ? "顶层声音"
                       : out.soundOn && out.soundOn2 ? "画面 1+2"
                       : out.soundOn ? "画面 1 · " + Math.round(out.soundVolume * 100) + "%"
                       : "画面 2 · " + Math.round(out.soundVolume2 * 100) + "%"
@@ -707,7 +856,9 @@ ColumnLayout {
                             return { mode: "bend", line: k, piece: o.piece }
                     }
                 }
-                const order = composer.slots.map((s, i) => i).sort((a, b) => (composer.slots[b].z - composer.slots[a].z) || (b - a))
+                // Only what is on the picture: those off it wait on the shelf.
+                const order = composer.slots.map((s, i) => i).filter(i => Switcher.inPicture(composer.slots[i]))
+                                            .sort((a, b) => (composer.slots[b].z - composer.slots[a].z) || (b - a))
                 for (const i of order) {
                     const r = rectOf(composer.slots[i])
                     if (x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height)
@@ -902,6 +1053,7 @@ ColumnLayout {
                     readonly property var s: composer.slots[index]
                     readonly property bool chosen: index === composer.selected
                     readonly property bool lost: !composer.known(s.source)
+                    visible: Switcher.inPicture(s)
                     x: screen.x + s.x * screen.width
                     y: screen.y + s.y * screen.height
                     width: s.w * screen.width
@@ -1239,24 +1391,6 @@ ColumnLayout {
             }
         }
 
-        // + 相机, at the foot of the stage at the picture's right where
-        // sources wait: a camera taken in waits there too. Listed only while
-        // the menu is open (listing wakes the camera stack).
-        TextButton {
-            id: cameraKey
-            z: 7
-            x: screen.x + screen.width * 1.05
-            y: screen.y + screen.height - height
-            // On a plate: a layer reaching over here does not hide it.
-            iconName: "plus"
-            text: "相机"
-            leftPadding: 6
-            rightPadding: 8
-            onClicked: cameraMenu.popup(cameraKey, 0, cameraKey.height + 2)
-            ToolTip.visible: hovered && !cameraMenu.visible
-            ToolTip.delay: 600
-            ToolTip.text: "加一个相机画面，放在画外，拖进画面里用"
-        }
         PopMenu {
             id: cameraMenu
             implicitWidth: 240
@@ -1265,9 +1399,15 @@ ColumnLayout {
                 delegate: PopAction {
                     required property var modelData
                     readonly property bool taken: composer.cameraIds.indexOf(modelData.id) >= 0
-                    text: modelData.id ? modelData.name + (taken ? "（已加）" : "") : modelData.name
-                    enabled: !!modelData.id && !taken
-                    onTriggered: composer.addCamera(modelData.id)
+                    text: modelData.id ? modelData.name + (taken ? "（已加 · 放回画面）" : "") : modelData.name
+                    enabled: !!modelData.id
+                    onTriggered: {
+                        const key = "camera:" + modelData.id
+                        if (!taken)
+                            composer.addCamera(modelData.id)
+                        // After the stack has taken it in (a moment later).
+                        Qt.callLater(() => composer.bringIn(key))
+                    }
                 }
                 onObjectAdded: (index, object) => cameraMenu.insertAction(index, object)
                 onObjectRemoved: (index, object) => cameraMenu.removeAction(object)

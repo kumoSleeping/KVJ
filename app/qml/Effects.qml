@@ -22,8 +22,20 @@ Card {
     readonly property int rowHeight: 30
     readonly property int rowGap: 2
     implicitWidth: 148
+    // `compact`: the effects as keys three to a row and one slider for the
+    // strength of the one touched last (the rows come back while editing,
+    // to change the order); the card as tall as what it shows.
+    property bool compact: false
+    implicitHeight: compact ? body.implicitHeight : 0
+    function nameOf(key) {
+        for (let i = 0; i < Live.chain.count; ++i)
+            if (Live.chain.get(i).key === key)
+                return Live.chain.get(i).name
+        return ""
+    }
 
     ColumnLayout {
+        id: body
         anchors.fill: parent
         anchors.margins: card.bare ? 0 : Theme.pad
         anchors.leftMargin: card.bare ? 0 : 10
@@ -43,22 +55,6 @@ Card {
                      + "快捷键：1–9、0（小键盘也行）开关前十个；, / . 把最后操作的效果减弱 / 加强 5%\n"
                      + "用 , / . 调过再关掉，这个强度就记成它的推荐强度（名字上有小点）；「重置」恢复默认"
             }
-            Item { Layout.fillWidth: true }
-            TextButton {
-                implicitHeight: 26
-                leftPadding: 6
-                rightPadding: 6
-                flat: true
-                text: card.editing ? "完成" : "编辑"
-                onClicked: card.editing = !card.editing
-                ToolTip.visible: hovered && !card.editing
-                ToolTip.delay: 600
-                ToolTip.text: "调整顺序、重置记住的强度"
-            }
-        }
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 2
             Item { Layout.fillWidth: true }
             TextButton {
                 implicitHeight: 26
@@ -86,6 +82,17 @@ Card {
                 ToolTip.delay: 600
                 ToolTip.text: "关掉全部效果"
             }
+            TextButton {
+                implicitHeight: 26
+                leftPadding: 6
+                rightPadding: 6
+                flat: true
+                text: card.editing ? "完成" : "编辑"
+                onClicked: card.editing = !card.editing
+                ToolTip.visible: hovered && !card.editing
+                ToolTip.delay: 600
+                ToolTip.text: "调整顺序、重置记住的强度"
+            }
         }
 
         // The rows, in the order they apply. Knobs and names are dragged, so
@@ -93,8 +100,10 @@ Card {
         // bar, when the card is too short for every row.
         ListView {
             id: list
+            visible: !card.compact || card.editing
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.fillHeight: !card.compact
+            Layout.preferredHeight: card.compact && visible ? Live.chain.count * (card.rowHeight + card.rowGap) : -1
             clip: true
             interactive: false
             spacing: card.rowGap
@@ -269,6 +278,93 @@ Card {
                         }
                     }
                 }
+            }
+        }
+        // Compact: a key each, three to a row (its number key in a corner);
+        // a press switches it at its best strength, or off.
+        Grid {
+            id: keys
+            visible: card.compact && !card.editing
+            Layout.fillWidth: true
+            // Four to a row once there is room for their names.
+            columns: width >= 360 ? 4 : 3
+            spacing: 3
+            Repeater {
+                model: Live.chain
+                Rectangle {
+                    id: fx
+                    required property string key
+                    required property string name
+                    required property int index
+                    readonly property bool on: (Live.level[key] || 0) > 0
+                    width: (keys.width - (keys.columns - 1) * keys.spacing) / keys.columns
+                    height: 28
+                    radius: Theme.radius - 2
+                    color: on ? (tap.pressed ? Theme.body : Theme.text)
+                              : tap.pressed ? Theme.selected : tap.containsMouse ? Theme.hover : Theme.inset
+                    Behavior on color { ColorAnimation { duration: 90 } }
+                    Text {
+                        anchors.centerIn: parent
+                        width: parent.width - 16
+                        horizontalAlignment: Text.AlignHCenter
+                        text: fx.name
+                        font.pixelSize: 11
+                        font.weight: fx.on || Live.focused === fx.key ? Font.DemiBold : Font.Medium
+                        color: fx.on ? Theme.bg : Theme.body
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        x: 4
+                        y: 2
+                        text: Live.keysOn && fx.index < 10 ? String((fx.index + 1) % 10) : ""
+                        font.pixelSize: 9
+                        font.features: { "tnum": 1 }
+                        color: fx.on ? Theme.faint : Theme.muted
+                    }
+                    MouseArea {
+                        id: tap
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            Live.focused = fx.key
+                            Live.switchEffect(fx.key, !fx.on)
+                        }
+                        ToolTip.visible: containsMouse && !pressed
+                        ToolTip.delay: 900
+                        ToolTip.text: fx.name + "：点一下开关（推荐强度），下面的滑条调强度"
+                    }
+                }
+            }
+        }
+        // The strength of the effect touched last.
+        RowLayout {
+            visible: card.compact && !card.editing
+            Layout.fillWidth: true
+            spacing: 8
+            Text {
+                Layout.preferredWidth: 56
+                text: Live.focused ? card.nameOf(Live.focused) : "强度"
+                font.pixelSize: Theme.sizeXs
+                font.weight: Font.DemiBold
+                color: Live.focused ? Theme.text : Theme.faint
+                elide: Text.ElideRight
+            }
+            Seek {
+                Layout.fillWidth: true
+                from: 0
+                to: 1
+                enabled: !!Live.focused
+                value: Live.focused ? (Live.level[Live.focused] || 0) : 0
+                onMoved: Live.setLevel(Live.focused, value)
+            }
+            Text {
+                Layout.preferredWidth: 32
+                horizontalAlignment: Text.AlignRight
+                text: Live.focused ? Math.round((Live.level[Live.focused] || 0) * 100) + "%" : ""
+                font.pixelSize: Theme.sizeXs
+                font.features: { "tnum": 1 }
+                color: Theme.body
             }
         }
         Text {
