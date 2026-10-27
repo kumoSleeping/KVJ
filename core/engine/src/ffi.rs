@@ -36,6 +36,9 @@ enum Request {
         /// The track the new entries go on.
         #[serde(default)]
         track: u8,
+        /// Placed on the timeline (on), or only into the Set's library (off).
+        #[serde(default = "crate::document::on")]
+        placed: bool,
     },
     Enable { set_id: String, entry_ids: Vec<String>, on: bool },
     Devices,
@@ -87,8 +90,8 @@ impl KvjEngine {
         Ok(match request {
             Request::Document => json!(e.document()?),
             Request::Edit { revision, edit } => json!(e.edit(revision, edit)?),
-            Request::Import { set_id, revision, paths, track } => {
-                json!(e.import(&set_id, revision, &paths, track)?)
+            Request::Import { set_id, revision, paths, track, placed } => {
+                json!(e.import(&set_id, revision, &paths, track, placed)?)
             }
             Request::Enable { set_id, entry_ids, on } => json!(e.enable(&set_id, &entry_ids, on)?),
             Request::Devices => json!(e.devices()?),

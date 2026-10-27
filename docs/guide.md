@@ -38,19 +38,19 @@ so does a Set's menu or an add dialog in use. The drawer is one tree of the Sets
 opens onto its entries (videos only: mp4, m4v, mkv, mov, webm; a folder adds
 the videos in it and its subfolders), grouped by the folders they came from;
 the chosen Set is the one played and followed, and files dropped on a Set go
-into it. Each entry has a switch that takes effect at once, also
-during the show: an entry that is off leaves the timeline and is not followed,
-while the picture and its sound go on. At a handover between DJs the next DJ's
-entries are turned on while the last ones stay on, and the last are turned off
-once the next set is under way. Every entry is indexed either way, so switching
-never waits for indexing: the index holds the whole Set, entries that are off
-included (about 0.6 MiB a minute of sound, up to 192 MiB, some five hours; a
-larger collection goes into several Sets). Turning off the entry on the screen asks again in red
-under it; the second press goes on to the start of the next entry that is on,
-with the jump's dissolve. While it asks the drawer is not put away: a press
-outside it, Esc or its key answers no first. The canvas, across the whole
-width, is the live desk with the player, then smart following
-(**音频对位**) and the effects at the right.
+into its library. An entry is on the timeline (and followed, on the followed
+track) once it is placed on a track: dragged onto a track row, or
+double-clicked (onto the first track with nothing on it, else a new one, else
+the main track's end); a placed entry shows which picture it plays in
+(画面 N). A piece's right-click menu on the timeline (移出轨道) takes it back
+off, into the library only. Placing works during the show onto the track an
+entry is already on (moving between tracks waits until following stops), so at
+a handover between DJs the next DJ's entries go on while the last ones stay.
+Every entry is indexed either way, so placing never waits for indexing: the
+index holds the whole Set, entries off the timeline included (about 0.6 MiB a
+minute of sound, up to 192 MiB, some five hours; a larger collection goes into
+several Sets). Files imported from the drawer go into the library; files
+dropped on a track row are imported onto that track.
 
 Every entry is on one of four **tracks**: the main track, where entries go
 unless told otherwise and which the player and the timeline play, and three aux
@@ -80,13 +80,14 @@ sets the cursor. Then the ruler, in each entry's own time along the longest row
 The rows come next, two in view; a third and more are reached by scrolling, as
 an editor's tracks are (a scroll bar shows once there are more than fit). The
 main track (画面 1) is always the first row, also while it is empty; each aux
-track (画面 2, 3, 4) that has entries or was added with **+ 轨道** (at the top
-left of the rows) has its own, and so does each camera taken in (**+ 轨道**
-lists the cameras only while its menu is open). A row's header holds the
+track (画面 2, 3, 4) that has entries or was added has its own, and so does
+each camera taken in. A slim **+** under the last row adds an aux track or a
+camera (it lists the cameras only while its menu is open). A row's header holds the
 source's own small live picture (a press puts it in the preview's chosen slot,
 PVW; on the air it has an ink edge and PGM, in the preview a faint one and PVW),
 its name, an ear on the track following listens to, and ⋯ (an aux track's
-**跟随主轨速度**, and **移除轨道** for an empty aux track or a camera). Across the
+**跟随主轨速度**, and **移除轨道** for an empty aux track or a camera). There are no hints in
+the track area: an empty track's lane is blank, a camera's plain. Across the
 rest of the row runs its own play bar over its lane, so every track is
 operated on its own: play and pause, where it is in its entry, a seek track
 over the whole row (a press or drag moves that track's picture there; on the
@@ -106,11 +107,16 @@ BPM. The waveform is KDJ's whole-track preview (整曲预览): its height is the
 energy, its colour how the lows (red), mids (green) and highs (blue) stand
 against the rest of the file, and the part of the entry on the screen that has
 played is dimmed. It is analysed once per file, 100 columns a second, on a
-low-priority thread, and cached on disk, so it keeps its detail zoomed in. An
-empty track says **把素材拖到这里**: entries dragged from the drawer, or files
-from the desktop, dropped anywhere on a track's row go on that track (the row
-lights up while they hover); a camera's lane just says it is live. All rows
-share one view. Pinch on the trackpad (or ⌘/Ctrl/Alt + scroll) zooms about the
+low-priority thread, and cached on disk, so it keeps its detail zoomed in. A
+right click on an entry offers **移出轨道**, which turns it off so it goes back
+to the drawer. Entries dragged from the drawer, or files from the desktop,
+dropped on the body of a track's row go on that track: the row lights up and
+a block after its last entry shows where they will land. Dropped on the seam
+between two rows, or below the last one (on the +), they go on a new track
+that appears there, shown by an ink line with a + while they hover; never
+above the main track, and only while another aux track can be added. A
+camera's row takes nothing. Held near the top or bottom of the rows, a drag
+scrolls them. All rows share one view. Pinch on the trackpad (or ⌘/Ctrl/Alt + scroll) zooms about the
 pointer down to a few frames; a sideways two-finger swipe moves the lanes with
 the fingers, along the axis it started on and on through its momentum, and an
 upright one scrolls the rows once there are more than fit (else it moves the
@@ -244,7 +250,7 @@ layout keys; then the effects. At the foot, the track area (see the timeline):
 each row's header shows that source's live picture, and pressing it puts the
 source in the preview's chosen slot; a header on the air has an ink edge and a
 PGM tag, one in the preview a faint edge and a PVW tag. Cameras are rows too
-(+ 轨道 → 相机; the list of cameras is read only then). A source is decoded
+(the + under the rows → 相机; the list of cameras is read only then). A source is decoded
 (or a camera opened) only while it is on the air or the operator's window
 shows it, and at most six videos decode at once: past that a jump cuts
 instead of dissolving.

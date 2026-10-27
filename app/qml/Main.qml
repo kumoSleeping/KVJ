@@ -437,26 +437,96 @@ ApplicationWindow {
         return "ok"
     }
 
-    // Files into the Set shown, onto the main track or the one they were
-    // dropped on.
+    // Files into the Set shown: into its library (the drawer's keys and
+    // drops), or placed on a track (dropped on the timeline; `track` set).
     function addUrls(urls, track) {
         if (!urls || urls.length === 0 || !app.editable)
             return
         if (!app.currentSet)
             Engine.createSet("Set " + (app.sets.length + 1))
         if (app.currentSet)
-            Engine.importUrls(app.currentSet.id, urls, track || 0)
+            Engine.importUrls(app.currentSet.id, urls, track === undefined ? 0 : track, track !== undefined)
     }
-    // Entries dragged from the drawer onto a track row: they go on that track,
-    // in whichever Set holds them.
-    function moveToTrack(ids, track) {
-        if (!app.editable)
-            return
+    // The drawer is the Set's library; an entry is on the timeline once it
+    // is placed on a track (it is then on, and followed if the track is).
+    function placeOn(ids, track) {
         for (const set of app.sets) {
-            const mine = ids.filter(id => set.entries.some(e => e.id === id && (e.track || 0) !== track))
-            if (mine.length)
-                Engine.setTrack(set.id, mine, track)
+            let mine = ids.filter(id => set.entries.some(e => e.id === id))
+            const moved = mine.filter(id => set.entries.some(e => e.id === id && (e.track || 0) !== track))
+            // Moving between tracks is an edit, refused while following runs;
+            // turning on works during the show.
+            if (moved.length && app.editable)
+                Engine.setTrack(set.id, moved, track)
+            else if (moved.length)
+                mine = mine.filter(id => moved.indexOf(id) < 0)
+            const off = mine.filter(id => set.entries.some(e => e.id === id && e.enabled === false))
+            if (off.length)
+                Engine.enableEntries(set.id, off, true)
         }
+    }
+    // Back to the library only.
+    function takeOff(id) {
+        for (const set of app.sets)
+            if (set.entries.some(e => e.id === id))
+                Engine.enableEntries(set.id, [id], false)
+    }
+    // A track's entries on the timeline (placed).
+    function placedOn(track) {
+        return app.entries.filter(e => (e.track || 0) === track && e.enabled !== false)
+    }
+    // A double-click in the drawer: onto the first track from the top with
+    // nothing on it, else onto a new one, else the main track's end.
+    function placeAnywhere(id) {
+        const rows = app.trackRows.filter(r => r.kind === "track")
+        const empty = rows.find(r => app.placedOn(r.track).length === 0)
+        const fresh = [1, 2, 3].find(t => app.shownAux.indexOf(t) < 0)
+        app.placeOn([id], empty ? empty.track : fresh || 0)
+    }
+    // A new aux track at row `position` (1 = right under the main one): the
+    // aux tracks from there on move one number up, then the entries go on it.
+    // Files are imported onto it the same way.
+    function insertTrack(position) {
+        const aux = app.shownAux.slice()
+        if (aux.length >= 3)
+            return -1
+        const at = Math.max(0, Math.min(aux.length, position - 1))
+        // New numbers in row order: 1, 2, 3; the old ones from `at` on shift.
+        for (let i = aux.length - 1; i >= at; --i) {
+            const from = aux[i]
+            const to = i + 2
+            if (from === to)
+                continue
+            const ids = app.entries.filter(e => (e.track || 0) === from).map(e => e.id)
+            if (ids.length)
+                Engine.setTrack(app.currentSet.id, ids, to)
+        }
+        for (let i = 0; i < at; ++i) {
+            const from = aux[i]
+            const to = i + 1
+            const ids = app.entries.filter(e => (e.track || 0) === from).map(e => e.id)
+            if (from !== to && ids.length)
+                Engine.setTrack(app.currentSet.id, ids, to)
+        }
+        // The empty ones the operator added keep their places in the order.
+        const added = []
+        aux.forEach((t, i) => { if (app.addedTracks.indexOf(t) >= 0) added.push(i < at ? i + 1 : i + 2) })
+        const track = at + 1
+        app.setAddedTracks(added.concat([track]))
+        return track
+    }
+    function insertEntries(ids, position) {
+        if (!app.editable || !app.currentSet)
+            return
+        const track = app.insertTrack(position)
+        if (track > 0)
+            app.placeOn(ids, track)
+    }
+    function insertFiles(urls, position) {
+        if (!app.editable || !app.currentSet)
+            return
+        const track = app.insertTrack(position)
+        if (track > 0)
+            app.addUrls(urls, track)
     }
 
     function clock(seconds, tenths) {
@@ -570,7 +640,8 @@ ApplicationWindow {
     }
     // Aux tracks shown while still empty: added with the timeline's + 轨道.
     property var addedTracks: []
-    readonly property var shownAux: [1, 2, 3].filter(t => app.auxPlayers[t - 1].entries.length > 0 || app.addedTracks.indexOf(t) >= 0)
+    readonly property var shownAux: [1, 2, 3].filter(t => app.auxPlayers[t - 1].entries.some(e => e.enabled !== false)
+                                                     || app.addedTracks.indexOf(t) >= 0)
     // The timeline's rows, which are also the mixer's sources: the main track,
     // the aux tracks shown, the cameras taken in.
     readonly property var trackRows: {
@@ -966,6 +1037,10 @@ ApplicationWindow {
                     onAddUrls: urls => app.addUrls(urls)
                     onDropPlaying: id => app.dropPlaying(id)
                     onPutAway: app.closeSets()
+                    onPlace: id => app.placeAnywhere(id)
+                    onDragBegin: (ids, title, at) => app.entryDragBegin(ids, title, at)
+                    onDragMove: at => app.entryDragMove(at)
+                    onDragEnd: drop => app.entryDragEnd(drop)
                 }
             }
         }
@@ -993,8 +1068,12 @@ ApplicationWindow {
             onAddTrack: app.addTrack()
             onAddCamera: id => app.setCameras(app.cameraIds.concat([id]))
             onRemoveRow: key => app.removeRow(key)
-            onDropEntries: (ids, track) => app.moveToTrack(ids, track)
-            onDropFiles: (urls, track) => app.addUrls(urls, track)
+            // Done once the drop is over: the rows are made anew by it.
+            onDropEntries: (ids, track) => Qt.callLater(app.placeOn, ids, track)
+            onDropFiles: (urls, track) => Qt.callLater(app.addUrls, urls, track)
+            onInsertEntries: (ids, position) => Qt.callLater(app.insertEntries, ids, position)
+            onInsertFiles: (urls, position) => Qt.callLater(app.insertFiles, urls, position)
+            onRemoveEntry: id => Qt.callLater(app.takeOff, id)
             trailing: FollowStrip {
                 id: strip
                 app: app
@@ -1006,6 +1085,61 @@ ApplicationWindow {
             running: app.running
             phase: app.phase
             player: app
+        }
+    }
+
+    // An entry dragged from the drawer: this stand-in follows the pointer
+    // over the window and carries the drag (internal, keys "kvj-entry") to the
+    // track rows. It lives here, not in the drawer's row, which the drop may
+    // remake while the drag still runs.
+    property bool draggingEntries: false
+    function entryDragBegin(ids, title, at) {
+        entryGhost.entryIds = ids
+        entryGhost.title = title
+        app.entryDragMove(at)
+        app.draggingEntries = true
+    }
+    function entryDragMove(at) {
+        entryGhost.x = at.x - entryGhost.width / 2
+        entryGhost.y = at.y - entryGhost.height / 2
+    }
+    function entryDragEnd(drop) {
+        if (!app.draggingEntries)
+            return
+        if (drop)
+            entryGhost.Drag.drop()
+        else
+            entryGhost.Drag.cancel()
+        app.draggingEntries = false
+    }
+    Rectangle {
+        id: entryGhost
+        property var entryIds: []
+        property string title: ""
+        parent: app.contentItem
+        z: 1000
+        visible: app.draggingEntries
+        width: Math.min(260, ghostText.implicitWidth + 24)
+        height: 30
+        radius: Theme.radius
+        color: Theme.raised
+        border.width: 1
+        border.color: Theme.line
+        opacity: 0.92
+        Drag.active: app.draggingEntries
+        Drag.dragType: Drag.Internal
+        Drag.keys: ["kvj-entry"]
+        Drag.hotSpot.x: width / 2
+        Drag.hotSpot.y: height / 2
+        Text {
+            id: ghostText
+            anchors.centerIn: parent
+            width: Math.min(implicitWidth, 236)
+            text: entryGhost.title
+            font.pixelSize: Theme.sizeSm
+            font.weight: Font.Medium
+            color: Theme.text
+            elide: Text.ElideRight
         }
     }
 

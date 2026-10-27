@@ -49,7 +49,7 @@ fn main() -> anyhow::Result<()> {
                 None => engine.edit(doc.revision, Edit::Create { name: "CLI".into() })?,
             };
             let set = doc.sets.iter().find(|s| s.name == "CLI").unwrap().id.clone();
-            let doc = engine.import(&set, doc.revision, &args, 0)?;
+            let doc = engine.import(&set, doc.revision, &args, 0, true)?;
             let count = doc.sets.iter().find(|s| s.id == set).map_or(0, |s| s.entries.len());
             println!("data   {} · Set CLI · {count} entries", data.display());
             engine.start(&set, Selection { device, channel_start, room }, command == "prepare", 0)?;

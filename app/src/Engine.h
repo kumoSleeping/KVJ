@@ -78,7 +78,8 @@ public:
     Q_INVOKABLE void deleteSet(const QString &setId);
     Q_INVOKABLE void removeEntry(const QString &setId, const QString &entryId);
     // `track`: 0 the main track, 1..3 the aux ones (画面 2..4).
-    Q_INVOKABLE void importUrls(const QString &setId, const QList<QUrl> &urls, int track = 0);
+    // `placed`: onto the timeline (on), or only into the Set's library.
+    Q_INVOKABLE void importUrls(const QString &setId, const QList<QUrl> &urls, int track = 0, bool placed = true);
     // On or off for following; also while following, for the next round.
     Q_INVOKABLE void enableEntries(const QString &setId, const QStringList &entryIds, bool on);
     // Moves entries to a track (0..3); like other edits, only while not following.

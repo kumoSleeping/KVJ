@@ -11,12 +11,12 @@ import KVJ
 // The chosen Set is the one on the timeline and followed; choosing another
 // opens it and stops following, while the picture plays on from its own Set
 // until something of the new one is played.
-// Each entry has a key that turns it on or off, at once and also during the
-// show: an entry that is off leaves the timeline and is not followed. At a
-// handover between DJs the next one is turned on while the last stays on, and
-// the last is turned off once the next is under way. Turning off the entry on
-// the screen asks again, in red under it; the second press goes on to the next
-// entry that is on. Files dropped on a Set go into that Set.
+// A Set's entries are its library: an entry is on the timeline (and followed)
+// once it is placed on a track, by dragging it onto a track row or with a
+// double-click (the first free track); taken off a track (its menu there), it
+// stays here. Placing works during the show too, onto the track an entry is
+// already on (moving between tracks waits until following stops). Files
+// dropped on a Set go into its library.
 // It floats as a drawer over the canvas (Main.qml), which keeps it open while
 // one of its menus or dialogs is in use (`asking`, `holding()`).
 Rectangle {
@@ -51,6 +51,13 @@ Rectangle {
     signal selectSet(string id)
     // Its key in the head was pressed.
     signal putAway()
+    // An entry double-clicked: onto the first free track.
+    signal place(string entryId)
+    // An entry dragged: where the pointer is, in the window's coordinates;
+    // `drop` false when it was called off.
+    signal dragBegin(var entryIds, string title, point at)
+    signal dragMove(point at)
+    signal dragEnd(bool drop)
     signal addUrls(var urls)
     // The entry on the screen is turned off, confirmed.
     signal dropPlaying(string id)
@@ -108,20 +115,6 @@ Rectangle {
             Engine.enableEntries(set.id, chosen, on)
     }
     // A key pressed on an entry. Off for the one on the screen asks first.
-    function press(set, entry, on) {
-        if (!on && entry.id === bar.playingId && entry.enabled !== false) {
-            if (bar.confirmId !== entry.id) {
-                bar.confirmId = entry.id
-                confirmTimer.restart()
-                return
-            }
-            bar.confirmId = ""
-            bar.dropPlaying(entry.id)
-            return
-        }
-        bar.confirmId = ""
-        Engine.enableEntries(set.id, [entry.id], on)
-    }
     onPlayingIdChanged: confirmId = ""
     Timer {
         id: confirmTimer
@@ -544,7 +537,8 @@ Rectangle {
         }
     }
 
-    // —— An entry: the whole row is its key, one tap at the booth ——
+    // —— An entry of the library: dragged onto a track, or double-clicked onto
+    // the first free one; a placed one says which ——
     Component {
         id: entryRow
         ItemDelegate {
@@ -559,33 +553,24 @@ Rectangle {
             bottomPadding: 0
             leftPadding: 8 + (row.info ? row.info.depth : 1) * 16
             rightPadding: 6
-            onClicked: bar.press(row.info.set, entry, !on)
+            onDoubleClicked: if (entry) bar.place(entry.id)
             ToolTip.visible: hovered && title.truncated
             ToolTip.delay: 700
             ToolTip.text: entry ? entry.title : ""
             contentItem: RowLayout {
                 spacing: 8
-                Toggle {
-                    padding: 0
-                    checked: row.on
-                    onToggled: {
-                        // The document says whether it is on; a press only asks.
-                        checked = Qt.binding(() => row.on)
-                        bar.press(row.info.set, row.entry, !row.on)
-                    }
-                }
                 Text {
                     id: title
                     Layout.fillWidth: true
                     text: row.entry ? row.entry.title : ""
                     font.pixelSize: Theme.sizeSm
                     font.weight: row.playing ? Font.DemiBold : Font.Normal
-                    color: row.playing ? Theme.text : row.on ? Theme.body : Theme.faint
+                    color: row.playing ? Theme.text : Theme.body
                     elide: Text.ElideRight
                 }
                 // Which picture it plays in, when not the main one (Live tracks).
                 Text {
-                    visible: row.track > 0
+                    visible: row.on
                     text: "画面 " + (row.track + 1)
                     font.pixelSize: Theme.sizeXs
                     color: Theme.muted
@@ -642,18 +627,17 @@ Rectangle {
                 }
             }
             // Dragged down onto a track row of the timeline, it goes on that
-            // track (Timeline reads the ids from the drag's data).
-            Drag.dragType: Drag.Automatic
-            Drag.supportedActions: Qt.MoveAction
-            Drag.mimeData: ({ "text/x-kvj-entry": row.entry ? row.entry.id : "" })
-            Drag.active: entryDrag.active
+            // track. The window carries the drag (Main's stand-in): this row
+            // may be made anew by the drop while it is still under way.
             DragHandler {
                 id: entryDrag
                 target: null
-                enabled: bar.editable && !!row.entry
+                enabled: !!row.entry
+                onActiveChanged: active ? bar.dragBegin([row.entry.id], row.entry.title, centroid.scenePosition)
+                                        : bar.dragEnd(true)
+                onCentroidChanged: if (active) bar.dragMove(centroid.scenePosition)
             }
-            // Its picture under the pointer while dragged.
-            onHoveredChanged: if (hovered && bar.editable) row.grabToImage(result => row.Drag.imageSource = result.url)
+            Component.onDestruction: if (entryDrag.active) bar.dragEnd(false)
             // A right press puts it on another track: the main one is followed
             // and played by the player, the others play side by side with it.
             TapHandler {

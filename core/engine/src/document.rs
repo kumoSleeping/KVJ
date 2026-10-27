@@ -37,7 +37,7 @@ pub struct Entry {
 }
 /// Tracks are 0 (main) to this.
 pub const LAST_TRACK: u8 = 3;
-fn on() -> bool {
+pub(crate) fn on() -> bool {
     true
 }
 impl Entry {

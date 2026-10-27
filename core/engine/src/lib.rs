@@ -252,7 +252,9 @@ impl Engine {
         Ok(document)
     }
     /// Files and folders (searched recursively) become entries of one Set, on `track`.
-    pub fn import(&self, set_id: &str, revision: u64, paths: &[String], track: u8) -> Result<Document> {
+    /// `placed`: the new entries are on (on the timeline, followed) or only
+    /// in the Set, to be placed later.
+    pub fn import(&self, set_id: &str, revision: u64, paths: &[String], track: u8, placed: bool) -> Result<Document> {
         anyhow::ensure!(track <= document::LAST_TRACK, "轨道不存在");
         let _gate = self.gate.lock().unwrap();
         if self.running() {
@@ -290,6 +292,7 @@ impl Engine {
                 let mut entry = Entry::new(path, video, 0., duration)?;
                 entry.silent = !probe.audio;
                 entry.track = track;
+                entry.enabled = placed;
                 Ok(entry)
             })
             .collect::<Result<Vec<_>>>()?;

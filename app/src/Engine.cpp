@@ -286,7 +286,7 @@ void Engine::setTrack(const QString &setId, const QStringList &entryIds, int tra
     edit({{"kind", "track"}, {"set_id", setId}, {"entry_ids", QJsonArray::fromStringList(entryIds)}, {"track", track}});
 }
 
-void Engine::importUrls(const QString &setId, const QList<QUrl> &urls, int track)
+void Engine::importUrls(const QString &setId, const QList<QUrl> &urls, int track, bool placed)
 {
     QJsonArray paths;
     for (const QUrl &url : urls) {
@@ -301,6 +301,7 @@ void Engine::importUrls(const QString &setId, const QList<QUrl> &urls, int track
         {"revision", m_document.value("revision").toLongLong()},
         {"paths", paths},
         {"track", track},
+        {"placed", placed},
     };
     clearError();
     m_importing = true;

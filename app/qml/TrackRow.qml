@@ -14,19 +14,22 @@ import KVJ
 // leads that player. The lane lays the row's entries end to end (TrackPiece)
 // with the row's playhead; on the main row a press only sets the cursor, on
 // an aux row it moves that track's picture there at once, playing or paused
-// as it was. A camera has no timeline: its lane just says it is live. Entries
-// dragged from the drawer, or files from the desktop, can be dropped anywhere
-// on a track's row; the row lights up while they hover.
+// as it was; a right click on an entry offers 移出轨道. A camera has no
+// timeline, and an empty track's lane is left blank. While entries or files
+// dragged here would land on this track (the Timeline judges where a drag
+// drops), the row lights up and a block at the end of its lane shows them.
 //
-//   view    the Timeline (the shared view, the main player's state)
+//   view    the Timeline (the shared view, the main player's state, the drop)
 //   spec    { key, kind, track, cameraId, name, entries, player }
 //   layout  { clips, total }: the row's entries end to end, from the view
+//   rowIndex  the row's place in the view's rows
 Item {
     id: row
 
     property var view: null
     property var spec: ({})
     property var layout: ({ clips: [], total: 0 })
+    property int rowIndex: -1
 
     readonly property string key: spec.key || ""
     readonly property bool camera: spec.kind === "camera"
@@ -37,7 +40,8 @@ Item {
     readonly property var clips: layout.clips || []
     readonly property real total: layout.total || 0
     readonly property var entries: spec.entries || []
-    readonly property string emptyText: entries.length ? "素材都关着 · 把素材拖到这里" : "把素材拖到这里"
+    // A drag over the row would put what it carries on this track.
+    readonly property bool dropOnto: view.dropZone.kind === "onto" && view.dropZone.index === rowIndex
 
     // What the row's player shows, where, how fast. The main row's comes from
     // the view, which knows whether this Set is parked and who leads.
@@ -210,13 +214,6 @@ Item {
                 visible: !!row.texture
                 property var source: row.texture
             }
-            Text {
-                anchors.centerIn: parent
-                visible: !row.texture
-                text: "无画面"
-                font.pixelSize: Theme.sizeXs
-                color: "#80ffffff"
-            }
             Rectangle {
                 anchors.fill: parent
                 radius: parent.radius
@@ -267,22 +264,6 @@ Item {
             anchors.fill: parent
             radius: Theme.radius
             color: Theme.inset
-            Row {
-                anchors.centerIn: parent
-                spacing: 8
-                Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 7
-                    height: 7
-                    radius: 3.5
-                    color: row.texture ? Theme.text : Theme.faint
-                }
-                Text {
-                    text: row.texture ? "实时画面" : "实时画面 · 相机没有画面"
-                    font.pixelSize: Theme.sizeSm
-                    color: Theme.muted
-                }
-            }
         }
 
         RowLayout {
@@ -514,17 +495,14 @@ Item {
             readonly property int waveHeight: Math.round((height - tempoHeight - 1) * 0.42)
             readonly property int filmHeight: height - tempoHeight - 1 - waveHeight
 
+            // Nothing on the track: a faint outline where its entries would lie.
             Rectangle {
                 anchors.fill: parent
                 visible: !row.clips.length
                 radius: Theme.radius
-                color: Theme.inset
-                Text {
-                    anchors.centerIn: parent
-                    text: row.emptyText
-                    font.pixelSize: Theme.sizeSm
-                    color: Theme.faint
-                }
+                color: "transparent"
+                border.width: 1
+                border.color: Theme.line
             }
             // By place, not by clip: the clips are made afresh whenever the
             // Set or the entry on the screen changes (every cut), and a model
@@ -587,15 +565,43 @@ Item {
                     }
                 }
             }
+            // Where what is dragged here would land: after the row's last entry.
+            Rectangle {
+                visible: row.dropOnto
+                readonly property real end: (row.total - row.view.viewLeft) * row.view.pps + 3
+                x: Math.max(0, Math.min(lane.width - width, end))
+                width: Math.min(lane.width, 150)
+                height: lane.height
+                radius: Theme.radius
+                color: Theme.selected
+                border.width: 2
+                border.color: Theme.text
+                Text {
+                    x: 8
+                    y: 6
+                    width: parent.width - 16
+                    text: row.view.dropTitle
+                    font.pixelSize: Theme.sizeXs
+                    font.weight: Font.DemiBold
+                    color: Theme.text
+                    elide: Text.ElideRight
+                }
+            }
             // The main row: press or drag sets the cursor, never the picture
             // (跳至光标处 or Enter plays from it). An aux row: its picture
-            // goes there. The wheel and a pinch move and zoom the shared view.
+            // goes there. A right click on an entry offers 移出轨道. The wheel
+            // and a pinch move and zoom the shared view.
             MouseArea {
                 id: laneArea
                 anchors.fill: parent
                 hoverEnabled: true
                 preventStealing: true
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
                 cursorShape: row.clips.length && (row.main || row.canSeek) ? Qt.PointingHandCursor : Qt.ArrowCursor
+                function clipAt(x) {
+                    const t = row.view.viewLeft + x / row.view.pps
+                    return row.clips.find(c => t >= c.start && t < c.start + c.length) || null
+                }
                 function at(x) {
                     x = Math.max(0, Math.min(width, x))
                     if (row.main)
@@ -604,12 +610,30 @@ Item {
                         row.seekTo(row.view.viewLeft + x / row.view.pps)
                     row.view.touch()
                 }
-                onPressed: mouse => at(mouse.x)
+                onPressed: mouse => {
+                    if (mouse.button === Qt.RightButton) {
+                        const c = clipAt(mouse.x)
+                        if (c) {
+                            pieceMenu.entryId = c.entry.id
+                            pieceMenu.popup()
+                        }
+                        return
+                    }
+                    at(mouse.x)
+                }
                 onPositionChanged: mouse => {
-                    if (pressed)
+                    if (pressed && (pressedButtons & Qt.LeftButton))
                         at(mouse.x)
                 }
                 onWheel: wheel => row.view.scroll(wheel, wheel.x)
+            }
+            PopMenu {
+                id: pieceMenu
+                property string entryId: ""
+                PopAction {
+                    text: "移出轨道"
+                    onTriggered: row.view.removeEntry(pieceMenu.entryId)
+                }
             }
             PinchHandler {
                 target: null
@@ -618,45 +642,22 @@ Item {
         }
     }
 
-    // Entries from the drawer, files from the desktop: onto this track.
-    DropArea {
-        id: drop
-        anchors.fill: parent
-        enabled: !row.camera
-        keys: ["text/x-kvj-entry", "text/uri-list"]
-        onDropped: event => {
-            const ids = (event.getDataAsString("text/x-kvj-entry") || "").split(",").map(s => s.trim()).filter(s => s.length > 0)
-            if (ids.length) {
-                row.view.dropEntries(ids, row.track)
-                event.acceptProposedAction()
-            } else if (event.hasUrls) {
-                row.view.dropFiles(event.urls, row.track)
-                event.acceptProposedAction()
-            }
-        }
-    }
+    // Lit while a drag would land on this track.
     Rectangle {
-        visible: drop.containsDrag
+        visible: row.dropOnto
         anchors.fill: parent
         anchors.margins: -2
         radius: Theme.radius + 2
-        color: Theme.dark ? "#14ffffff" : "#0d000000"
+        color: Theme.selected
+        opacity: 0.4
+    }
+    Rectangle {
+        visible: row.dropOnto
+        anchors.fill: parent
+        anchors.margins: -2
+        radius: Theme.radius + 2
+        color: "transparent"
         border.width: 2
         border.color: Theme.text
-        Rectangle {
-            anchors.centerIn: parent
-            width: dropLabel.implicitWidth + 20
-            height: 26
-            radius: 13
-            color: Theme.text
-            Text {
-                id: dropLabel
-                anchors.centerIn: parent
-                text: "放到" + row.name
-                font.pixelSize: Theme.sizeSm
-                font.weight: Font.DemiBold
-                color: Theme.bg
-            }
-        }
     }
 }

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Controls.impl
 import QtQuick.Layouts
 import KVJ
 
@@ -16,8 +17,13 @@ import KVJ
 // and its own play bar over its lane, so every track plays, seeks, changes
 // speed and loops on its own. On the main row a press only sets the cursor,
 // 跳至光标处 (or Enter) plays from it; while smart following leads a player
-// the keys its helpers at work own rest. Entries from the drawer, or files,
-// dropped on a row go on that track. Pinch on the trackpad (or ⌘/Ctrl/Alt +
+// the keys its helpers at work own rest. Entries from the drawer (an internal
+// drag whose source has `entryIds` and `title`), or files, dropped on the body
+// of a track's row go on that track, which lights up with a block where they
+// will land; dropped on the seam between two rows, or below the last, they go
+// on a new track there, shown by an ink line (never above the main track,
+// and only while a track can be added). Near the rows' top or bottom edge a
+// drag scrolls them. Under the rows a slim + adds a track or a camera. Pinch on the trackpad (or ⌘/Ctrl/Alt +
 // scroll, or − / +) zooms every lane about the pointer down to a few frames;
 // a sideways swipe moves along, an upright one scrolls the rows once there
 // are more than fit. Opening another Set than the one the picture plays parks
@@ -31,13 +37,17 @@ import KVJ
 //             `entries`.
 //   textures  the window's SourceTextures, for the headers' pictures
 //   followTrack  the track following listens to (an ear on its header)
-//   canAddTrack  an aux track can be added (+ 轨道's 画面 N)
+//   canAddTrack  an aux track can be added (the + menu's 画面 N, drops that
+//             insert a track)
 //   player    the window's player (Main's `app`): the main track's clock,
 //             who leads, the cursor's jump, the keys, the fade
 //   trailing  an item placed right of the rows, top-aligned with the first
 //   rowHeight / mainRowHeight  one row's height (the trailing item's too)
 //   pickSource(key), addTrack(), addCamera(id), removeRow(key),
-//   dropEntries(ids, track), dropFiles(urls, track): asked of the host
+//   dropEntries(ids, track), dropFiles(urls, track): onto a track
+//   insertEntries(ids, position), insertFiles(urls, position): onto a new
+//             track that appears at `position` in `tracks` (1..tracks.length)
+//   removeEntry(id): an entry's 移出轨道 (right click on it)
 //   zoomAt(x, factor), zoomStep(factor), fit(), setMark(x), jump(): the keys
 Rectangle {
     id: line
@@ -71,6 +81,9 @@ Rectangle {
     signal removeRow(string key)
     signal dropEntries(var entryIds, int track)
     signal dropFiles(var urls, int track)
+    signal insertEntries(var entryIds, int position)
+    signal insertFiles(var urls, int position)
+    signal removeEntry(string entryId)
 
     readonly property var rows: tracks.length ? tracks
                                 : [{ key: "track:0", kind: "track", track: 0, name: "画面 1 · 主轨", entries: entries, player: player }]
@@ -255,7 +268,7 @@ Rectangle {
     function scrollRows(pixels) {
         rowsView.contentY = Math.max(0, Math.min(rowsView.contentHeight - rowsView.height, rowsView.contentY + pixels))
     }
-    // A row added with + 轨道 comes into view (it is the last).
+    // A row added with + comes into view (it is the last).
     property bool revealing: false
     readonly property int rowCount: rows.length
     onRowCountChanged: if (revealing) reveal.restart()
@@ -265,6 +278,70 @@ Rectangle {
         interval: 60
         onTriggered: rowsView.contentY = Math.max(0, rowsView.contentHeight - rowsView.height)
     }
+    // —— Dropping on the rows ——
+    readonly property int plusHeight: 24
+    readonly property real pitch: rowHeight + rowGap
+    // A drag over the rows: where it is (in the rows' view) and what it carries.
+    property bool dragging: false
+    property real dragY: 0
+    property string dropTitle: ""
+    // Where it would land: { kind: "onto", index, track } on a track's body,
+    // { kind: "insert", position } on the seam above row `position` (or below
+    // the last), or kind "" (a camera, or nowhere).
+    readonly property var noZone: ({ kind: "", index: -1, track: -1, position: -1 })
+    readonly property var dropZone: {
+        if (!dragging)
+            return noZone
+        const y = dragY + rowsView.contentY
+        const n = rows.length
+        const seam = 10
+        if (canAddTrack) {
+            if (y >= n * pitch - rowGap - seam)
+                return { kind: "insert", index: -1, track: -1, position: n }
+            for (let k = 1; k < n; ++k)
+                if (Math.abs(y - (k * pitch - rowGap / 2)) <= seam)
+                    return { kind: "insert", index: -1, track: -1, position: k }
+        }
+        const i = Math.floor(y / pitch)
+        if (i < 0 || i >= n || rows[i].kind === "camera")
+            return noZone
+        return { kind: "onto", index: i, track: rows[i].track || 0, position: -1 }
+    }
+    function titleOf(drag) {
+        const src = drag.source
+        if (src && src.entryIds)
+            return src.title || (src.entryIds.length + " 个素材")
+        if (drag.hasUrls && drag.urls.length) {
+            const path = String(drag.urls[0]).replace(/\/+$/, "")
+            let name = path.substring(path.lastIndexOf("/") + 1)
+            try {
+                name = decodeURIComponent(name)
+            } catch (e) {}
+            return drag.urls.length > 1 ? name + " 等 " + drag.urls.length + " 个" : name
+        }
+        return ""
+    }
+    function land(drop) {
+        const z = dropZone
+        const src = drop.source
+        const ids = src && src.entryIds ? Array.prototype.slice.call(src.entryIds) : []
+        const urls = !ids.length && drop.hasUrls ? drop.urls : []
+        if (!z.kind || (!ids.length && !urls.length))
+            return
+        if (z.kind === "onto") {
+            if (ids.length)
+                dropEntries(ids, z.track)
+            else
+                dropFiles(urls, z.track)
+        } else {
+            if (ids.length)
+                insertEntries(ids, z.position)
+            else
+                insertFiles(urls, z.position)
+        }
+        drop.acceptProposedAction()
+    }
+
     // Scrolling over a lane, the ruler or the bars. A trackpad (a gesture
     // with phases, as macOS sends) moves the lanes with the fingers, one for
     // one, along the axis the gesture started on, its momentum included: a
@@ -524,55 +601,9 @@ Rectangle {
                     Layout.rightMargin: line.barRoom
                     spacing: 0
 
-                    // + 轨道: the next aux track, or a camera (listed only while
-                    // the menu is open: listing wakes the camera stack).
                     Item {
                         Layout.preferredWidth: line.headerWidth
                         Layout.preferredHeight: overview.height + ruler.height
-                        TextButton {
-                            id: addKey
-                            anchors.verticalCenter: parent.verticalCenter
-                            implicitHeight: 26
-                            leftPadding: 8
-                            rightPadding: 10
-                            flat: true
-                            iconName: "plus"
-                            text: "轨道"
-                            font.pixelSize: Theme.sizeXs
-                            onClicked: addMenu.popup(addKey, 0, addKey.height + 2)
-                            ToolTip.visible: hovered && !addMenu.visible
-                            ToolTip.delay: 600
-                            ToolTip.text: "加一条视频轨（画面 2–4）或一个相机"
-                        }
-                        PopMenu {
-                            id: addMenu
-                            implicitWidth: 220
-                            PopAction {
-                                text: line.nextAux > 0 ? "画面 " + (line.nextAux + 1) + "（视频轨）" : "视频轨都已加上"
-                                enabled: line.canAddTrack && line.nextAux > 0
-                                onTriggered: {
-                                    line.revealing = true
-                                    line.addTrack()
-                                    line.revealing = false
-                                }
-                            }
-                            MenuSeparator {}
-                            Instantiator {
-                                model: addMenu.visible ? (Cameras.list.length ? Cameras.list : [{ id: "", name: "没有找到相机" }]) : []
-                                delegate: PopAction {
-                                    required property var modelData
-                                    text: modelData.id ? "相机：" + modelData.name : modelData.name
-                                    enabled: !!modelData.id && !line.hasCamera(modelData.id)
-                                    onTriggered: {
-                                        line.revealing = true
-                                        line.addCamera(modelData.id)
-                                        line.revealing = false
-                                    }
-                                }
-                                onObjectAdded: (index, object) => addMenu.insertAction(index + 2, object)
-                                onObjectRemoved: (index, object) => addMenu.removeAction(object)
-                            }
-                        }
                     }
 
                     ColumnLayout {
@@ -837,52 +868,158 @@ Rectangle {
                     }
                 }
 
-                // The rows: two in view, the rest by scrolling.
-                Flickable {
-                    id: rowsView
+                // The rows: two in view and the + under them, the rest by scrolling.
+                Item {
+                    id: rowsBox
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    Layout.preferredHeight: line.visibleRows * line.rowHeight + (line.visibleRows - 1) * line.rowGap
+                    Layout.preferredHeight: line.visibleRows * line.pitch + line.plusHeight
                     Layout.topMargin: 2
-                    contentWidth: width
-                    contentHeight: rowColumn.height
-                    clip: true
-                    interactive: line.overflow
-                    flickableDirection: Flickable.VerticalFlick
-                    boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar {
-                        policy: line.overflow ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+
+                    Flickable {
+                        id: rowsView
+                        anchors.fill: parent
+                        contentWidth: width
+                        contentHeight: rowColumn.height
+                        clip: true
+                        interactive: line.overflow
+                        flickableDirection: Flickable.VerticalFlick
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: ScrollBar {
+                            policy: line.overflow ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                        }
+
+                        Column {
+                            id: rowColumn
+                            width: rowsView.width - line.barRoom
+                            spacing: line.rowGap
+                            // By place: the host makes its rows afresh whenever a Set changes.
+                            Repeater {
+                                model: line.rows.length
+                                TrackRow {
+                                    required property int index
+                                    width: rowColumn.width
+                                    height: line.rowHeight
+                                    view: line
+                                    rowIndex: index
+                                    spec: line.rows[index] || ({})
+                                    layout: line.layouts[index] || ({ clips: [], total: 0 })
+                                }
+                            }
+                            // +: the next aux track, or a camera (listed only while the
+                            // menu is open: listing wakes the camera stack).
+                            Item {
+                                id: plusRow
+                                width: rowColumn.width
+                                height: line.plusHeight
+                                readonly property bool hot: plusArea.containsMouse || addMenu.visible
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: Theme.radius
+                                    color: plusRow.hot ? Theme.hover : "transparent"
+                                    Behavior on color { ColorAnimation { duration: Theme.quick } }
+                                }
+                                ColorImage {
+                                    id: plusIcon
+                                    x: (line.headerWidth - 8 - width) / 2
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    source: "icons/plus.svg"
+                                    sourceSize: Qt.size(14, 14)
+                                    color: plusRow.hot ? Theme.text : Theme.muted
+                                }
+                                MouseArea {
+                                    id: plusArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: addMenu.popup(plusRow, plusIcon.x - 6, plusRow.height + 2)
+                                    ToolTip.visible: containsMouse && !addMenu.visible
+                                    ToolTip.delay: 600
+                                    ToolTip.text: "加一条视频轨（画面 2–4）或一个相机"
+                                }
+                                PopMenu {
+                                    id: addMenu
+                                    implicitWidth: 220
+                                    PopAction {
+                                        text: line.nextAux > 0 ? "画面 " + (line.nextAux + 1) + "（视频轨）" : "视频轨都已加上"
+                                        enabled: line.canAddTrack && line.nextAux > 0
+                                        onTriggered: {
+                                            line.revealing = true
+                                            line.addTrack()
+                                            line.revealing = false
+                                        }
+                                    }
+                                    MenuSeparator {}
+                                    Instantiator {
+                                        model: addMenu.visible ? (Cameras.list.length ? Cameras.list : [{ id: "", name: "没有找到相机" }]) : []
+                                        delegate: PopAction {
+                                            required property var modelData
+                                            text: modelData.id ? "相机：" + modelData.name : modelData.name
+                                            enabled: !!modelData.id && !line.hasCamera(modelData.id)
+                                            onTriggered: {
+                                                line.revealing = true
+                                                line.addCamera(modelData.id)
+                                                line.revealing = false
+                                            }
+                                        }
+                                        onObjectAdded: (index, object) => addMenu.insertAction(index + 2, object)
+                                        onObjectRemoved: (index, object) => addMenu.removeAction(object)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Where a drop would insert a new track: an ink line on the seam.
+                        Item {
+                            visible: line.dropZone.kind === "insert"
+                            y: line.dropZone.position * line.pitch - line.rowGap / 2 - 1
+                            width: rowColumn.width
+                            height: 2
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 1
+                                color: Theme.text
+                            }
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 18
+                                height: 18
+                                radius: 9
+                                color: Theme.text
+                                ColorImage {
+                                    anchors.centerIn: parent
+                                    source: "icons/plus.svg"
+                                    sourceSize: Qt.size(12, 12)
+                                    color: Theme.bg
+                                }
+                            }
+                        }
                     }
 
-                    Column {
-                        id: rowColumn
-                        width: rowsView.width - line.barRoom
-                        spacing: line.rowGap
-                        // By place: the host makes its rows afresh whenever a Set changes.
-                        Repeater {
-                            model: line.rows.length
-                            TrackRow {
-                                required property int index
-                                width: rowColumn.width
-                                height: line.rowHeight
-                                view: line
-                                spec: line.rows[index] || ({})
-                                layout: line.layouts[index] || ({ clips: [], total: 0 })
-                            }
+                    // Entries from the drawer and files from the desktop, onto a
+                    // track or into a new one (dropZone).
+                    DropArea {
+                        anchors.fill: parent
+                        keys: ["kvj-entry", "text/uri-list"]
+                        onEntered: drag => {
+                            line.dropTitle = line.titleOf(drag)
+                            line.dragY = drag.y
+                            line.dragging = true
                         }
-                        // Room for another row: how one is added.
-                        Item {
-                            visible: line.rows.length < line.visibleRows
-                            width: rowColumn.width
-                            height: line.rowHeight
-                            Text {
-                                x: line.headerWidth
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "左上的 + 轨道 可以再加一条视频轨（画面 2–4）或一个相机"
-                                font.pixelSize: Theme.sizeXs
-                                color: Theme.faint
-                            }
+                        onPositionChanged: drag => line.dragY = drag.y
+                        onExited: line.dragging = false
+                        onDropped: drop => {
+                            line.land(drop)
+                            line.dragging = false
                         }
+                    }
+                    // Held near the top or bottom edge, a drag scrolls the rows.
+                    Timer {
+                        readonly property int edge: 28
+                        interval: 30
+                        repeat: true
+                        running: line.dragging && line.overflow && (line.dragY < edge || line.dragY > rowsBox.height - edge)
+                        onTriggered: line.scrollRows(line.dragY < edge ? -8 : 8)
                     }
                 }
             }
