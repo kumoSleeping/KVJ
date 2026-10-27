@@ -4,137 +4,200 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import KVJ
 
-// What goes over the picture, in one bar under the desk: the sticker gallery,
-// always out (stickers are what the operator reaches for most), and folded
-// under its key the words (scrolling, held at the top or the foot, or large
-// in the middle) and the reactions, used now and then. The gallery's items
-// and the dragging onto the preview belong to the desk (`desk`), which holds
-// the preview.
+// What goes over the picture, in one panel under the program monitor, two
+// pages sharing it: the sticker gallery (the page it opens on: stickers are
+// what the operator reaches for most), and the words (scrolling, held at the
+// top or the foot, or large in the middle) with the reactions. Each page
+// scrolls in the panel's own room, so neither pushes anything else aside.
+// Stickers are dragged onto the mixer's preview (`composer`, which holds the
+// gallery) and go on the air with it; words and reactions go on the air at
+// once.
 Card {
     id: bar
 
-    property var desk
-    // Words and reactions: folded at first; the operator's choice is kept.
-    property bool open: false
-
-    implicitHeight: column.implicitHeight + 16
+    property var composer
+    // 0 stickers, 1 words and reactions: stickers at every start.
+    property int page: 0
 
     function send(text) {
-        if (modeBox.currentIndex < 3)
-            Live.say(text, "", { mode: ["scroll", "top", "bottom"][modeBox.currentIndex], size: Live.sizes[sizeBox.currentIndex] })
+        if (bar.mode < 3)
+            Live.say(text, "", { mode: ["scroll", "top", "bottom"][bar.mode], size: Live.sizes[bar.size] })
         else
             Live.showCaption(text)
     }
+    property int mode: 0
+    property int size: 1
 
     Settings {
         category: "desk"
-        property alias wordMode: modeBox.currentIndex
-        property alias wordSize: sizeBox.currentIndex
-        property alias wordsOpen: bar.open
+        property alias wordMode: bar.mode
+        property alias wordSize: bar.size
     }
 
     ColumnLayout {
-        id: column
         anchors.fill: parent
         anchors.margins: 8
         anchors.leftMargin: Theme.gap
         anchors.rightMargin: Theme.gap
-        spacing: 8
+        spacing: 6
 
-        // —— Stickers: drag one onto the picture ——
-        ColumnLayout {
+        // —— The two pages' keys, and the page's own tools ——
+        RowLayout {
             Layout.fillWidth: true
             spacing: 6
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 6
-                Text {
-                    text: "贴图"
-                    font.pixelSize: Theme.sizeSm
-                    font.weight: Font.DemiBold
-                    color: Theme.text
+            // A segmented key: the page shown in ink on a plate.
+            Rectangle {
+                implicitWidth: tabs.implicitWidth + 4
+                implicitHeight: Theme.control
+                radius: Theme.radius
+                color: Theme.inset
+                Row {
+                    id: tabs
+                    anchors.centerIn: parent
+                    spacing: 2
+                    Repeater {
+                        model: ["贴图", "弹幕 · 表情"]
+                        Rectangle {
+                            required property string modelData
+                            required property int index
+                            readonly property bool on: bar.page === index
+                            width: tabText.implicitWidth + 20
+                            height: Theme.control - 4
+                            radius: Theme.radius - 1
+                            color: on ? Theme.raised : tabMouse.containsMouse ? Theme.hover : "transparent"
+                            border.width: on && Theme.dark ? 1 : 0
+                            border.color: Theme.line
+                            Text {
+                                id: tabText
+                                anchors.centerIn: parent
+                                text: parent.modelData
+                                font.pixelSize: Theme.sizeSm
+                                font.weight: parent.on ? Font.DemiBold : Font.Medium
+                                color: parent.on ? Theme.text : Theme.muted
+                            }
+                            MouseArea {
+                                id: tabMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: bar.page = parent.index
+                            }
+                        }
+                    }
                 }
+            }
+
+            // Stickers: words made into one, images added, the size, editing.
+            RowLayout {
+                visible: bar.page === 0
+                Layout.fillWidth: true
+                spacing: 4
                 Field {
                     id: wordsSticker
                     Layout.fillWidth: true
-                    Layout.maximumWidth: 220
-                    Layout.leftMargin: 6
+                    Layout.minimumWidth: 70
+                    Layout.maximumWidth: 200
+                    Layout.leftMargin: 4
                     placeholderText: "文字贴图，回车加入"
                     onAccepted: {
-                        desk.addWords(text)
+                        bar.composer.addWords(text)
                         clear()
                     }
                 }
-                IconButton {
-                    iconName: "plus"
-                    tip: "文字加入图库"
-                    enabled: wordsSticker.text.trim().length > 0
-                    onClicked: wordsSticker.accepted()
-                }
-                IconButton { iconName: "file-plus"; tip: "添加图片或 GIF（可多选）"; onClicked: bar.desk.pickImages() }
+                IconButton { iconName: "file-plus"; tip: "添加图片或 GIF（可多选）"; onClicked: bar.composer.pickImages() }
                 Item { Layout.fillWidth: true }
                 // The size of the chosen sticker, or the one posted last, and of the next.
-                Text {
-                    text: "大小"
-                    font.pixelSize: Theme.sizeSm
-                    color: Theme.muted
-                }
                 Seek {
-                    Layout.preferredWidth: 110
-                    Layout.minimumWidth: 60
+                    Layout.preferredWidth: 80
+                    Layout.minimumWidth: 50
                     from: 0.03
                     to: 1
-                    value: desk.sizingSize
-                    onMoved: desk.setSize(value)
+                    value: bar.composer.sizingSize
+                    onMoved: bar.composer.setSize(value)
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: "贴图大小"
                 }
                 Text {
-                    Layout.preferredWidth: 36
+                    Layout.preferredWidth: 32
                     horizontalAlignment: Text.AlignRight
-                    text: Math.round(desk.sizingSize * 100) + "%"
-                    font.pixelSize: Theme.sizeSm
+                    text: Math.round(bar.composer.sizingSize * 100) + "%"
+                    font.pixelSize: Theme.sizeXs
                     font.features: { "tnum": 1 }
                     color: Theme.body
                 }
                 TextButton {
                     flat: true
-                    text: desk.editing ? "完成" : "编辑"
+                    leftPadding: 8
+                    rightPadding: 8
+                    text: bar.composer.editing ? "完成" : "编辑"
                     ToolTip.visible: hovered
                     ToolTip.delay: 600
-                    ToolTip.text: desk.editing ? "结束编辑（Esc）" : "显示 ×，撤下贴图或移出图库"
-                    onClicked: desk.editing = !desk.editing
+                    ToolTip.text: bar.composer.editing ? "结束编辑（Esc）" : "显示 ×，撤下贴图或移出图库"
+                    onClicked: bar.composer.editing = !bar.composer.editing
                 }
-                TextButton {
-                    text: "全部撤下"
-                    enabled: Live.stickers.count > 0
+                IconButton {
+                    iconName: "trash"
+                    tip: "撤下合成预览上的全部贴图（投放后观众那边也撤下）"
+                    enabled: Live.staged.count > 0
                     onClicked: {
                         Live.clearStickers()
-                        desk.chosenSid = ""
+                        bar.composer.chosenSid = ""
                     }
                 }
-                // The key that brings out the words and reactions.
-                TextButton {
-                    flat: true
-                    iconName: bar.open ? "chevron-down" : "chevron-right"
-                    text: "弹幕 · 表情"
-                    onClicked: bar.open = !bar.open
-                    ToolTip.visible: hovered
-                    ToolTip.delay: 600
-                    ToolTip.text: bar.open ? "收起弹幕和表情" : "展开弹幕和表情"
+            }
+
+            // Words: how they show, and how large, a key each.
+            Row {
+                visible: bar.page === 1
+                Layout.fillWidth: true
+                spacing: 2
+                Repeater {
+                    model: ["滚动", "顶部", "底部", "居中大字"]
+                    TextButton {
+                        required property string modelData
+                        required property int index
+                        leftPadding: 8
+                        rightPadding: 8
+                        flat: bar.mode !== index
+                        font.weight: bar.mode === index ? Font.DemiBold : Font.Medium
+                        text: modelData
+                        onClicked: bar.mode = index
+                    }
+                }
+                Item { width: 8; height: 1 }
+                Repeater {
+                    model: bar.mode < 3 ? ["小", "中", "大"] : []
+                    TextButton {
+                        required property string modelData
+                        required property int index
+                        leftPadding: 8
+                        rightPadding: 8
+                        flat: bar.size !== index
+                        font.weight: bar.size === index ? Font.DemiBold : Font.Medium
+                        text: modelData
+                        onClicked: bar.size = index
+                    }
                 }
             }
-            // The gallery, side by side; it scrolls across.
-            ListView {
+        }
+
+        // —— The pages, each scrolling in the room there is ——
+        StackLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            currentIndex: bar.page
+
+            // The gallery, wrapping, scrolling down.
+            GridView {
                 id: grid
-                readonly property int cellWidth: 76
-                readonly property int cellHeight: 60
-                Layout.fillWidth: true
-                Layout.preferredHeight: cellHeight + 8
-                orientation: ListView.Horizontal
                 clip: true
-                model: desk.gallery
-                interactive: !desk.carrying
+                cellWidth: Math.max(64, Math.floor(width / Math.max(1, Math.floor(width / 76))))
+                cellHeight: 60
+                model: bar.composer.gallery
+                interactive: !bar.composer.carrying
                 boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                 delegate: Item {
                     id: tile
                     required property var modelData
@@ -146,7 +209,7 @@ Card {
                         anchors.margins: 2
                         radius: Theme.radius
                         color: Theme.inset
-                        opacity: desk.carrying && desk.carrying.id === tile.modelData.id ? 0.4 : 1
+                        opacity: bar.composer.carrying && bar.composer.carrying.id === tile.modelData.id ? 0.4 : 1
                         Image {
                             id: thumb
                             anchors.fill: parent
@@ -187,24 +250,24 @@ Card {
                         anchors.fill: parent
                         hoverEnabled: true
                         preventStealing: true
-                        cursorShape: desk.carrying ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                        cursorShape: bar.composer.carrying ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                         property point start
-                        onPressed: mouse => start = mapToItem(desk, mouse.x, mouse.y)
+                        onPressed: mouse => start = mapToItem(bar.composer, mouse.x, mouse.y)
                         onPositionChanged: mouse => {
                             if (!pressed)
                                 return
-                            const p = mapToItem(desk, mouse.x, mouse.y)
-                            if (!desk.carrying && Math.hypot(p.x - start.x, p.y - start.y) > 6)
-                                desk.carrying = tile.modelData
-                            if (desk.carrying)
-                                desk.carryPoint = p
+                            const p = mapToItem(bar.composer, mouse.x, mouse.y)
+                            if (!bar.composer.carrying && Math.hypot(p.x - start.x, p.y - start.y) > 6)
+                                bar.composer.carrying = tile.modelData
+                            if (bar.composer.carrying)
+                                bar.composer.carryPoint = p
                         }
-                        onReleased: desk.letGo()
-                        onCanceled: desk.carrying = null
-                        onDoubleClicked: desk.postAt(tile.modelData, 0.5, 0.5)
+                        onReleased: bar.composer.letGo()
+                        onCanceled: bar.composer.carrying = null
+                        onDoubleClicked: bar.composer.postAt(tile.modelData, 0.5, 0.5)
                         ToolTip.visible: containsMouse && !pressed
                         ToolTip.delay: 900
-                        ToolTip.text: "拖到画面上贴出 · 双击贴在中间"
+                        ToolTip.text: "拖到合成预览上贴出 · 双击贴在中间"
                     }
                     // Only while editing, on a plate so it reads over the picture.
                     IconButton {
@@ -219,16 +282,14 @@ Card {
                         implicitHeight: 20
                         iconName: "x"
                         tip: "移出图库"
-                        visible: desk.editing && !desk.carrying
-                        onClicked: desk.forget(tile.modelData.id)
+                        visible: bar.composer.editing && !bar.composer.carrying
+                        onClicked: bar.composer.forget(tile.modelData.id)
                     }
                 }
                 // On the view itself, not its content: they work while it is empty.
                 Text {
                     parent: grid
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.verticalCenterOffset: -5
+                    anchors.centerIn: parent
                     visible: grid.count === 0
                     text: "把图片拖到这里，或点上面的 + 添加"
                     font.pixelSize: Theme.sizeSm
@@ -239,131 +300,124 @@ Card {
                     anchors.fill: parent
                     onDropped: drop => {
                         if (drop.hasUrls)
-                            desk.addImages(drop.urls)
+                            bar.composer.addImages(drop.urls)
                     }
                 }
             }
-        }
 
-        // —— Words and reactions, folded under their key ——
-        RowLayout {
-            Layout.fillWidth: true
-            visible: bar.open
-            spacing: Theme.gap
-
-            // Words: scrolling across, held at the top or the foot, at a
-            // size of three, or large in the middle. Enter sends.
-            RowLayout {
-                spacing: 6
-                Select {
-                    id: modeBox
-                    Layout.preferredWidth: 96
-                    model: ["滚动弹幕", "顶部弹幕", "底部弹幕", "居中大字"]
-                }
-                Select {
-                    id: sizeBox
-                    Layout.preferredWidth: 56
-                    visible: modeBox.currentIndex < 3
-                    currentIndex: 1
-                    model: ["小", "中", "大"]
-                }
-                Field {
-                    id: words
-                    Layout.preferredWidth: 260
-                    placeholderText: modeBox.currentIndex < 3 ? "弹幕，回车发送" : "居中显示的文字，回车发送"
-                    onAccepted: {
-                        bar.send(text)
-                        clear()
-                    }
-                }
-                IconButton {
-                    iconName: "send"
-                    tip: "发到画面上（回车）"
-                    enabled: words.text.trim().length > 0
-                    onClicked: words.accepted()
-                }
-            }
-
-            // Reactions, as in Google Meet: hover plays one, holding sends a
-            // stream from anywhere along the foot of the screen. Held and swept
-            // across the bar, the stream changes to the emoji under the pointer.
-            Rectangle {
-                id: reactionBar
-                // Keys narrow a little before the bar outgrows the column.
-                readonly property real key: 30
-                implicitWidth: Live.emoji.length * (key + 2) + 8
-                implicitHeight: reactionBar.key + 6
-                radius: Theme.radiusLg
-                color: "transparent"
-                Row {
-                    id: reactions
-                    anchors.centerIn: parent
-                    spacing: 2
-                    Repeater {
-                        model: Live.emoji
-                        Item {
-                            id: key
-                            required property var modelData
-                            required property int index
-                            readonly property bool hot: sweep.hot === index
-                            width: reactionBar.key
-                            height: reactionBar.key
-                            AnimatedImage {
-                                id: face
-                                anchors.centerIn: parent
-                                width: reactionBar.key * 0.75
-                                height: reactionBar.key * 0.75
-                                source: "emoji/" + key.modelData.file + ".webp"
-                                cache: false
-                                paused: !key.hot
-                                scale: key.hot && sweep.pressed ? 1.15 : key.hot ? 1.35 : 1
-                                Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutBack } }
-                                // At rest it shows the frame that stands for it. WebP
-                                // frames are reached only one after another from the start.
-                                function rest() {
-                                    currentFrame = 0
-                                    for (let i = 1; i <= (key.modelData.still || 0); ++i)
-                                        currentFrame = i
-                                }
-                                onPausedChanged: if (paused) rest()
-                                onFrameCountChanged: if (paused) rest()
+            // Words, then the reactions, scrolling down when short.
+            Flickable {
+                clip: true
+                contentHeight: wordsPage.implicitHeight
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                ColumnLayout {
+                    id: wordsPage
+                    width: parent.width
+                    spacing: 8
+                    // Enter sends; they go on the air at once.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 4
+                        Field {
+                            id: words
+                            Layout.fillWidth: true
+                            placeholderText: bar.mode < 3 ? "弹幕，回车直接发到观众画面" : "居中显示的文字，回车直接发到观众画面"
+                            onAccepted: {
+                                bar.send(text)
+                                clear()
                             }
+                        }
+                        IconButton {
+                            iconName: "send"
+                            tip: "发到画面上（回车）"
+                            enabled: words.text.trim().length > 0
+                            onClicked: words.accepted()
+                        }
+                    }
+
+                    // Reactions, as in Google Meet: hover plays one, holding sends a
+                    // stream from anywhere along the foot of the screen. Held and
+                    // swept across them, the stream changes to the emoji under the
+                    // pointer. They wrap to the panel's width.
+                    Item {
+                        id: reactionBar
+                        readonly property real key: 32
+                        readonly property int perRow: Math.max(1, Math.floor(width / (key + 2)))
+                        Layout.fillWidth: true
+                        implicitHeight: Math.ceil(Live.emoji.length / perRow) * (key + 2)
+                        Flow {
+                            id: reactions
+                            anchors.fill: parent
+                            spacing: 2
+                            Repeater {
+                                model: Live.emoji
+                                Item {
+                                    id: key
+                                    required property var modelData
+                                    required property int index
+                                    readonly property bool hot: sweep.hot === index
+                                    width: reactionBar.key
+                                    height: reactionBar.key
+                                    AnimatedImage {
+                                        id: face
+                                        anchors.centerIn: parent
+                                        width: reactionBar.key * 0.75
+                                        height: reactionBar.key * 0.75
+                                        source: "emoji/" + key.modelData.file + ".webp"
+                                        cache: false
+                                        paused: !key.hot
+                                        scale: key.hot && sweep.pressed ? 1.15 : key.hot ? 1.35 : 1
+                                        Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutBack } }
+                                        // At rest it shows the frame that stands for it. WebP
+                                        // frames are reached only one after another from the start.
+                                        function rest() {
+                                            currentFrame = 0
+                                            for (let i = 1; i <= (key.modelData.still || 0); ++i)
+                                                currentFrame = i
+                                        }
+                                        onPausedChanged: if (paused) rest()
+                                        onFrameCountChanged: if (paused) rest()
+                                    }
+                                }
+                            }
+                        }
+                        MouseArea {
+                            id: sweep
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            preventStealing: true
+                            cursorShape: Qt.PointingHandCursor
+                            // The key under the pointer, -1 between and beyond them.
+                            readonly property int hot: {
+                                if (!containsMouse && !pressed)
+                                    return -1
+                                const step = reactionBar.key + reactions.spacing
+                                const col = Math.floor(mouseX / step)
+                                const row = Math.floor(mouseY / step)
+                                const i = row * reactionBar.perRow + col
+                                const inside = mouseX >= 0 && mouseY >= 0 && col < reactionBar.perRow && i < Live.emoji.length
+                                return inside ? i : pressed ? Math.max(0, Math.min(Live.emoji.length - 1, i)) : -1
+                            }
+                            function send() {
+                                if (hot >= 0)
+                                    Live.react(Live.emoji[hot].glyph)
+                            }
+                            onPressed: send()
+                            onHotChanged: if (pressed) send()
+                            Timer {
+                                interval: 160
+                                repeat: true
+                                running: sweep.pressed
+                                onTriggered: sweep.send()
+                            }
+                            ToolTip.visible: containsMouse && !pressed
+                            ToolTip.delay: 900
+                            ToolTip.text: "按住连发 · 按住拖动换表情"
                         }
                     }
                 }
-                MouseArea {
-                    id: sweep
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    preventStealing: true
-                    cursorShape: Qt.PointingHandCursor
-                    // The key under the pointer, -1 between and beyond them.
-                    readonly property int hot: {
-                        if (!containsMouse && !pressed)
-                            return -1
-                        const x = mouseX - reactions.x
-                        const i = Math.floor(x / (reactionBar.key + reactions.spacing))
-                        return x >= 0 && i < Live.emoji.length ? i : pressed ? Math.max(0, Math.min(Live.emoji.length - 1, i)) : -1
-                    }
-                    function send() {
-                        if (hot >= 0)
-                            Live.react(Live.emoji[hot].glyph)
-                    }
-                    onPressed: send()
-                    onHotChanged: if (pressed) send()
-                    Timer {
-                        interval: 160
-                        repeat: true
-                        running: sweep.pressed
-                        onTriggered: sweep.send()
-                    }
-                    ToolTip.visible: containsMouse && !pressed
-                    ToolTip.delay: 900
-                    ToolTip.text: "按住连发 · 按住左右拖动换表情"
-                }
             }
-
-            Item { Layout.fillWidth: true }
         }
     }
 }

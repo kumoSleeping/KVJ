@@ -461,7 +461,14 @@ ApplicationWindow {
         case "effect": Live.setLevel(w[1], Number(w[2] || 0)); break
         case "move": Live.moveEffect(Number(w[1]), Number(w[2])); break
         case "set": if (app.sets[Number(w[1] || 1) - 1]) app.chooseSet(app.sets[Number(w[1] || 1) - 1].id); break
-        case "post": Live.post({ kind: "text", text: w.slice(3).join(" "), name: "", px: Number(w[1]), py: Number(w[2]), size: 0.15 }); desk.chosenSid = Live.lastSid; break
+        case "post": mixer.chosenSid = Live.post({ kind: "text", text: w.slice(3).join(" "), name: "", px: Number(w[1]), py: Number(w[2]), size: 0.15 }); break
+        case "apply": Switcher.apply(); break
+        case "mixfollow": Switcher.follow = Number(w[1] || 0) > 0; break
+        case "line": if (mixer.selected < 0) mixer.selected = 0; mixer.addLine(); break
+        case "pick": mixer.selected = Number(w[1] || 0); break
+        case "fill": mixer.fill(Math.max(0, mixer.selected)); break
+        case "revert": Switcher.revert(); break
+        case "noline": Switcher.setMask(Math.max(0, mixer.selected), { lines: [] }); break
         default: return "unknown"
         }
         app.tick()
@@ -716,13 +723,9 @@ ApplicationWindow {
         app.addedTracks = list
         sourceStore.tracks = JSON.stringify(list)
     }
-    // A source into the preview's chosen slot (a header's picture pressed).
+    // A track's picture pressed on the timeline: its layer chosen on the preview.
     function pickSource(key) {
-        const slots = Switcher.preview && Switcher.preview.slots ? Switcher.preview.slots : []
-        if (slots.length === 0)
-            Switcher.addSlot(key)
-        else
-            Switcher.updateSlot(Math.max(0, Math.min(mixer.selected, slots.length - 1)), { source: key })
+        mixer.selectSource(key)
     }
     // The sound of what the picture shows, on the picture's timing.
     AudioFollower {
@@ -853,12 +856,12 @@ ApplicationWindow {
         enabled: !sender.visible
         onActivated: app.toggleSets()
     }
-    // Not while a sticker is chosen (the desk's Esc lets it go first) or the
+    // Not while a sticker or layer is chosen (the preview's Esc lets it go first) or the
     // drawer's own menu closes on it. Another popup of this window that closes
     // on Esc shares the key: each press then puts one of them away.
     Shortcut {
         sequence: "Esc"
-        enabled: app.setsOpen && desk.chosenSid === "" && !desk.editing && !sidebar.asking
+        enabled: app.setsOpen && mixer.chosenSid === "" && !mixer.editing && mixer.selected < 0 && !sidebar.asking
         onActivated: app.closeSets()
         onActivatedAmbiguously: app.closeSets()
     }
@@ -909,16 +912,19 @@ ApplicationWindow {
                     Layout.fillHeight: true
                     spacing: Theme.gap
 
-                    // The program on its stage, the output, and the stickers
-                    // (with the folded words and reactions) under them.
+                    // The program as the audience sees it, the output, and
+                    // what goes over the picture under them.
                     ColumnLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
+                        Layout.preferredWidth: 100
+                        Layout.horizontalStretchFactor: 1
                         spacing: Theme.gap
                         Desk {
                             id: desk
                             Layout.fillWidth: true
                             Layout.fillHeight: true
+                            Layout.maximumHeight: implicitHeight
                             source: projection.surface
                             entry: projection.entry
                             projection: projection
@@ -927,40 +933,43 @@ ApplicationWindow {
                         }
                         LiveBar {
                             Layout.fillWidth: true
-                            desk: desk
+                            Layout.fillHeight: true
+                            Layout.minimumHeight: 120
+                            composer: mixer
                         }
                     }
 
-                    // —— The preview, to put on the air ——
+                    // —— The preview, a canvas where the next picture is made ——
                     Card {
-                        Layout.preferredWidth: 440
-                        Layout.fillWidth: false
+                        Layout.fillWidth: true
                         Layout.fillHeight: true
-                        ColumnLayout {
+                        Layout.preferredWidth: 100
+                        Layout.horizontalStretchFactor: 1
+                        Composer {
+                            id: mixer
                             anchors.fill: parent
                             anchors.margins: Theme.gap
-                            spacing: Theme.gap
-                            SwitcherPanel {
-                                id: mixer
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                sources: app.sources
-                                textures: desk.textures
-                                aspect: desk.aspect
-                            }
-                            LayoutPresets {
-                                Layout.fillWidth: true
-                                columns: 6
-                                columnSpacing: 4
-                                sources: app.sources
-                                aspect: desk.aspect
-                            }
+                            sources: app.sources
+                            textures: desk.textures
+                            aspect: desk.aspect
                         }
+                    }
+
+                    // —— Smart following: one, on the track whose ear is lit ——
+                    FollowStrip {
+                        id: strip
+                        Layout.preferredWidth: implicitWidth
+                        Layout.fillWidth: false
+                        Layout.fillHeight: true
+                        app: app
+                        surface: projection.surface
+                        rowHeight: timeline.mainRowHeight
                     }
 
                     // —— Effects, at the far right ——
                     Effects {
-                        Layout.preferredWidth: 300
+                        id: effects
+                        Layout.preferredWidth: implicitWidth > 0 ? implicitWidth : 300
                         Layout.fillWidth: false
                         Layout.fillHeight: true
                     }
@@ -1099,6 +1108,11 @@ ApplicationWindow {
             followTrack: app.followTrack
             canAddTrack: app.shownAux.length < 3 && app.editable
             onPickSource: key => app.pickSource(key)
+            // The ear on a track's picture: following listens to that track (not mid-session).
+            onPickFollow: track => {
+                if (!app.running)
+                    strip.followTrack = track
+            }
             onAddTrack: app.addTrack()
             onAddCamera: id => app.setCameras(app.cameraIds.concat([id]))
             onRemoveRow: key => app.removeRow(key)
@@ -1108,12 +1122,6 @@ ApplicationWindow {
             onInsertEntries: (ids, position) => Qt.callLater(app.insertEntries, ids, position)
             onInsertFiles: (urls, position) => Qt.callLater(app.insertFiles, urls, position)
             onRemoveEntry: id => Qt.callLater(app.takeOff, id)
-            trailing: FollowStrip {
-                id: strip
-                app: app
-                surface: projection.surface
-                rowHeight: timeline.mainRowHeight
-            }
             setId: app.currentSet ? app.currentSet.id : ""
             setName: app.currentSet ? app.currentSet.name : ""
             running: app.running

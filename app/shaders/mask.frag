@@ -5,8 +5,10 @@
 // projection cut the same shape.
 //
 // shape: 0 rectangle, 1 rounded rectangle (`radius`), 2 the ellipse fitted to
-// the slot, 3 a drawn curve (`maskSource`'s alpha). `feather` softens the edge
-// inwards; at 0 the edge is only antialiased.
+// the slot. `feather` softens its edge inwards; at 0 the edge is only
+// antialiased. With `lines` set, `maskSource`'s alpha is what the slot's split
+// lines hide (Switcher.hidden), softened over a band `blend` wide centred on
+// each line.
 
 layout(location = 0) in vec2 qt_TexCoord0;
 layout(location = 0) out vec4 fragColor;
@@ -17,6 +19,8 @@ layout(std140, binding = 0) uniform buf {
     float shape;
     float radius;   // share of min(w, h)
     float feather;  // share of min(w, h)
+    float blend;    // share of min(w, h)
+    float lines;
     float aspect;   // the slot's width / height, in pixels
     vec2 uvScale;   // the picture's uv = (slot uv - 0.5) * uvScale + 0.5
 };
@@ -38,7 +42,7 @@ float ellipse(vec2 p, vec2 half_)
     return k1 > 0.0 ? k0 * (k0 - 1.0) / k1 : -min(half_.x, half_.y);
 }
 
-// The drawn curve's coverage, blurred over a disc `r` (in slot uv) wide: taps
+// The hidden area's coverage, blurred over a disc `r` (in slot uv) wide: taps
 // on two rings, read a few mipmap levels down (the mask is about the slot's
 // size on screen), where its texels are about as far apart as the taps, so
 // they blend into one smooth falloff. (A bias, not an explicit level: GLSL ES
@@ -67,26 +71,20 @@ void main()
     vec2 p = (uv - 0.5) * size;
     vec2 half_ = size * 0.5;
 
-    float alpha;
-    if (shape > 2.5) {
-        if (feather > 0.0) {
-            // The blur crosses the edge at one half: keep its inner half,
-            // so the softening runs inwards like the other shapes'.
-            float c = curve(uv, vec2(2.0 * feather) / size);
-            alpha = smoothstep(0.5, 1.0, c);
-        } else {
-            alpha = texture(maskSource, uv).a;
-        }
-    } else {
-        float d;
-        if (shape > 1.5)
-            d = ellipse(p, half_);
-        else if (shape > 0.5)
-            d = roundedBox(p, half_, clamp(radius, 0.0, min(half_.x, half_.y)));
-        else
-            d = roundedBox(p, half_, 0.0);
-        float edge = max(feather, fwidth(d));
-        alpha = 1.0 - smoothstep(-edge, 0.0, d);
+    float d;
+    if (shape > 1.5)
+        d = ellipse(p, half_);
+    else if (shape > 0.5)
+        d = roundedBox(p, half_, clamp(radius, 0.0, min(half_.x, half_.y)));
+    else
+        d = roundedBox(p, half_, 0.0);
+    float edge = max(feather, fwidth(d));
+    float alpha = 1.0 - smoothstep(-edge, 0.0, d);
+
+    if (lines > 0.5) {
+        float hide = blend > 0.0 ? smoothstep(0.0, 1.0, curve(uv, vec2(0.5 * blend) / size))
+                                 : texture(maskSource, uv).a;
+        alpha *= 1.0 - hide;
     }
 
     vec2 suv = (uv - 0.5) * uvScale + 0.5;

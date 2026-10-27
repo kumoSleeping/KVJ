@@ -26,13 +26,76 @@ QtObject {
 
     // State: drawn for as long as it is set.
     property var caption: null // { text, born, hold } in the middle of the screen
-    // Posted stickers, changed in place so a moved one is not drawn anew:
-    // { sid, kind: "image" | "text", source, text, name, px, py (its centre, as
-    // shares of the screen), size (share of the screen's height), angle (degrees) }.
+    // Stickers, changed in place so a moved one is not drawn anew: { sid,
+    // kind: "image" | "text", source, text, name, px, py (its centre, as shares
+    // of the screen), size (share of the screen's height), angle (degrees) }.
+    // `staged` are the ones on the mixer's preview, where they are posted,
+    // moved and taken down; `stickers` the ones on the air, a copy of them as
+    // they were last put there (Switcher.apply(), or at once while following).
     property ListModel stickers: ListModel {}
-    // The one posted last, and a count of changes for bindings that read the model.
+    property ListModel staged: ListModel {}
+    // The one posted last, and a count of changes for bindings that read the models.
     property string lastSid: ""
     property int revision: 0
+    property int airRevision: 0
+    readonly property var fields: ["sid", "kind", "source", "text", "name", "px", "py", "size", "angle"]
+    function rows(model) {
+        const out = []
+        for (let i = 0; i < model.count; ++i) {
+            const o = model.get(i)
+            out.push(fields.map(f => o[f]))
+        }
+        return out
+    }
+    // The preview's stickers differ from those on the air.
+    readonly property bool stickersPending: {
+        revision
+        airRevision
+        return JSON.stringify(rows(staged)) !== JSON.stringify(rows(stickers))
+    }
+    // `to` made like `from`, row by row: a row of the same sid changed in
+    // place (so it does not pop in anew), the rest added or taken out.
+    function copyInto(from, to) {
+        const want = rows(from)
+        for (let i = to.count - 1; i >= 0; --i)
+            if (!want.some(r => r[0] === to.get(i).sid))
+                to.remove(i)
+        for (let i = 0; i < want.length; ++i) {
+            const sid = want[i][0]
+            let at = -1
+            for (let j = i; j < to.count && at < 0; ++j)
+                if (to.get(j).sid === sid)
+                    at = j
+            if (at < 0) {
+                const o = {}
+                fields.forEach((f, k) => o[f] = want[i][k])
+                to.insert(i, o)
+                continue
+            }
+            if (at !== i)
+                to.move(at, i, 1)
+            const o = to.get(i)
+            fields.forEach((f, k) => {
+                if (o[f] !== want[i][k])
+                    to.setProperty(i, f, want[i][k])
+            })
+        }
+    }
+    // The preview's stickers on the air.
+    function goLive() {
+        copyInto(staged, stickers)
+        airRevision += 1
+    }
+    // The preview's stickers back to those on the air.
+    function restage() {
+        copyInto(stickers, staged)
+        revision += 1
+    }
+    function changed() {
+        revision += 1
+        if (Switcher.follow)
+            goLive()
+    }
 
     // The reactions on offer: Noto's animated emoji, as Google Meet shows them.
     // `still` is the frame that stands for one while it is not playing.
@@ -153,26 +216,27 @@ QtObject {
     function clearCaption() {
         caption = null
     }
+    // Stickers are posted, moved and taken down on the preview (`staged`).
     function post(sticker) {
         serial += 1
         const sid = "s" + serial
-        stickers.append({
+        staged.append({
             sid: sid, kind: sticker.kind, source: sticker.source || "", text: sticker.text || "",
             name: sticker.name || "", px: sticker.px, py: sticker.py, size: sticker.size, angle: sticker.angle || 0
         })
         lastSid = sid
-        revision += 1
+        changed()
         return sid
     }
     function find(sid) {
-        for (let i = 0; i < stickers.count; ++i)
-            if (stickers.get(i).sid === sid)
+        for (let i = 0; i < staged.count; ++i)
+            if (staged.get(i).sid === sid)
                 return i
         return -1
     }
     function sticker(sid) {
         const i = find(sid)
-        return i >= 0 ? stickers.get(i) : null
+        return i >= 0 ? staged.get(i) : null
     }
     // Moves, sizes or turns one: `changes` holds any of px, py, size, angle.
     function update(sid, changes) {
@@ -180,18 +244,18 @@ QtObject {
         if (i < 0)
             return
         for (const key in changes)
-            stickers.setProperty(i, key, changes[key])
-        revision += 1
+            staged.setProperty(i, key, changes[key])
+        changed()
     }
     function unpost(sid) {
         const i = find(sid)
         if (i >= 0)
-            stickers.remove(i)
-        revision += 1
+            staged.remove(i)
+        changed()
     }
     function clearStickers() {
-        stickers.clear()
-        revision += 1
+        staged.clear()
+        changed()
     }
 
     // —— Picture effects ——

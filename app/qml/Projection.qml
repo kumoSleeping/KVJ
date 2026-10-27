@@ -35,9 +35,10 @@ Window {
     // Sources the operator's window shows besides those on the air: decoded
     // too while it is up.
     property var wantedIds: []
-    // On the air now, and the layout a dissolve leaves.
-    readonly property var programIds: Switcher.sourcesOf(Switcher.program).concat(
-                                          Switcher.transition ? Switcher.sourcesOf(Switcher.transition.from) : [])
+    // On the air now (slots left on the stage around the picture are not),
+    // and the layout a dissolve leaves.
+    readonly property var programIds: Switcher.shownSourcesOf(Switcher.program).concat(
+                                          Switcher.transition ? Switcher.shownSourcesOf(Switcher.transition.from) : [])
     function wants(id) {
         return programIds.indexOf(id) >= 0 || (root.previewing && wantedIds.indexOf(id) >= 0)
     }

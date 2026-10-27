@@ -70,8 +70,7 @@ qt_add_qml_module(KVJ
         qml/SourceTextures.qml
         qml/Compositor.qml
         qml/Program.qml
-        qml/SwitcherPanel.qml
-        qml/LayoutPresets.qml
+        qml/Composer.qml
     RESOURCES
         qml/icons/check.svg
         qml/icons/chevron-down.svg
@@ -102,6 +101,20 @@ qt_add_qml_module(KVJ
         qml/icons/volume-x.svg
         qml/icons/volume-2.svg
         qml/icons/x.svg
+        qml/icons/maximize.svg
+        qml/icons/fit-contain.svg
+        qml/icons/crop.svg
+        qml/icons/proportions.svg
+        qml/icons/spline.svg
+        qml/icons/arrow-up-to-line.svg
+        qml/icons/arrow-down-to-line.svg
+        qml/icons/arrow-right-to-line.svg
+        qml/icons/square-sharp.svg
+        qml/icons/square-round.svg
+        qml/icons/circle.svg
+        qml/icons/polyline.svg
+        qml/icons/cast.svg
+        qml/icons/undo-2.svg
         qml/emoji/1f389.webp
         qml/emoji/1f44f.webp
         qml/emoji/1f496.webp

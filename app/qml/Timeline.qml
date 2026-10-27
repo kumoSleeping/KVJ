@@ -10,8 +10,9 @@ import KVJ
 // header inked): what it shows, its cursor and 跳至光标处 (Enter does the
 // same), its zoom keys − 全览 + (− = \ too), then 快捷键 and how jumps
 // look. Then the rows (TrackRow), two in view, more by scrolling: the tracks
-// (画面 1..4) and the cameras. Each has its header (its picture, which a press puts
-// in the preview; its name; ⋯), its own play bar, its own ruler and view
+// (画面 1..4) and the cameras. Each has its picture at its right end (a press
+// chooses it on the preview; its ear picks the track followed; ⋯), its own
+// play bar, its own ruler and view
 // (zoom and scroll are a row's own) and its own cursor: a press on a row's
 // timeline only places that row's cursor, and only Enter, 跳至光标处 / 跳至,
 // the play key or the nudge keys ever move a picture. While smart following
@@ -31,7 +32,7 @@ import KVJ
 //             camera has no entries or player. Empty: one main row from
 //             `entries`.
 //   textures  the window's SourceTextures, for the headers' pictures
-//   followTrack  the track following listens to (an ear on its header)
+//   followTrack  the track following listens to (a lit ear on its picture)
 //   canAddTrack  an aux track can be added (the + menu's 画面 N, drops that
 //             insert a track)
 //   player    the window's player (Main's `app`): the main track's clock,
@@ -42,7 +43,8 @@ import KVJ
 //   activeRow / activeTrack  the active row's tracks[] item and its track
 //             (-1 while there is none); markClip / canJump: its cursor's
 //             clip, and whether a jump would go now
-//   pickSource(key), addTrack(), addCamera(id), removeRow(key): asked of the host
+//   pickSource(key), pickFollow(track), addTrack(), addCamera(id),
+//             removeRow(key): asked of the host
 //   dropEntries(ids, track), dropFiles(urls, track): onto a track
 //   insertEntries(ids, position), insertFiles(urls, position): onto a new
 //             track that appears at `position` in `tracks` (0..tracks.length)
@@ -70,12 +72,14 @@ Rectangle {
     readonly property int mainRowHeight: rowHeight
     // Rows in view before the rest scroll.
     property int visibleRows: 2
-    readonly property int headerWidth: 170
+    // The rows' pictures at their right, 16:9 the row's height.
+    readonly property int headerWidth: Math.round((rowHeight - 4) * 16 / 9) + 8
     readonly property int rowGap: 4
     // Room at the rows' right for their scroll bar.
     readonly property int barRoom: 10
 
     signal pickSource(string key)
+    signal pickFollow(int track)
     signal addTrack()
     signal addCamera(string id)
     signal removeRow(string key)
@@ -89,8 +93,8 @@ Rectangle {
                                 : [{ key: "track:0", kind: "track", track: 0, name: "画面 1", entries: entries, player: player }]
     readonly property var mainSpec: rows.find(r => r.kind !== "camera" && (r.track || 0) === 0) || null
     readonly property var mainEntries: mainSpec ? (mainSpec.entries || []).filter(e => (e.track || 0) === 0) : []
-    readonly property var onAir: Switcher.sourcesOf(Switcher.program)
-    readonly property var inPreview: Switcher.sourcesOf(Switcher.preview)
+    readonly property var onAir: Switcher.shownSourcesOf(Switcher.program)
+    readonly property var inPreview: Switcher.shownSourcesOf(Switcher.preview)
     // The first aux track not shown, 0 when all three are.
     readonly property int nextAux: [1, 2, 3].find(t => !rows.some(r => r.kind !== "camera" && (r.track || 0) === t)) || 0
     function hasCamera(id) {
@@ -482,7 +486,7 @@ Rectangle {
                             }
                             ColorImage {
                                 id: plusIcon
-                                x: (line.headerWidth - 8 - width) / 2
+                                x: plusRow.width - (line.headerWidth - 8 + width) / 2
                                 anchors.verticalCenter: parent.verticalCenter
                                 source: "icons/plus.svg"
                                 sourceSize: Qt.size(14, 14)

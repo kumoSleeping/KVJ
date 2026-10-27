@@ -4,7 +4,9 @@ import KVJ
 
 // A layout (Switcher.qml) drawn over this item's whole extent: each slot, in
 // the order of its z, its source's picture fitted or cropped into it and cut
-// to its mask (shaders/mask.frag). The same layout looks the same at any size.
+// to its mask and split lines (shaders/mask.frag). The same layout looks the
+// same at any size. Slots past the item's edges are drawn there too: a window
+// shows only its own extent, and the operator's preview shows the stage.
 //
 // The pictures come from `textures` (a SourceTextures shared by everything in
 // the window), or, without one, from `sourceItem` (id → Item) through a
@@ -75,11 +77,11 @@ Item {
                 }
             }
 
-            // A drawn curve's shape, rendered once into a texture the shader
-            // reads.
+            // What the split lines hide, rendered once into a texture the
+            // shader reads.
             Loader {
                 id: curve
-                active: !!cell.mask && cell.mask.shape === "path" && cell.mask.points.length >= 3
+                active: !!cell.mask && cell.mask.lines.length > 0
                 sourceComponent: Item {
                     readonly property alias texture: shot
                     width: cell.width
@@ -90,10 +92,17 @@ Item {
                         preferredRendererType: Shape.CurveRenderer
                         ShapePath {
                             fillColor: "white"
+                            fillRule: ShapePath.WindingFill
                             strokeWidth: -1
                             strokeColor: "transparent"
-                            PathPolyline {
-                                path: Switcher.curve(cell.mask.points, 12).map(p => Qt.point(p[0] * cell.width, p[1] * cell.height))
+                            PathMultiline {
+                                paths: {
+                                    const out = []
+                                    for (const l of cell.mask.lines)
+                                        for (const poly of Switcher.hidden(l))
+                                            out.push(poly.concat([poly[0]]).map(p => Qt.point(p[0] * cell.width, p[1] * cell.height)))
+                                    return out
+                                }
                             }
                         }
                     }
@@ -139,12 +148,13 @@ Item {
                 visible: compositor.shaders && !!cell.tex && width > 0 && height > 0
                 fragmentShader: "qrc:/qt/qml/KVJ/shaders/mask.frag.qsb"
                 property var source: cell.tex
-                // Bound to something either way; read only for a curve.
+                // Bound to something either way; read only with lines.
                 property var maskSource: curve.item ? curve.item.texture : cell.tex
-                property real shape: !cell.mask ? 0 : cell.mask.shape === "path" ? (curve.item ? 3 : 0)
-                                     : Switcher.shapes.indexOf(cell.mask.shape)
+                property real shape: cell.mask ? Math.max(0, Switcher.shapes.indexOf(cell.mask.shape)) : 0
                 property real radius: cell.mask ? cell.mask.radius : 0
                 property real feather: cell.mask ? cell.mask.feather : 0
+                property real blend: cell.mask ? cell.mask.blend : 0
+                property real lines: curve.item ? 1 : 0
                 property real aspect: cell.own
                 // Filling the slot crops the picture's longer way; showing it
                 // whole leaves bands (outside 0..1, drawn as nothing).

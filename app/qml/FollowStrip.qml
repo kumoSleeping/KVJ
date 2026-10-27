@@ -1,25 +1,27 @@
 import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Controls.impl
 import QtQuick.Layouts
-import QtQuick.Window
 import KVJ
 
-// 音频对位, pressed into a strip as tall as one timeline row (some 120 px) and about
-// half the old card's width, for the right end of the track area. On it: what
-// following does (未监听 / 监听中 / 跟随中 and the title), the input's level,
-// 开始监听 (the ear), 开始跟随, 跳至此处 (the crosshair), the input, which
-// track is followed, and the two helpers as small keys (对速's dot swings,
-// 跳转's ring watches; a press pauses or resumes one, the pointer tells how it
-// is doing). ⋯ opens the rest: the channels, 现场模式, 画面偏移, the helpers in
-// full with the jump threshold, the Bluetooth DJs and the last error; a dot
-// on it says a DJ asks to pair. While following runs, its small picture
-// (FollowMonitor) stands at the strip's left, the panel's tone until it has
-// found the music; stopped, it is gone and takes no room.
+// 音频对位, as a narrow card standing in the top row between the mixer's
+// preview and the effects. Top to bottom: its name and, at the corner, a light
+// (green while listening, red while not); following's own small picture
+// (FollowMonitor; the card's tone until following has found the music); what
+// it found (the title, or the phase) and how fast it hears the music; the
+// input's level; 开始监听 (the ear), 跟随 / 暂停 (the ink key), 跳至此处 (the
+// crosshair) and 画面偏移 (dragged or wheeled); the input with its channels (a
+// device with more than two lists each pair), 现场模式, the Bluetooth DJs (a
+// key that shows while receiving or while one asks to pair) and 刷新; at the
+// foot the two helpers in full (Assistants): the speed and the jump threshold,
+// each paused or resumed on its own. The followed track is chosen on the track
+// headers (their ear); here it is named in the status line until following
+// has found the music.
 //
 // API
 //   app            the window (Main.qml's `app`): read following, match,
-//                  followPaused, aiLeads, aiPicture, manualSeek, tempoPaused,
+//                  followPaused, aiLeads, aiMain, manualSeek, tempoPaused,
 //                  jumpPaused, musicAway, shownTempo, view, phase, running,
 //                  devices, receiving, incoming, awayDjs, discoverable,
 //                  entries, phaseText(), clock(); called listen(), follow(),
@@ -29,32 +31,49 @@ import KVJ
 //   surface        the projection's VideoSurface, for the monitor's mirror
 //   entries        the Set's entries (default app.entries): which tracks have
 //                  sound to follow
-//   rowHeight      the strip's height (the timeline's mainRowHeight)
-//   stripWidth     the strip's width without the monitor
-//   followTrack    0..3, the track followed (kept under "follow/track"); only
-//                  tracks with an entry that has sound are offered, never
-//                  while running
+//   rowHeight      no longer used (the card fills the row it stands in);
+//                  kept so a host that still sets it does not break
+//   followTrack    0..3, the track followed (kept under "follow/track"), set
+//                  from the track headers; a track that loses its sound gives
+//                  way to the main one, never while running
 //   device         the chosen input (devices[deviceIndex]), deviceIndex
 //   channel        the first channel of the chosen pair (0, 2, …)
 //   roomMode       现场模式: on for a microphone, either way by hand
 //   offsetMs       画面偏移 (kept under "output/offset", as the card's)
 //   canStart       the followed track has an entry that is on and has sound
-//   monitorVisible the monitor is shown (while following runs)
+//   monitorVisible following runs (the monitor shows its picture)
 // The host's listen() / follow() start the engine with device, channel,
 // roomMode and followTrack from here, and offsets the picture by offsetMs.
-Item {
+Card {
     id: root
 
     property var app: null
     property var surface: null
     property var entries: app ? app.entries : []
     property real rowHeight: 120
-    property real stripWidth: 184
     property int followTrack: 0
-    property alias deviceIndex: deviceBox.currentIndex
     readonly property var devices: app ? app.devices : []
-    readonly property var device: devices.length ? devices[Math.max(0, Math.min(deviceBox.currentIndex, devices.length - 1))] : null
-    readonly property int channel: channelBox.currentIndex * 2
+    // What the input key offers: each device once, or, with more than two
+    // channels, once for each pair of them: { device (its index), channel
+    // (the pair's first), label }.
+    readonly property var inputs: {
+        const list = []
+        devices.forEach((d, i) => {
+            const n = Math.max(1, d.channels || 2)
+            const away = d.error ? "（不可用）" : ""
+            if (n <= 2) {
+                list.push({ device: i, channel: 0, label: d.label + away })
+                return
+            }
+            for (let c = 0; c < n; c += 2)
+                list.push({ device: i, channel: c, label: d.label + " · CH " + (c + 1) + (c + 1 < n ? "/" + (c + 2) : "") + away })
+        })
+        return list
+    }
+    readonly property var input: inputs.length ? inputs[Math.max(0, Math.min(deviceBox.currentIndex, inputs.length - 1))] : null
+    readonly property int deviceIndex: input ? input.device : 0
+    readonly property var device: input ? devices[input.device] || null : null
+    readonly property int channel: input ? input.channel : 0
     readonly property bool microphone: !!device && device.kind === "input"
     property bool roomMode: microphone
     onMicrophoneChanged: roomMode = microphone
@@ -68,11 +87,20 @@ Item {
     readonly property bool canStart: !running && !Engine.importing
                                      && (entries || []).some(e => (e.track || 0) === followTrack && e.enabled !== false && !e.silent)
     readonly property bool monitorVisible: following
-    readonly property real monitorWidth: Math.round((rowHeight - 7) * 16 / 9)
     readonly property bool asking: !!app && (app.incoming || []).some(p => p.link.state === "asking")
+    // The DJs' key shows while receiving over Bluetooth or while one asks.
+    readonly property bool djsOffered: !!app && (app.receiving || asking)
+    onDjsOfferedChanged: if (!djsOffered) djs.close()
+    // Following hears nothing yet: the monitor says so.
+    readonly property var view: app ? app.view : ({})
+    readonly property string inputState: view.input ? view.input.state : ""
+    readonly property bool quiet: following && ["quiet", "stalled", "waiting"].indexOf(inputState) >= 0
 
     function trackName(t) {
         return "画面 " + (t + 1)
+    }
+    function setOffset(ms) {
+        offsetMs = Math.max(-400, Math.min(400, Math.round(ms / 10) * 10))
     }
     // A track that no longer has sound gives way to the main one.
     onAudioTracksChanged: {
@@ -80,8 +108,7 @@ Item {
             followTrack = 0
     }
 
-    implicitWidth: (monitorVisible ? monitorWidth + 8 : 0) + stripWidth
-    implicitHeight: rowHeight
+    implicitWidth: 228
 
     Settings {
         category: "follow"
@@ -92,124 +119,83 @@ Item {
         property alias offset: root.offsetMs
     }
 
-    // —— The helpers' state, as Assistants judges it ——
-    readonly property bool tempoPaused: !!app && app.tempoPaused
-    readonly property bool jumpPaused: !!app && app.jumpPaused
-    readonly property var view: app ? app.view : ({})
-    readonly property var tracking: view.tracking || null
-    readonly property string inputState: view.input ? view.input.state : ""
-    readonly property bool quiet: following && ["quiet", "stalled", "waiting"].indexOf(inputState) >= 0
-    readonly property bool lost: following && !!match && view.phase === "searching"
-    property real now: 0
-    readonly property real age: match ? Math.max(0, now - match.clock_at_ms) : 0
-    readonly property real deviation: tracking && tracking.error_ms !== null && tracking.error_ms !== undefined
-                                      ? Math.abs(tracking.error_ms) : 0
-    // The engine's rules (core/engine/src/runtime.rs), as in Assistants.
-    readonly property real jumpMs: 2500
-    readonly property real lostMs: 2000
-    readonly property real pressure: match ? Math.max(deviation / jumpMs, age / lostMs) : 0
-    readonly property bool alert: following && (quiet || lost || (!!match && pressure >= 1))
-    readonly property bool keeping: following && !!match && !quiet && !lost && !(!tempoPaused && !!app && app.musicAway)
-    readonly property real heard: match ? match.rate : 1
-    readonly property bool shown: visible && !!Window.window && Window.window.visible
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.topMargin: Theme.pad
+        anchors.bottomMargin: Theme.pad
+        anchors.leftMargin: 12
+        anchors.rightMargin: 12
+        spacing: 8
 
-    function percent(r) {
-        const p = (r - 1) * 100
-        return (p > 0.05 ? "+" : p < -0.05 ? "−" : "") + Math.abs(p).toFixed(1) + "%"
-    }
-    function tempoText() {
-        if (!following)
-            return "对速：未开启"
-        if (quiet)
-            return "对速：等声音"
-        if (!match)
-            return "对速：等找到位置"
-        if (tempoPaused)
-            return "对速已暂停（只监听）· " + (lost ? "等重新对上" : match.rate_confidence < 0.3 ? "按音频估速中"
-                                             : "听到 " + percent(match.rate) + " · 把握 " + Math.round(match.rate_confidence * 100) + "%")
-        if (app.musicAway)
-            return "对速：音乐不在画面这里，速度保持不动"
-        if (lost)
-            return "对速：保持当前速度，等重新对上"
-        if (match.rate_confidence < 0.3)
-            return "对速：按音频估速中"
-        return "对速：跟着音乐调速 " + percent(app.shownTempo) + " · 把握 " + Math.round(match.rate_confidence * 100) + "%"
-    }
-    function jumpText() {
-        const head = "跳转监测（阈值 " + (jumpMs / 1000).toFixed(1) + " s）："
-        if (!following)
-            return head + "未开启"
-        if (inputState === "stalled")
-            return head + "音频中断"
-        if (inputState === "quiet")
-            return head + "没有声音"
-        if (inputState === "waiting")
-            return head + "等待音频"
-        if (!match)
-            return head + "听音频，在 Set 里找位置"
-        const only = jumpPaused ? "已暂停（只监听）· " : ""
-        if (lost || pressure >= 1)
-            return head + only + "超出阈值 · 正在重新找位置"
-        return head + only + "偏差 " + deviation.toFixed(0) + " ms"
-    }
-
-    Timer {
-        interval: 125
-        repeat: true
-        triggeredOnStart: true
-        running: root.following && root.shown
-        onTriggered: root.now = Engine.clockMs()
-    }
-
-    // —— Following's own picture, only while it runs ——
-    Item {
-        id: monitorBox
-        visible: root.monitorVisible
-        width: root.monitorWidth
-        height: root.height
-        FollowMonitor {
-            id: monitor
-            width: parent.width
-            active: root.following
-            mirror: !!root.app && root.app.aiMain
-            match: root.match
-            offsetMs: root.offsetMs
-            source: root.surface
-        }
-        // Nothing found yet: the panel's tone and a word, never a black box.
-        Rectangle {
-            visible: !root.match
-            width: parent.width
-            height: width * 9 / 16
-            radius: Theme.radius
-            color: Theme.inset
-            Text {
-                anchors.centerIn: parent
-                width: parent.width - 16
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.Wrap
-                text: root.quiet ? "等声音…" : "听音频，找位置…"
-                font.pixelSize: Theme.sizeXs
-                color: Theme.faint
+        // Its name; listening or not, at the corner: green while it listens,
+        // red while not.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 6
+            Heading {
+                Layout.fillWidth: true
+                text: "音频对位"
+            }
+            Rectangle {
+                Layout.alignment: Qt.AlignTop | Qt.AlignRight
+                Layout.topMargin: 2
+                implicitWidth: 8
+                implicitHeight: 8
+                radius: 4
+                color: root.following ? "#30a46c" : Theme.danger
+                Behavior on color { ColorAnimation { duration: Theme.quick } }
+                HoverHandler { id: lightHover }
+                ToolTip.visible: lightHover.hovered
+                ToolTip.delay: 400
+                ToolTip.text: root.following ? (root.app && root.app.followPaused ? "监听中（只监听）" : "监听中") : "未监听"
             }
         }
-    }
 
-    // —— The strip ——
-    Rectangle {
-        id: panel
-        x: root.monitorVisible ? root.monitorWidth + 8 : 0
-        width: root.stripWidth
-        height: root.height
-        radius: Theme.radius
-        color: Theme.inset
+        // Following's own picture, where it puts the music.
+        Item {
+            Layout.fillWidth: true
+            implicitHeight: monitor.implicitHeight
+            FollowMonitor {
+                id: monitor
+                width: parent.width
+                active: root.following
+                mirror: !!root.app && root.app.aiMain
+                match: root.match
+                offsetMs: root.offsetMs
+                source: root.surface
+            }
+            // Nothing found yet: the card's inset tone, never a black box;
+            // an ear while it does not listen, a word while it searches.
+            Rectangle {
+                visible: !root.match
+                width: parent.width
+                height: width * 9 / 16
+                radius: Theme.radius
+                color: Theme.inset
+                ColorImage {
+                    anchors.centerIn: parent
+                    visible: !root.following
+                    source: "icons/ear.svg"
+                    sourceSize: Qt.size(22, 22)
+                    color: Theme.faint
+                }
+                Text {
+                    anchors.centerIn: parent
+                    visible: root.following
+                    width: parent.width - 16
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.Wrap
+                    text: root.quiet ? "等声音…" : "听音频，找位置…"
+                    font.pixelSize: Theme.sizeXs
+                    color: Theme.faint
+                }
+            }
+        }
 
+        // What following found, how fast the music is heard, and the input's level.
         ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 6
-            spacing: 0
-
-            // What following does, and how fast the music is heard.
+            Layout.fillWidth: true
+            spacing: 4
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 4
@@ -218,9 +204,9 @@ Item {
                     Layout.fillWidth: true
                     readonly property bool warn: Engine.error.length > 0 || root.asking
                     text: Engine.error.length > 0 ? Engine.error
-                          : root.asking ? "有 DJ 请求连接 · 点 ⋯"
-                          : root.match ? (root.app.followPaused ? "监听中" : "跟随中") + " · " + root.match.entry.title
-                          : root.following ? root.app.phaseText(root.app.phase) : "未监听"
+                          : root.asking ? "有 DJ 请求连接 · 点这里"
+                          : root.match ? root.match.entry.title
+                          : root.following ? root.app.phaseText(root.app.phase) : "跟随" + root.trackName(root.followTrack)
                     font.pixelSize: Theme.sizeXs
                     font.weight: Font.DemiBold
                     color: warn ? Theme.warn : root.match && !root.app.followPaused ? Theme.text : Theme.muted
@@ -229,11 +215,22 @@ Item {
                         id: statusArea
                         anchors.fill: parent
                         hoverEnabled: true
-                        onClicked: if (Engine.error.length > 0) Engine.clearError()
+                        cursorShape: status.warn ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: {
+                            if (Engine.error.length > 0)
+                                Engine.clearError()
+                            else if (root.asking)
+                                djs.open()
+                        }
                     }
-                    ToolTip.visible: statusArea.containsMouse && status.truncated
-                    ToolTip.delay: 400
-                    ToolTip.text: status.text + (Engine.error.length > 0 ? "\n（点一下清除）" : "")
+                    ToolTip.visible: statusArea.containsMouse
+                    ToolTip.delay: 600
+                    ToolTip.text: Engine.error.length > 0 ? Engine.error + "\n（点一下清除）"
+                                  : root.asking ? "有 DJ 电脑请求连接，点一下允许或拒绝"
+                                  : root.match ? (root.app.followPaused ? "只监听" : "跟随中") + " · " + root.match.entry.title + " · "
+                                                 + root.app.clock(root.match.position, true) + " · " + root.trackName(root.followTrack)
+                                  : (root.following ? root.app.phaseText(root.app.phase) + " · " : "") + "跟随" + root.trackName(root.followTrack)
+                                    + "（在轨道头上点耳朵换）"
                 }
                 Text {
                     visible: !!root.match
@@ -246,7 +243,6 @@ Item {
             // The input's level, of the chosen channels.
             Rectangle {
                 Layout.fillWidth: true
-                Layout.topMargin: 4
                 Layout.preferredHeight: 3
                 radius: 1.5
                 color: Theme.line
@@ -259,270 +255,220 @@ Item {
                     Behavior on width { NumberAnimation { duration: 120 } }
                 }
             }
-            Item { Layout.fillHeight: true }
+        }
 
-            // Listen, follow, go there once, and the rest.
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 2
-                IconButton {
-                    implicitWidth: 28
-                    implicitHeight: 28
-                    iconName: root.following ? "square" : "ear"
-                    active: root.following
-                    tip: root.following ? "停止监听" : "开始监听：听音乐、判断位置，画面仍归播放器"
-                    enabled: root.following || root.canStart
-                    onClicked: root.following ? Engine.stop() : root.app.listen()
+        // Listen, follow or pause, go there once; the picture's offset.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 2
+            IconButton {
+                implicitWidth: 28
+                implicitHeight: 28
+                iconName: root.following ? "square" : "ear"
+                active: root.following
+                tip: root.following ? "停止监听" : "开始监听：听音乐、判断位置，画面仍归播放器"
+                enabled: root.following || root.canStart
+                onClicked: root.following ? Engine.stop() : root.app.listen()
+            }
+            // The one ink key: follow, or pause following.
+            TextButton {
+                implicitWidth: 28
+                implicitHeight: 28
+                leftPadding: 0
+                rightPadding: 0
+                primary: true
+                display: AbstractButton.IconOnly
+                iconName: root.app && root.app.aiLeads ? "pause" : "play"
+                enabled: root.following || root.canStart
+                onClicked: {
+                    if (root.app.aiLeads)
+                        root.app.tempoPaused = root.app.jumpPaused = true
+                    else
+                        root.app.follow()
                 }
-                TextButton {
-                    Layout.fillWidth: true
-                    implicitHeight: 28
-                    leftPadding: 8
-                    rightPadding: 8
-                    primary: true
-                    iconName: root.app && root.app.aiLeads ? "pause" : "play"
-                    text: root.app && root.app.aiLeads ? "暂停" : "跟随"
-                    enabled: root.following || root.canStart
-                    onClicked: {
-                        if (root.app.aiLeads)
-                            root.app.tempoPaused = root.app.jumpPaused = true
-                        else
-                            root.app.follow()
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: root.app && root.app.aiLeads ? "暂停跟随：继续监听，画面交回播放器"
+                                                          : "开始跟随：画面跟着音乐走（没在监听时先开始监听）"
+            }
+            IconButton {
+                implicitWidth: 28
+                implicitHeight: 28
+                iconName: "crosshair"
+                tip: "跳至此处：播放器跳到智能跟随判断的位置"
+                enabled: !!root.match && !!root.app && root.app.manualSeek
+                onClicked: root.app.jumpToMatch()
+            }
+            Item { Layout.fillWidth: true }
+            // 画面偏移: dragged sideways or wheeled in 10 ms steps,
+            // double-clicked back to 0.
+            Item {
+                implicitWidth: offsetRow.implicitWidth + 8
+                implicitHeight: 24
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Theme.radius - 2
+                    color: offsetArea.pressed ? Theme.selected : offsetArea.containsMouse ? Theme.hover : "transparent"
+                }
+                Row {
+                    id: offsetRow
+                    anchors.centerIn: parent
+                    spacing: 3
+                    Text {
+                        text: "偏移"
+                        font.pixelSize: 11
+                        color: Theme.faint
                     }
-                    ToolTip.visible: hovered
+                    Text {
+                        text: (root.offsetMs > 0 ? "+" : root.offsetMs < 0 ? "−" : "±") + Math.abs(root.offsetMs).toFixed(0) + "ms"
+                        font.pixelSize: 11
+                        font.features: { "tnum": 1 }
+                        color: root.offsetMs === 0 ? Theme.muted : Theme.text
+                    }
+                }
+                MouseArea {
+                    id: offsetArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    preventStealing: true
+                    cursorShape: Qt.SizeHorCursor
+                    property real pressX: 0
+                    property real pressValue: 0
+                    property real spun: 0
+                    onPressed: mouse => {
+                        pressX = mouse.x
+                        pressValue = root.offsetMs
+                    }
+                    onPositionChanged: mouse => {
+                        if (pressed)
+                            root.setOffset(pressValue + Math.round((mouse.x - pressX) / 3) * 10)
+                    }
+                    onDoubleClicked: root.offsetMs = 0
+                    onWheel: wheel => {
+                        spun += wheel.angleDelta.y !== 0 ? wheel.angleDelta.y : wheel.angleDelta.x
+                        const steps = spun > 0 ? Math.floor(spun / 120) : Math.ceil(spun / 120)
+                        if (steps !== 0) {
+                            spun -= steps * 120
+                            root.setOffset(root.offsetMs + steps * 10)
+                        }
+                    }
+                    ToolTip.visible: containsMouse && !pressed
                     ToolTip.delay: 600
-                    ToolTip.text: root.app && root.app.aiLeads ? "停止跟随：继续监听，画面交回播放器"
-                                                              : "开始跟随：画面跟着音乐走（没在监听时先开始监听）"
-                }
-                IconButton {
-                    implicitWidth: 28
-                    implicitHeight: 28
-                    iconName: "crosshair"
-                    tip: "跳至此处：播放器跳到智能跟随判断的位置"
-                    enabled: !!root.match && !!root.app && root.app.manualSeek
-                    onClicked: root.app.jumpToMatch()
-                }
-                IconButton {
-                    id: moreKey
-                    implicitWidth: 28
-                    implicitHeight: 28
-                    iconName: "ellipsis"
-                    tip: "声道、现场模式、画面偏移、跳转阈值、蓝牙 DJ"
-                    active: more.visible
-                    onClicked: more.visible ? more.close() : more.open()
-                    Rectangle {
-                        visible: root.asking || Engine.error.length > 0
-                        x: parent.width - 9
-                        y: 3
-                        width: 6
-                        height: 6
-                        radius: 3
-                        color: Theme.warn
-                    }
+                    ToolTip.text: "画面偏移：跟随的画面比音乐早（−）或晚（+）多少\n左右拖动或滚轮调，每格 10 ms；双击归零"
                 }
             }
-            Item { Layout.preferredHeight: 2 }
+        }
 
+        // The input, its channels with it; 现场模式; the DJs; 刷新.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 2
             Select {
                 id: deviceBox
                 Layout.fillWidth: true
+                Layout.rightMargin: 2
                 implicitHeight: 26
                 font.pixelSize: Theme.sizeXs
                 enabled: !root.running
-                model: root.devices.map(d => d.label + (d.error ? "（不可用）" : ""))
+                model: root.inputs.map(o => o.label)
                 ToolTip.visible: hovered && !down
                 ToolTip.delay: 600
-                ToolTip.text: "声音输入"
+                ToolTip.text: "声音输入" + (root.input ? "：" + root.input.label : "") + "\n多于两个声道的设备，每对声道单列一项"
             }
-            Item { Layout.preferredHeight: 2 }
+            Chip {
+                text: "现场"
+                on: root.roomMode
+                enabled: !root.running
+                tip: "现场模式：麦克风听现场，在混响里也能跟上。选麦克风时自动打开；电脑内录或蓝牙接收时关闭"
+                onClicked: root.roomMode = !root.roomMode
+            }
+            Chip {
+                id: djKey
+                visible: root.djsOffered
+                text: "DJ"
+                on: djs.visible
+                warn: root.asking
+                tip: root.asking ? "有 DJ 请求连接：允许或拒绝" : "蓝牙 DJ：当前 DJ、可被发现、忘记记住的 DJ"
+                onClicked: djs.visible ? djs.close() : djs.open()
+            }
+            IconButton {
+                implicitWidth: 26
+                implicitHeight: 26
+                iconName: "refresh"
+                iconSize: 14
+                tip: "刷新设备"
+                enabled: !root.running && !Engine.busy
+                onClicked: Engine.refreshDevices()
+            }
+        }
 
-            // Which track is followed, and the helpers.
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 4
-                Select {
-                    id: trackBox
-                    Layout.preferredWidth: 70
-                    implicitHeight: 26
-                    leftPadding: 8
-                    rightPadding: 22
-                    font.pixelSize: Theme.sizeXs
-                    enabled: !root.running && root.audioTracks.length > 1
-                    model: root.audioTracks.map(t => root.trackName(t))
-                    currentIndex: root.audioTracks.indexOf(root.followTrack)
-                    displayText: root.trackName(root.followTrack)
-                    onActivated: index => root.followTrack = root.audioTracks[index]
-                    ToolTip.visible: hovered && !down
-                    ToolTip.delay: 600
-                    ToolTip.text: "跟随哪条轨道（" + root.trackName(root.followTrack) + "）：只有含声音的轨道可选；相机、流媒体和无声的轨道不支持"
-                }
-                Helper {
-                    Layout.fillWidth: true
-                    label: "对速"
-                    live: root.following
-                    paused: root.tempoPaused
-                    tip: root.tempoText()
-                    onFlip: root.app.tempoPaused = !root.app.tempoPaused
-                    // One swing per beat of a 120 BPM track at the followed speed.
-                    Item {
-                        anchors.fill: parent
-                        Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
-                            x: 1
-                            width: 16
-                            height: 2
-                            radius: 1
-                            color: Theme.line
-                        }
-                        Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 6
-                            height: 6
-                            radius: 3
-                            color: root.keeping && !root.tempoPaused ? Theme.text : Theme.faint
-                            SequentialAnimation on x {
-                                running: root.keeping && root.shown
-                                loops: Animation.Infinite
-                                NumberAnimation { from: 1; to: 11; duration: 500 / root.heard; easing.type: Easing.InOutSine }
-                                NumberAnimation { from: 11; to: 1; duration: 500 / root.heard; easing.type: Easing.InOutSine }
-                            }
-                        }
-                    }
-                }
-                Helper {
-                    Layout.fillWidth: true
-                    label: "跳转"
-                    live: root.following
-                    paused: root.jumpPaused
-                    warn: root.alert
-                    level: root.following && !!root.match ? Math.min(1, root.pressure) : -1
-                    tip: root.jumpText()
-                    onFlip: root.app.jumpPaused = !root.app.jumpPaused
-                    Item {
-                        anchors.fill: parent
-                        Rectangle {
-                            anchors.centerIn: parent
-                            width: 14
-                            height: 14
-                            radius: 7
-                            color: "transparent"
-                            border.width: 1.5
-                            border.color: root.alert ? Theme.warn : root.following ? Theme.muted : Theme.line
-                        }
-                        Item {
-                            anchors.fill: parent
-                            visible: root.following && !root.alert
-                            Rectangle {
-                                x: parent.width / 2 - 2
-                                y: parent.height / 2 - 7 - 2
-                                width: 4
-                                height: 4
-                                radius: 2
-                                color: root.jumpPaused ? Theme.faint : Theme.text
-                            }
-                            NumberAnimation on rotation {
-                                running: root.following && !root.alert && root.shown
-                                from: 0
-                                to: 360
-                                duration: 2400
-                                loops: Animation.Infinite
-                            }
-                        }
-                        Rectangle {
-                            id: ripple
-                            anchors.centerIn: parent
-                            width: 14
-                            height: 14
-                            radius: 7
-                            color: "transparent"
-                            border.width: 1.5
-                            border.color: Theme.warn
-                            visible: root.alert
-                            ParallelAnimation {
-                                running: root.alert && root.shown
-                                loops: Animation.Infinite
-                                NumberAnimation { target: ripple; property: "scale"; from: 1; to: 1.5; duration: 900; easing.type: Easing.OutCubic }
-                                NumberAnimation { target: ripple; property: "opacity"; from: 0.9; to: 0; duration: 900 }
-                            }
-                        }
-                    }
-                }
-            }
+        Item { Layout.fillHeight: true }
+
+        // The two helpers in full, at the foot: the speed, and the jump
+        // threshold; each paused or resumed by its key.
+        Assistants {
+            Layout.fillWidth: true
+            active: root.following
+            tempoPaused: !!root.app && root.app.tempoPaused
+            jumpPaused: !!root.app && root.app.jumpPaused
+            musicAway: !!root.app && root.app.musicAway
+            tempo: root.app ? root.app.shownTempo : 1
+            onTempoToggled: root.app.tempoPaused = !root.app.tempoPaused
+            onJumpToggled: root.app.jumpPaused = !root.app.jumpPaused
+            onTempoReset: root.app.resetTempo()
+            view: root.view
+            match: root.match
         }
     }
 
-    // A helper as a small key: its sign, its name; pressed, it pauses or
-    // resumes. `level` (0..1, or −1 for none) runs along its foot to the
-    // threshold.
-    component Helper: AbstractButton {
-        id: helper
-        property string label
-        property string tip
-        property bool paused: false
+    // A small text key: ink while `on`, an outline while not; a
+    // dot at its corner while `warn`.
+    component Chip: AbstractButton {
+        id: chip
+        property bool on: false
         property bool warn: false
-        property real level: -1
-        // Following runs: the key works and its name is inked.
-        property bool live: false
-        signal flip()
-        default property alias sign: signBox.data
-        implicitHeight: 26
-        enabled: helper.live
-        onClicked: helper.flip()
+        property string tip
+        implicitWidth: implicitContentWidth + leftPadding + rightPadding
+        implicitHeight: 22
+        leftPadding: 6
+        rightPadding: 6
         hoverEnabled: true
         background: Rectangle {
-            radius: Theme.radius
-            color: helper.down ? Theme.selected : helper.hovered ? Theme.hover : "transparent"
+            radius: Theme.radius - 2
+            color: chip.on ? (chip.enabled ? Theme.text : Theme.faint)
+                           : chip.down ? Theme.selected : chip.hovered && chip.enabled ? Theme.hover : "transparent"
+            border.width: chip.on ? 0 : 1
+            border.color: Theme.line
+            Behavior on color { ColorAnimation { duration: 90 } }
             Rectangle {
-                visible: helper.level >= 0
-                x: 4
-                y: parent.height - 3
-                width: parent.width - 8
-                height: 2
-                radius: 1
-                color: Theme.line
-                Rectangle {
-                    width: parent.width * Math.max(0, helper.level)
-                    height: parent.height
-                    radius: 1
-                    color: helper.warn ? Theme.warn : Theme.text
-                    Behavior on width { NumberAnimation { duration: 120 } }
-                }
+                visible: chip.warn
+                x: parent.width - 5
+                y: -1
+                width: 6
+                height: 6
+                radius: 3
+                color: Theme.warn
             }
         }
-        contentItem: Item {
-            implicitWidth: 18 + 3 + name.implicitWidth
-            Item {
-                id: signBox
-                x: 1
-                anchors.verticalCenter: parent.verticalCenter
-                width: 18
-                height: 18
-                opacity: helper.paused ? 0.45 : 1
-            }
-            Text {
-                id: name
-                x: 21
-                anchors.verticalCenter: parent.verticalCenter
-                text: helper.label
-                font.pixelSize: 11
-                font.weight: Font.DemiBold
-                font.strikeout: helper.paused && helper.live
-                color: helper.warn ? Theme.warn : !helper.live || helper.paused ? Theme.faint : Theme.text
-            }
+        contentItem: Text {
+            text: chip.text
+            font.pixelSize: 11
+            font.weight: Font.DemiBold
+            color: chip.on ? Theme.raised : chip.enabled ? Theme.body : Theme.faint
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
         }
-        leftPadding: 2
-        rightPadding: 2
-        ToolTip.visible: hovered
-        ToolTip.delay: 400
-        ToolTip.text: helper.tip + (helper.live ? "\n点一下" + (helper.paused ? "继续" : "暂停") : "")
+        ToolTip.visible: hovered && tip.length > 0
+        ToolTip.delay: 600
+        ToolTip.text: tip
     }
 
-    // —— The rest, behind ⋯ ——
+    // —— The Bluetooth DJs, under their key ——
     Popup {
-        id: more
-        parent: moreKey
-        x: moreKey.width - width
-        y: -height - 6
+        id: djs
+        parent: djKey
+        x: djKey.width - width
+        y: djKey.height + 6
         width: 300
         padding: 14
         margins: 8
@@ -534,260 +480,147 @@ Item {
             border.color: Theme.line
         }
         contentItem: ColumnLayout {
-            spacing: 8
-
-            Heading {
-                Layout.fillWidth: true
-                text: "音频对位"
-            }
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 2
-                Text {
-                    Layout.fillWidth: true
-                    text: root.match ? root.match.entry.title : root.following ? root.app.phaseText(root.app.phase) : "未监听"
-                    font.pixelSize: Theme.sizeLg
-                    font.weight: Font.DemiBold
-                    color: root.match && !root.app.followPaused ? Theme.text : Theme.muted
-                    elide: Text.ElideRight
-                }
-                Text {
-                    Layout.fillWidth: true
-                    text: root.match ? (root.app.followPaused ? "只监听" : root.app.phaseText(root.app.phase)) + " · " + root.app.clock(root.match.position, true)
-                                       + " · ×" + root.match.rate.toFixed(3) + " · " + root.trackName(root.followTrack) : root.trackName(root.followTrack)
-                    font.pixelSize: Theme.sizeSm
-                    font.features: { "tnum": 1 }
-                    color: Theme.muted
-                    elide: Text.ElideRight
-                }
-            }
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 6
-                Caption { text: "声音输入 · " + (root.device ? root.device.label : "自动") }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 6
-                    Select {
-                        id: channelBox
-                        Layout.preferredWidth: 104
-                        enabled: !root.running
-                        model: {
-                            const channels = root.device ? Math.max(1, root.device.channels) : 2
-                            const pairs = []
-                            for (let i = 0; i < channels; i += 2)
-                                pairs.push(i + 1 < channels ? "CH " + (i + 1) + "/" + (i + 2) : "CH " + (i + 1))
-                            return pairs
-                        }
-                    }
-                    Item { Layout.fillWidth: true }
-                    Toggle {
-                        text: "现场模式"
-                        checked: root.roomMode
-                        enabled: !root.running
-                        onToggled: root.roomMode = checked
-                        ToolTip.visible: hovered
-                        ToolTip.delay: 600
-                        ToolTip.text: "麦克风听现场：在混响里也能跟上。选麦克风时自动打开；电脑内录或蓝牙接收时关闭"
-                    }
-                    IconButton {
-                        iconName: "refresh"
-                        tip: "刷新设备"
-                        enabled: !root.running && !Engine.busy
-                        onClicked: Engine.refreshDevices()
-                    }
-                }
-            }
-
-            // Calibration of the followed picture against the music.
+            id: djList
+            Layout.fillWidth: true
+            spacing: 4
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 8
-                Text { text: "画面偏移"; font.pixelSize: Theme.sizeSm; color: Theme.muted }
-                Seek {
+                Heading { text: "蓝牙 DJ"; Layout.fillWidth: true }
+                Toggle {
+                    text: "可被发现"
+                    checked: !!root.app && root.app.discoverable
+                    onToggled: root.app.discoverable = checked
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 500
+                    ToolTip.text: "开着时 DJ 电脑随时能找到这台并请求连接；记住的 DJ 回来会自动连上"
+                }
+            }
+            // The chosen DJ is let go only on a second press (within 4 s):
+            // one stray click must not cut the music off.
+            property string letGoId: ""
+            Timer {
+                id: letGoTimer
+                interval: 4000
+                onTriggered: djList.letGoId = ""
+            }
+            Repeater {
+                model: root.app ? (root.app.incoming || []).filter(p => p.link.state !== "disconnected" || p.selected || p.known) : []
+                ItemDelegate {
+                    id: dj
+                    required property var modelData
+                    readonly property bool asking: modelData.link.state === "asking"
+                    readonly property bool lettingGo: modelData.selected && djList.letGoId === modelData.link.peer
                     Layout.fillWidth: true
-                    from: -400
-                    to: 400
-                    stepSize: 10
-                    value: root.offsetMs
-                    onMoved: root.offsetMs = value
-                }
-                Text {
-                    Layout.preferredWidth: 58
-                    horizontalAlignment: Text.AlignRight
-                    text: (root.offsetMs > 0 ? "+" : "") + root.offsetMs.toFixed(0) + " ms"
-                    font.pixelSize: Theme.sizeSm
-                    font.features: { "tnum": 1 }
-                    color: root.offsetMs === 0 ? Theme.muted : Theme.text
-                    MouseArea { anchors.fill: parent; onDoubleClicked: root.offsetMs = 0 }
+                    implicitHeight: 32
+                    topPadding: 0
+                    bottomPadding: 0
+                    leftPadding: 8
+                    rightPadding: 2
+                    onClicked: {
+                        if (asking || modelData.link.state === "disconnected") {
+                            return
+                        } else if (!modelData.selected) {
+                            djList.letGoId = ""
+                            Engine.selectBluetooth(modelData.link.peer)
+                        } else if (lettingGo) {
+                            djList.letGoId = ""
+                            Engine.selectBluetooth("")
+                        } else {
+                            djList.letGoId = modelData.link.peer
+                            letGoTimer.restart()
+                        }
+                    }
+                    ToolTip.visible: hovered && !!modelData.link.error
+                    ToolTip.delay: 400
+                    ToolTip.text: modelData.link.error || ""
+                    contentItem: RowLayout {
+                        spacing: 6
+                        Text {
+                            Layout.fillWidth: true
+                            text: dj.modelData.device.name
+                            font.pixelSize: Theme.size
+                            font.weight: dj.modelData.selected || dj.asking ? Font.DemiBold : Font.Normal
+                            color: dj.modelData.selected || dj.asking ? Theme.text : Theme.muted
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            visible: !dj.asking
+                            text: dj.lettingGo ? "再点一下取消"
+                                : dj.modelData.link.state === "receiving" ? "发送中"
+                                : dj.modelData.link.state === "connected" ? (dj.modelData.selected ? "当前 DJ" : "待命")
+                                : dj.modelData.selected ? "已断开 · 回来后自动恢复" : "已断开"
+                            font.pixelSize: Theme.sizeXs
+                            color: Theme.muted
+                        }
+                        TextButton {
+                            visible: dj.asking
+                            primary: true
+                            text: "允许"
+                            onClicked: Engine.pairBluetooth(dj.modelData.link.peer, true)
+                        }
+                        TextButton {
+                            visible: dj.asking
+                            text: "拒绝"
+                            onClicked: Engine.pairBluetooth(dj.modelData.link.peer, false)
+                        }
+                        IconButton {
+                            visible: !dj.asking && dj.modelData.known && dj.hovered
+                            iconName: "x"
+                            tip: "忘记这台 DJ 电脑（下次需重新允许）"
+                            onClicked: Engine.forgetBluetooth(dj.modelData.token)
+                        }
+                    }
+                    background: Rectangle {
+                        radius: Theme.radius
+                        color: dj.asking ? Theme.inset : dj.hovered ? Theme.hover : "transparent"
+                    }
                 }
             }
-
-            // The two helpers in full: the speed, and the jump threshold.
-            Assistants {
-                Layout.fillWidth: true
-                active: root.following
-                tempoPaused: root.tempoPaused
-                jumpPaused: root.jumpPaused
-                musicAway: !!root.app && root.app.musicAway
-                tempo: root.app ? root.app.shownTempo : 1
-                onTempoToggled: root.app.tempoPaused = !root.app.tempoPaused
-                onJumpToggled: root.app.jumpPaused = !root.app.jumpPaused
-                onTempoReset: root.app.resetTempo()
-                view: root.view
-                match: root.match
-            }
-
-            // Bluetooth DJs: the operator picks the current DJ, allows a new
-            // one asking to pair, and forgets paired ones.
-            ColumnLayout {
-                id: djList
-                Layout.fillWidth: true
-                spacing: 4
-                visible: !!root.app && (root.app.receiving || root.asking)
-                RowLayout {
+            // Remembered DJs that are not here now.
+            Repeater {
+                model: root.app && root.app.receiving ? root.app.awayDjs : []
+                ItemDelegate {
+                    id: away
+                    required property var modelData
                     Layout.fillWidth: true
-                    Caption { text: "DJ"; Layout.fillWidth: true }
-                    Toggle {
-                        text: "可被发现"
-                        checked: !!root.app && root.app.discoverable
-                        onToggled: root.app.discoverable = checked
-                        ToolTip.visible: hovered
-                        ToolTip.delay: 500
-                        ToolTip.text: "开着时 DJ 电脑随时能找到这台并请求连接；记住的 DJ 回来会自动连上"
-                    }
-                }
-                // The chosen DJ is let go only on a second press (within 4 s):
-                // one stray click must not cut the music off.
-                property string letGoId: ""
-                Timer {
-                    id: letGoTimer
-                    interval: 4000
-                    onTriggered: djList.letGoId = ""
-                }
-                Repeater {
-                    model: root.app ? (root.app.incoming || []).filter(p => p.link.state !== "disconnected" || p.selected || p.known) : []
-                    ItemDelegate {
-                        id: dj
-                        required property var modelData
-                        readonly property bool asking: modelData.link.state === "asking"
-                        readonly property bool lettingGo: modelData.selected && djList.letGoId === modelData.link.peer
-                        Layout.fillWidth: true
-                        implicitHeight: 32
-                        topPadding: 0
-                        bottomPadding: 0
-                        leftPadding: 8
-                        rightPadding: 2
-                        onClicked: {
-                            if (asking || modelData.link.state === "disconnected") {
-                                return
-                            } else if (!modelData.selected) {
-                                djList.letGoId = ""
-                                Engine.selectBluetooth(modelData.link.peer)
-                            } else if (lettingGo) {
-                                djList.letGoId = ""
-                                Engine.selectBluetooth("")
-                            } else {
-                                djList.letGoId = modelData.link.peer
-                                letGoTimer.restart()
-                            }
+                    implicitHeight: 28
+                    topPadding: 0
+                    bottomPadding: 0
+                    leftPadding: 8
+                    rightPadding: 2
+                    contentItem: RowLayout {
+                        spacing: 6
+                        Text {
+                            Layout.fillWidth: true
+                            text: away.modelData.name
+                            font.pixelSize: Theme.sizeSm
+                            color: Theme.faint
+                            elide: Text.ElideRight
                         }
-                        ToolTip.visible: hovered && !!modelData.link.error
-                        ToolTip.delay: 400
-                        ToolTip.text: modelData.link.error || ""
-                        contentItem: RowLayout {
-                            spacing: 6
-                            Text {
-                                Layout.fillWidth: true
-                                text: dj.modelData.device.name
-                                font.pixelSize: Theme.size
-                                font.weight: dj.modelData.selected || dj.asking ? Font.DemiBold : Font.Normal
-                                color: dj.modelData.selected || dj.asking ? Theme.text : Theme.muted
-                                elide: Text.ElideRight
-                            }
-                            Text {
-                                visible: !dj.asking
-                                text: dj.lettingGo ? "再点一下取消"
-                                    : dj.modelData.link.state === "receiving" ? "发送中"
-                                    : dj.modelData.link.state === "connected" ? (dj.modelData.selected ? "当前 DJ" : "待命")
-                                    : dj.modelData.selected ? "已断开 · 回来后自动恢复" : "已断开"
-                                font.pixelSize: Theme.sizeXs
-                                color: Theme.muted
-                            }
-                            TextButton {
-                                visible: dj.asking
-                                primary: true
-                                text: "允许"
-                                onClicked: Engine.pairBluetooth(dj.modelData.link.peer, true)
-                            }
-                            TextButton {
-                                visible: dj.asking
-                                text: "拒绝"
-                                onClicked: Engine.pairBluetooth(dj.modelData.link.peer, false)
-                            }
-                            IconButton {
-                                visible: !dj.asking && dj.modelData.known && dj.hovered
-                                iconName: "x"
-                                tip: "忘记这台 DJ 电脑（下次需重新允许）"
-                                onClicked: Engine.forgetBluetooth(dj.modelData.token)
-                            }
+                        Text {
+                            text: "已记住 · 不在附近"
+                            font.pixelSize: Theme.sizeXs
+                            color: Theme.faint
                         }
-                        background: Rectangle {
-                            radius: Theme.radius
-                            color: dj.asking ? Theme.inset : dj.hovered ? Theme.hover : "transparent"
+                        IconButton {
+                            visible: away.hovered
+                            iconName: "x"
+                            tip: "忘记这台 DJ 电脑"
+                            onClicked: Engine.forgetBluetooth(away.modelData.token)
                         }
                     }
-                }
-                // Remembered DJs that are not here now.
-                Repeater {
-                    model: root.app && root.app.receiving ? root.app.awayDjs : []
-                    ItemDelegate {
-                        id: away
-                        required property var modelData
-                        Layout.fillWidth: true
-                        implicitHeight: 28
-                        topPadding: 0
-                        bottomPadding: 0
-                        leftPadding: 8
-                        rightPadding: 2
-                        contentItem: RowLayout {
-                            spacing: 6
-                            Text {
-                                Layout.fillWidth: true
-                                text: away.modelData.name
-                                font.pixelSize: Theme.sizeSm
-                                color: Theme.faint
-                                elide: Text.ElideRight
-                            }
-                            Text {
-                                text: "已记住 · 不在附近"
-                                font.pixelSize: Theme.sizeXs
-                                color: Theme.faint
-                            }
-                            IconButton {
-                                visible: away.hovered
-                                iconName: "x"
-                                tip: "忘记这台 DJ 电脑"
-                                onClicked: Engine.forgetBluetooth(away.modelData.token)
-                            }
-                        }
-                        background: Rectangle {
-                            radius: Theme.radius
-                            color: away.hovered ? Theme.hover : "transparent"
-                        }
+                    background: Rectangle {
+                        radius: Theme.radius
+                        color: away.hovered ? Theme.hover : "transparent"
                     }
                 }
             }
-
             Text {
                 Layout.fillWidth: true
-                visible: Engine.error.length > 0
-                text: Engine.error
+                visible: !!root.app && (root.app.incoming || []).length === 0 && (!root.app.receiving || root.app.awayDjs.length === 0)
+                text: "还没有 DJ 电脑连上"
                 font.pixelSize: Theme.sizeSm
-                color: Theme.warn
-                wrapMode: Text.Wrap
-                MouseArea { anchors.fill: parent; onClicked: Engine.clearError() }
+                color: Theme.faint
             }
         }
     }

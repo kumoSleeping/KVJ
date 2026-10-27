@@ -5,9 +5,10 @@ import QtQuick.Layouts
 import KVJ
 
 // One row of the timeline, as an editor's track on a clock of its own: at
-// its left the header (the source's own small picture, which a press puts in
-// the preview's chosen slot; its name; an ear while following listens to it;
-// ⋯), across the rest the row's play bar, its ruler and its lane. The bar
+// its right end the header (the source's own picture, which a press chooses
+// on the preview; an ear, lit while following listens to it, pressed to make
+// it do so; ⋯ under the pointer), across the rest the row's play bar, its
+// ruler and its lane. The bar
 // drives this track's player: play and pause, where it is, its cursor and the
 // key that plays from it, the whole row at a glance, the speed with − / +
 // and 复原, and what happens after its last entry. Its keys rest while
@@ -19,7 +20,7 @@ import KVJ
 // ruler) zoom and fit it; zoomed in, the overview on the bar frames what the
 // lane shows, and the lane follows its own playhead unless it was touched a
 // moment ago. A press anywhere on a track's row makes it the active row, the
-// one Enter, 跳至光标处 and the zoom keys act on (its header has an ink edge);
+// one Enter, 跳至光标处 and the zoom keys act on (its picture sits on a deeper tone);
 // a press or drag on its timeline (the overview, the ruler, the lane) only
 // places this row's cursor: nothing a click does moves a picture. A
 // right click on an entry offers 移出轨道. A camera has no timeline, and an
@@ -326,63 +327,22 @@ Item {
         }
     }
 
-    // —— The header ——
+    // —— The header, at the row's right end: the source's own picture ——
     Item {
         id: header
-        // Inset a little, for the active row's ink edge.
-        x: 7
-        width: row.view.headerWidth - 15
+        x: row.width - row.view.headerWidth + 8
+        width: row.view.headerWidth - 8
         height: row.height
 
-        // The active row's header: a deeper tone and an ink edge at its left.
+        // The active row's picture sits on a deeper tone.
         Rectangle {
             visible: row.active
-            x: -7
+            x: -4
             y: -2
-            width: parent.width + 11
+            width: parent.width + 4
             height: parent.height + 4
-            radius: Theme.radius
+            radius: Theme.radius + 2
             color: Theme.selected
-            Rectangle {
-                width: 3
-                height: parent.height
-                radius: 1.5
-                color: Theme.text
-            }
-        }
-        RowLayout {
-            id: title
-            width: parent.width
-            height: row.barHeight
-            spacing: 4
-            ColorImage {
-                visible: row.followed
-                source: "icons/ear.svg"
-                sourceSize: Qt.size(13, 13)
-                color: Theme.text
-                HoverHandler { id: earHover }
-                ToolTip.visible: earHover.hovered
-                ToolTip.delay: 500
-                ToolTip.text: "音频对位跟随这条轨道"
-            }
-            Text {
-                Layout.fillWidth: true
-                text: row.name
-                font.pixelSize: Theme.sizeSm
-                font.weight: row.active ? Font.Bold : Font.DemiBold
-                color: row.camera || row.clips.length ? Theme.text : Theme.muted
-                elide: Text.ElideRight
-            }
-            IconButton {
-                id: moreKey
-                implicitWidth: 22
-                implicitHeight: 22
-                iconSize: 13
-                iconName: "ellipsis"
-                tip: row.camera ? "这个相机" : "这条轨道"
-                active: trackMenu.visible || cameraMenu.visible
-                onClicked: (row.camera || row.main ? cameraMenu : trackMenu).popup(moreKey, 0, moreKey.height + 2)
-            }
         }
         PopMenu {
             id: trackMenu
@@ -410,13 +370,14 @@ Item {
             }
         }
 
-        // The source's own picture, fitted; on the air an ink edge, in the preview a faint one.
+        // The source's own picture, fitted; on the air an ink edge. Over it
+        // the ear (lit on the track following listens to; pressed, following
+        // listens to this one) and, under the pointer, ⋯.
         Rectangle {
             id: picture
-            readonly property real room: row.height - row.barHeight - 4
-            y: row.barHeight + 2
-            width: Math.min(parent.width, room * 16 / 9)
-            height: Math.min(room, width * 9 / 16)
+            y: 2
+            width: parent.width
+            height: parent.height - 4
             radius: Theme.radius
             color: "black"
             ShaderEffect {
@@ -427,38 +388,94 @@ Item {
                 visible: !!row.texture
                 property var source: row.texture
             }
+            // Only a picture that has none shows its name.
+            Text {
+                anchors.centerIn: parent
+                width: parent.width - 16
+                visible: !row.texture
+                horizontalAlignment: Text.AlignHCenter
+                text: row.name
+                font.pixelSize: Theme.sizeXs
+                color: "#8b929c"
+                elide: Text.ElideRight
+            }
             Rectangle {
                 anchors.fill: parent
                 radius: parent.radius
                 color: "transparent"
-                border.width: row.onAir ? 2 : row.inPreview ? 1.5 : 0
-                border.color: row.onAir ? Theme.text : Theme.muted
+                border.width: row.onAir ? 2 : 0
+                border.color: Theme.text
             }
             Rectangle {
-                visible: row.onAir || row.inPreview
+                visible: row.onAir
                 x: 4
                 y: parent.height - height - 4
                 width: tag.implicitWidth + 8
                 height: 15
                 radius: 3
-                color: row.onAir ? Theme.text : "#99000000"
+                color: Theme.text
                 Text {
                     id: tag
                     anchors.centerIn: parent
-                    text: row.onAir ? "PGM" : "PVW"
+                    text: "PGM"
                     font.pixelSize: 9
                     font.weight: Font.DemiBold
-                    color: row.onAir ? Theme.bg : "white"
+                    color: Theme.bg
                 }
             }
+            HoverHandler { id: pictureHover }
             MouseArea {
                 anchors.fill: parent
-                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: row.view.pickSource(row.key)
-                ToolTip.visible: containsMouse
+                ToolTip.visible: pictureHover.hovered && !earKey.hovered && !moreKey.hovered
                 ToolTip.delay: 700
-                ToolTip.text: "放进合成预览（PVW）选中的位置"
+                ToolTip.text: row.name + " · 点一下在合成预览中选中"
+            }
+            // The ear: which track following listens to.
+            Rectangle {
+                id: ear
+                visible: !row.camera && (row.followed || pictureHover.hovered)
+                x: 4
+                y: 4
+                width: 22
+                height: 22
+                radius: 11
+                color: row.followed ? "#ffffff" : earKey.hovered ? "#cc000000" : "#8c000000"
+                ColorImage {
+                    anchors.centerIn: parent
+                    source: "icons/ear.svg"
+                    sourceSize: Qt.size(13, 13)
+                    color: row.followed ? "#000000" : "#ffffff"
+                }
+                MouseArea {
+                    id: earKey
+                    property bool hovered: containsMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: row.view.pickFollow(row.track)
+                    ToolTip.visible: containsMouse
+                    ToolTip.delay: 400
+                    ToolTip.text: row.followed ? "音频对位跟随这条轨道" : "改为跟随这条轨道"
+                }
+            }
+            IconButton {
+                id: moreKey
+                visible: pictureHover.hovered || trackMenu.visible || cameraMenu.visible
+                x: parent.width - width - 4
+                y: 4
+                implicitWidth: 22
+                implicitHeight: 22
+                iconSize: 13
+                iconName: "ellipsis"
+                icon.color: "#ffffff"
+                tip: row.camera ? "这个相机" : "这条轨道"
+                background: Rectangle {
+                    radius: 11
+                    color: moreKey.hovered ? "#cc000000" : "#8c000000"
+                }
+                onClicked: (row.camera || row.main ? cameraMenu : trackMenu).popup(moreKey, 0, moreKey.height + 2)
             }
         }
     }
@@ -466,8 +483,7 @@ Item {
     // —— The play bar, the ruler and the lane ——
     Item {
         id: body
-        x: row.view.headerWidth
-        width: row.width - x
+        width: row.width - row.view.headerWidth
         height: row.height
 
         // A camera: live, without a timeline.
