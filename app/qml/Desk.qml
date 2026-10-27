@@ -81,11 +81,15 @@ Item {
     // 只播放顶层声音: only the track whose layer is on top on the air is
     // heard (each its own volume); the switches above wait meanwhile.
     property bool soundTopOnly: false
+    // Two tracks shown (not 单轨): only then 画面 2's sound and the top
+    // layer's sound apply.
+    property bool dual: true
+    readonly property bool topOnly: soundTopOnly && dual
     // The source on top on the air (Timeline.onTop), set by the host.
     property string topSource: ""
-    readonly property bool hears1: soundTopOnly ? topSource === "track:0" : soundOn
-    readonly property bool hears2: soundTopOnly ? topSource === "track:1" : soundOn2
-    readonly property bool anySound: soundTopOnly || soundOn || soundOn2
+    readonly property bool hears1: topOnly ? topSource === "track:0" : soundOn
+    readonly property bool hears2: dual && (topOnly ? topSource === "track:1" : soundOn2)
+    readonly property bool anySound: topOnly || hears1 || hears2
     property string soundDevice: ""
     property real soundVolume: 0.8
     property real soundVolume2: 0.8
@@ -276,7 +280,7 @@ Item {
             // By number, not by a list of values: a list made anew at each
             // step of a drag would make the slider anew under the finger.
             Repeater {
-                model: 2
+                model: desk.dual ? 2 : 1
                 RowLayout {
                     id: soundRow
                     required property int index
@@ -293,8 +297,8 @@ Item {
                     spacing: 4
                     Toggle {
                         Layout.rightMargin: 4
-                        enabled: !desk.soundTopOnly
-                        text: "画面 " + (soundRow.index + 1)
+                        enabled: !desk.topOnly
+                        text: desk.dual ? "画面 " + (soundRow.index + 1) : "声音"
                         checked: soundRow.on
                         onToggled: soundRow.index === 0 ? desk.soundOn = checked : desk.soundOn2 = checked
                     }
@@ -333,11 +337,12 @@ Item {
                         text: Math.round(soundRow.volume * 100) + "%"
                         font.pixelSize: Theme.sizeSm
                         font.features: { "tnum": 1 }
-                        color: (desk.soundTopOnly ? (soundRow.index === 0 ? desk.hears1 : desk.hears2) : soundRow.on) ? Theme.body : Theme.faint
+                        color: (desk.topOnly ? (soundRow.index === 0 ? desk.hears1 : desk.hears2) : soundRow.on) ? Theme.body : Theme.faint
                     }
                 }
             }
             Toggle {
+                visible: desk.dual
                 text: "只播放顶层声音"
                 checked: desk.soundTopOnly
                 onToggled: desk.soundTopOnly = checked

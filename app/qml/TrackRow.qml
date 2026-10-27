@@ -362,7 +362,7 @@ Item {
         running: row.visible && row.zoomed && row.playT >= 0 && row.playing
         onTriggered: {
             // Synced, the rows' one view follows them all (Timeline.followTogether).
-            if (Date.now() - row.touchedAt < 4000 || row.view.viewsLocked)
+            if (Date.now() - row.touchedAt < 4000 || row.view.viewsSynced)
                 return
             if (row.playT < row.viewLeft || row.playT > row.viewLeft + row.span * 0.97) {
                 row.viewStart = Math.max(0, row.playT - row.span * 0.1)
@@ -620,6 +620,7 @@ Item {
                 outlined: true
                 font.pixelSize: 11
                 text: "同步播放"
+                visible: !!row.other
                 enabled: row.canSeek && row.clips.length > 0 && !!row.other && row.other.playT >= 0
                 onClicked: row.view.syncPlay(row)
                 ToolTip.visible: hovered

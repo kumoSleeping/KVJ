@@ -200,6 +200,9 @@ Rectangle {
     // one moved last (the same two videos line up, each with its own
     // playhead). Only the active row brings the view along with its playhead.
     property bool viewsLocked: false
+    // Two track rows (not 单轨): the switches between them apply.
+    readonly property bool dual: rows.length > 1
+    readonly property bool viewsSynced: viewsLocked && dual
     // 同步变速: 画面 2 plays at 画面 1's speed; either row's speed keys
     // change both (the host links the players).
     property bool tempoLinked: false
@@ -221,7 +224,7 @@ Rectangle {
             r.keep()
         }
     }
-    onViewsLockedChanged: if (viewsLocked) mirror(activeItem)
+    onViewsSyncedChanged: if (viewsSynced) mirror(activeItem)
     // Synced, the one view follows the playheads it shows: one outside it is
     // let be; once one inside reaches its right end the view moves on,
     // keeping both in sight when they fit (centred between them), else
@@ -261,7 +264,7 @@ Rectangle {
     Timer {
         interval: 100
         repeat: true
-        running: line.viewsLocked && line.visible
+        running: line.viewsSynced && line.visible
         onTriggered: line.followTogether()
     }
     function setMark(x) {
@@ -382,6 +385,7 @@ Rectangle {
                 }
             }
             Toggle {
+                visible: line.dual
                 text: "缩放同步"
                 checked: line.viewsLocked
                 onToggled: line.viewsLocked = checked
@@ -390,6 +394,7 @@ Rectangle {
                 ToolTip.text: "画面 1 和画面 2 用同样的缩放、显示同一段时间，调一条另一条跟着变；各自播到哪里互不影响。\n同一段视频放在两条轨道上时，上下完全对齐"
             }
             Toggle {
+                visible: line.dual
                 text: "同步变速"
                 checked: line.tempoLinked
                 onToggled: line.tempoLinked = checked
@@ -436,7 +441,7 @@ Rectangle {
             }
         }
 
-        // —— The rows, one or two ——
+        // —— The rows, one or two (单轨) ——
         Item {
             id: rowsBox
             Layout.fillWidth: true

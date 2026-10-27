@@ -24,9 +24,12 @@ Rectangle {
     property bool canSend: true
     // The library drawer: out or not; its key comes first in the bar.
     property bool drawerOpen: false
+    // 单轨 (only 画面 1) or two tracks; its key comes next.
+    property bool singleTrack: false
 
     signal send()
     signal toggleDrawer()
+    signal toggleSingle()
 
     implicitHeight: unified ? Math.max(32, titleHeight) : 36
 
@@ -65,6 +68,18 @@ Rectangle {
                         top.toggleDrawer()
                 }
             }
+        }
+        // 单轨 or 双轨: the timeline's rows and the board's sources.
+        IconButton {
+            Layout.leftMargin: -6
+            implicitWidth: 28
+            implicitHeight: 24
+            iconSize: 15
+            iconName: top.singleTrack ? "rectangle-horizontal" : "rows-2"
+            active: top.singleTrack
+            tip: top.singleTrack ? "单轨：只用画面 1 · 点一下回到两条轨道"
+                                 : "两条轨道 · 点一下切到单轨（画面 2 停下、移出画面，轨道上的视频保留）"
+            onClicked: top.toggleSingle()
         }
 
         // What is going on: listening, following, projecting.

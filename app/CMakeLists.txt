@@ -118,6 +118,8 @@ qt_add_qml_module(KVJ
         qml/icons/polyline.svg
         qml/icons/cast.svg
         qml/icons/undo-2.svg
+        qml/icons/rows-2.svg
+        qml/icons/rectangle-horizontal.svg
         qml/emoji/1f389.webp
         qml/emoji/1f44f.webp
         qml/emoji/1f496.webp

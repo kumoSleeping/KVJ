@@ -479,6 +479,7 @@ ApplicationWindow {
     // second press does; "effect <key> <0–1>" sets an effect, "move <from>
     // <to>" reorders them; "set <no.>" chooses that Set as the sidebar does;
     // "drawer 0|1" puts the library's drawer away or brings it out.
+    // "single 0|1" switches 单轨 on or off.
     function devCommand(line) {
         const w = String(line).trim().split(/\s+/)
         switch (w[0]) {
@@ -517,6 +518,7 @@ ApplicationWindow {
         case "fill": mixer.fill(Math.max(0, mixer.selected)); break
         case "revert": Switcher.revert(); break
         case "drawer": app.setsOpen = Number(w[1] || 0) > 0; break
+        case "single": app.setSingle(Number(w[1] || 0) > 0); break
         case "noline": Switcher.setMask(Math.max(0, mixer.selected), { lines: [] }); break
         default: return "unknown"
         }
@@ -730,20 +732,40 @@ ApplicationWindow {
         category: "sources"
         property string cameras: "[]"
         property string tracks: "[]"
+        property alias single: app.singleTrack
         Component.onCompleted: {
             try {
                 app.cameraIds = JSON.parse(cameras)
             } catch (e) {
                 app.cameraIds = []
             }
-            // Always two tracks: a second one put away by the old 单轨 mode
-            // comes back; the layers of any others wait aside.
+            // 画面 2's layer waits aside in 单轨 and is back in 双轨; the
+            // layers of any others wait aside.
             Qt.callLater(() => {
-                Switcher.bringBack("track:1")
+                if (app.singleTrack)
+                    Switcher.setAside("track:1")
+                else
+                    Switcher.bringBack("track:1")
                 for (const t of [2, 3])
                     Switcher.setAside("track:" + t)
             })
         }
+    }
+    // 单轨: only 画面 1, on the timeline and the board; 画面 2 stops, its
+    // entries stay on it and its layer waits aside until 双轨 brings it back
+    // where it was.
+    property bool singleTrack: false
+    function setSingle(on) {
+        if (on === app.singleTrack)
+            return
+        if (on) {
+            if (aux1.playing)
+                aux1.toggle()
+            Switcher.setAside("track:1")
+        } else {
+            Switcher.bringBack("track:1")
+        }
+        app.singleTrack = on
     }
     function setCameras(ids) {
         app.cameraIds = ids
@@ -757,9 +779,9 @@ ApplicationWindow {
         app.setCameras(app.cameraIds.filter(c => "camera:" + c !== key))
         Switcher.rename({ [key]: "" })
     }
-    // Always two tracks, as a DJ's two decks.
-    readonly property var shownAux: [1]
-    // The timeline's rows: the two tracks.
+    // Two tracks, as a DJ's two decks, or only 画面 1 (单轨).
+    readonly property var shownAux: app.singleTrack ? [] : [1]
+    // The timeline's rows: the tracks shown.
     readonly property var trackRows: {
         const rows = [{ key: "track:0", kind: "track", track: 0, name: "画面 1",
                         entries: app.entries.filter(app.isMain), player: app }]
@@ -918,7 +940,7 @@ ApplicationWindow {
         sequence: "]"
         context: Qt.ApplicationShortcut
         autoRepeat: false
-        enabled: app.keysLive
+        enabled: app.keysLive && !app.singleTrack
         onActivated: mixer.takeLive("track:1")
     }
     Shortcut {
@@ -990,6 +1012,8 @@ ApplicationWindow {
             onSend: app.openSender()
             drawerOpen: app.setsOpen
             onToggleDrawer: app.toggleSets()
+            singleTrack: app.singleTrack
+            onToggleSingle: app.setSingle(!app.singleTrack)
         }
 
         // The canvas across the whole width, the Sets' drawer over its left side.
@@ -1009,19 +1033,19 @@ ApplicationWindow {
                     spacing: Theme.gap
 
                     // —— The board: the picture as the audience sees it and
-                    // where it is made; at its right the panel of what goes
-                    // over it (stickers, words and reactions, effects), out
-                    // or put away with the keys on the board's right edge ——
+                    // where it is made; at its right the narrow panel of what
+                    // goes over it (stickers, words, reactions) ——
                     RowLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         spacing: 0
-                        // As wide as its picture is at this height; the panel
-                        // of what goes over it takes the rest.
+                        // Its picture as large as the room allows; the panel
+                        // keeps its width.
                         Composer {
                             id: mixer
-                            Layout.fillWidth: false
-                            Layout.preferredWidth: mixer.fitWidth
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 400
+                            Layout.minimumWidth: 300
                             Layout.fillHeight: true
                             sources: app.sources
                             textures: desk.textures
@@ -1079,6 +1103,12 @@ ApplicationWindow {
                             tracks: [0].concat(app.shownAux)
                         }
                     }
+
+                    // —— The effects: a rail of drawn keys at the window's right edge ——
+                    Effects {
+                        Layout.fillHeight: true
+                        Layout.rightMargin: 4 - Theme.gap
+                    }
                 }
             }
 
@@ -1091,6 +1121,7 @@ ApplicationWindow {
                 sound: sound
                 sound2: sound2
                 topSource: timeline.onTop
+                dual: !app.singleTrack
                 sourceIds: app.sources.map(s => s.id)
                 monitorWidth: mixer.pictureWidth
             }

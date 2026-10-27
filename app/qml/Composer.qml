@@ -48,9 +48,6 @@ ColumnLayout {
     signal removeCamera(string key)
     // How wide the picture is drawn here: the sources' light copies are made this large.
     readonly property real pictureWidth: screen.width
-    // The width the board wants: its picture at the height it has, with the
-    // margins round it (nothing is kept at the picture's right).
-    readonly property real fitWidth: Math.max(240, (box.height - screen.roomTop - screen.roomFoot) * aspect + screen.roomLeft + 12 + shelfWidth + 8)
     // 画外: the column at the picture's right where the sources not on it wait.
     readonly property real shelfWidth: 112
 
@@ -489,16 +486,19 @@ ColumnLayout {
                                     if (shelf.carrying)
                                         shelf.at = mapToItem(box, mouse.x, mouse.y)
                                 }
+                                // The drag ends before the layer moves: moved onto the
+                                // picture it leaves the shelf, and this tile with it,
+                                // so nothing of the tile is reached after that.
                                 onReleased: mouse => {
-                                    const i = composer.slots.findIndex(s => s.source === tile.modelData.source)
-                                    if (shelf.carrying) {
-                                        const p = mapToItem(screen, mouse.x, mouse.y)
-                                        if (p.x >= 0 && p.y >= 0 && p.x <= screen.width && p.y <= screen.height)
-                                            composer.placeAt(i, p.x / screen.width, p.y / screen.height)
-                                    } else {
-                                        composer.bringIn(tile.modelData.source)
-                                    }
+                                    const source = tile.modelData.source
+                                    const i = composer.slots.findIndex(s => s.source === source)
+                                    const carried = shelf.carrying
+                                    const p = mapToItem(screen, mouse.x, mouse.y)
                                     shelf.carrying = false
+                                    if (!carried)
+                                        composer.bringIn(source)
+                                    else if (p.x >= 0 && p.y >= 0 && p.x <= screen.width && p.y <= screen.height)
+                                        composer.placeAt(i, p.x / screen.width, p.y / screen.height)
                                 }
                                 onCanceled: shelf.carrying = false
                                 ToolTip.visible: containsMouse && !pressed
@@ -510,6 +510,9 @@ ColumnLayout {
                 }
             }
             // A drag from the shelf: where the layer would go, at the pointer.
+            // Its source gone from the shelf (put on the picture another way,
+            // a camera let go), the drag is over.
+            onWaitingChanged: if (carrying && !waiting.some(o => o.source === carried)) carrying = false
             property bool carrying: false
             property string carried: ""
             property point at
@@ -697,9 +700,10 @@ ColumnLayout {
                 outlined: true
                 iconName: out && out.anySound ? "volume-2" : "volume-x"
                 text: !out || !out.anySound ? "声音关"
-                      : out.soundTopOnly ? "顶层声音"
-                      : out.soundOn && out.soundOn2 ? "画面 1+2"
-                      : out.soundOn ? "画面 1 · " + Math.round(out.soundVolume * 100) + "%"
+                      : out.topOnly ? "顶层声音"
+                      : !out.dual ? "声音 · " + Math.round(out.soundVolume * 100) + "%"
+                      : out.hears1 && out.hears2 ? "画面 1+2"
+                      : out.hears1 ? "画面 1 · " + Math.round(out.soundVolume * 100) + "%"
                       : "画面 2 · " + Math.round(out.soundVolume2 * 100) + "%"
                 widest: "画面 2 · 100%"
                 leftPadding: 8
