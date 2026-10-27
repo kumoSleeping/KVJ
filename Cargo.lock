@@ -517,7 +517,7 @@ dependencies = [
 
 [[package]]
 name = "kvj-engine"
-version = "0.1.0-rc3"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "block2",
@@ -547,7 +547,7 @@ dependencies = [
 
 [[package]]
 name = "kvj-recognize"
-version = "0.1.0-rc3"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "rustfft",
