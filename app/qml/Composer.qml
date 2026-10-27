@@ -916,6 +916,17 @@ ColumnLayout {
                         border.width: edge.chosen ? 1.5 : 1
                         border.color: edge.chosen ? "#ffffff" : "#40ffffff"
                     }
+                    // The chosen one's frame also in ink just outside: where
+                    // it reaches past the picture (onto the light ground) its
+                    // edge and handles still read as its own.
+                    Rectangle {
+                        visible: edge.chosen
+                        anchors.fill: parent
+                        anchors.margins: -1.5
+                        color: "transparent"
+                        border.width: 1
+                        border.color: Theme.dark ? "#c3c8d0" : "#55555c"
+                    }
                     // Its name, on a plate at its top left.
                     Rectangle {
                         x: 4
