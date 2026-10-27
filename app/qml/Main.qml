@@ -1001,7 +1001,7 @@ ApplicationWindow {
     // on Esc shares the key: each press then puts one of them away.
     Shortcut {
         sequence: "Esc"
-        enabled: app.setsOpen && mixer.chosenSid === "" && !mixer.editing && mixer.selected < 0 && !sidebar.asking
+        enabled: app.setsOpen && mixer.chosenSid === "" && mixer.selected < 0 && !sidebar.asking
         onActivated: app.closeSets()
         onActivatedAmbiguously: app.closeSets()
     }
@@ -1058,39 +1058,27 @@ ApplicationWindow {
                     spacing: Theme.gap
 
                     // —— The board: the picture as the audience sees it and
-                    // where it is made; at its right the narrow panel of what
-                    // goes over it (stickers, words, reactions) ——
-                    RowLayout {
+                    // where it is made, as large as the room allows ——
+                    Composer {
+                        id: mixer
                         Layout.fillWidth: true
+                        Layout.preferredWidth: 400
+                        Layout.minimumWidth: 300
                         Layout.fillHeight: true
-                        spacing: 0
-                        // Its picture as large as the room allows; the panel
-                        // keeps its width.
-                        Composer {
-                            id: mixer
-                            Layout.fillWidth: true
-                            Layout.preferredWidth: 400
-                            Layout.minimumWidth: 300
-                            Layout.fillHeight: true
-                            sources: app.sources
-                            textures: desk.textures
-                            aspect: desk.aspect
-                            entry: projection.entry
-                            output: desk
-                            cameraIds: app.cameraIds
-                            keysHost: timeline.keysHost
-                            zoomHost: topBar
-                            onAddCamera: id => app.addCamera(id)
-                            onRemoveCamera: key => app.removeCamera(key)
-                        }
-                        LiveBar {
-                            id: liveBar
-                            Layout.fillHeight: true
-                            composer: mixer
-                        }
+                        sources: app.sources
+                        textures: desk.textures
+                        aspect: desk.aspect
+                        entry: projection.entry
+                        output: desk
+                        cameraIds: app.cameraIds
+                        keysHost: timeline.keysHost
+                        zoomHost: topBar
+                        onAddCamera: id => app.addCamera(id)
+                        onRemoveCamera: key => app.removeCamera(key)
                     }
 
-                    // —— At the right: what the audience sees, small, over smart following ——
+                    // —— At the right: what the audience sees, small, over
+                    // smart following, then the words, folded ——
                     ColumnLayout {
                         Layout.preferredWidth: strip.implicitWidth
                         Layout.fillWidth: false
@@ -1098,23 +1086,32 @@ ApplicationWindow {
                         spacing: Theme.gap
 
                         // The program (PGM) as the projection draws it, the
-                        // stickers and effects on the air included.
-                        Rectangle {
+                        // stickers and effects on the air included; smaller
+                        // (centred) when the column is short of room.
+                        Item {
                             Layout.fillWidth: true
+                            Layout.fillHeight: true
                             Layout.preferredHeight: width / Math.max(0.2, desk.aspect)
-                            color: "black"
-                            radius: Theme.radius
-                            clip: true
-                            Stage {
-                                id: pgmStage
-                                anchors.fill: parent
-                                lite: true
-                                entry: projection.entry
-                                Program {
+                            Layout.maximumHeight: width / Math.max(0.2, desk.aspect)
+                            Layout.minimumHeight: 48
+                            Rectangle {
+                                width: Math.min(parent.width, parent.height * Math.max(0.2, desk.aspect))
+                                height: width / Math.max(0.2, desk.aspect)
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                color: "black"
+                                radius: Theme.radius
+                                clip: true
+                                Stage {
+                                    id: pgmStage
                                     anchors.fill: parent
-                                    now: pgmStage.now
-                                    textures: desk.textures
-                                    operator: true
+                                    lite: true
+                                    entry: projection.entry
+                                    Program {
+                                        anchors.fill: parent
+                                        now: pgmStage.now
+                                        textures: desk.textures
+                                        operator: true
+                                    }
                                 }
                             }
                         }
@@ -1123,18 +1120,31 @@ ApplicationWindow {
                         FollowStrip {
                             id: strip
                             Layout.fillWidth: true
-                            Layout.fillHeight: true
                             app: app
                             surface: projection.surface
                             rowHeight: timeline.mainRowHeight
                             tracks: app.shownTracks
                         }
+                        Words {
+                            Layout.fillWidth: true
+                            composer: mixer
+                        }
+                        Item { Layout.fillHeight: true }
                     }
 
-                    // —— The effects: a rail of drawn keys at the window's right edge ——
-                    Effects {
+                    // —— The reactions and the effects: two rails of keys at
+                    // the window's right edge ——
+                    RowLayout {
                         Layout.fillHeight: true
+                        Layout.fillWidth: false
                         Layout.rightMargin: 4 - Theme.gap
+                        spacing: 4
+                        Reactions {
+                            Layout.fillHeight: true
+                        }
+                        Effects {
+                            Layout.fillHeight: true
+                        }
                     }
                 }
             }
@@ -1259,6 +1269,7 @@ ApplicationWindow {
             onPickSource: key => app.pickSource(key)
             onClearTrack: track => app.clearTrack(track)
             onTakeLive: key => mixer.takeLive(key)
+            onBringUp: key => mixer.bringUp(key)
             // The board's keys right under its picture's left edge.
             keysInset: mixer.keysInset
             // Done once the drop is over: the rows are made anew by it.

@@ -5,15 +5,13 @@ import KVJ
 // A posted sticker on the operator's preview, where it is changed live: pressed,
 // it is chosen and follows the pointer; chosen, a frame shows with a point at
 // each corner that sizes it about its centre, a point above that turns it
-// (Shift: in steps of 15°). While the desk is editing, every sticker shows a
-// faint outline and a key on its top right corner that takes it down.
+// (Shift: in steps of 15°), and on its top right corner a key that takes it down.
 Sticker {
     id: frame
 
     required property var model
     // The id of the chosen sticker, and the way to choose one.
     property string chosen: ""
-    property bool editing: false
     // Where its centre may go, in shares of the picture: off it too, on the
     // stage around it, where it waits unseen by the audience.
     property rect bounds: Qt.rect(0, 0, 1, 1)
@@ -64,16 +62,6 @@ Sticker {
         }
     }
 
-    // While editing, a faint outline on the ones not chosen, so each is found.
-    Rectangle {
-        visible: frame.editing && !frame.isChosen
-        anchors.fill: parent
-        anchors.margins: -2
-        color: "transparent"
-        border.width: 1
-        border.color: "#80ffffff"
-    }
-
     // The frame, outside the picture so it never covers it.
     Rectangle {
         visible: frame.isChosen
@@ -91,12 +79,10 @@ Sticker {
         }
     }
 
-    // Corners: size about the centre, as far as the pointer is from it. While
-    // editing, the top right one gives way to the key that takes it down.
+    // Corners: size about the centre, as far as the pointer is from it. The
+    // top right one gives way to the key that takes it down.
     Repeater {
-        model: !frame.isChosen ? []
-             : frame.editing ? [Qt.point(0, 0), Qt.point(0, 1), Qt.point(1, 1)]
-             : [Qt.point(0, 0), Qt.point(1, 0), Qt.point(0, 1), Qt.point(1, 1)]
+        model: frame.isChosen ? [Qt.point(0, 0), Qt.point(0, 1), Qt.point(1, 1)] : []
         Rectangle {
             id: corner
             required property point modelData
@@ -182,7 +168,7 @@ Sticker {
     // Centred on the top right corner, so it turns with the sticker and stays on
     // it, but kept upright: take it down.
     Rectangle {
-        visible: frame.editing
+        visible: frame.isChosen
         z: 2
         x: frame.width - width / 2
         y: -height / 2

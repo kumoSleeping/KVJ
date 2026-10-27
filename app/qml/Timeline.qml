@@ -37,7 +37,8 @@ import KVJ
 //             (-1 while there is none); markClip / canJump: its cursor's
 //             clip, and whether a jump would go now
 //   pickSource(key), clearTrack(track), takeLive(key) (a
-//             row's 投放, the quick cut): asked of the host
+//             row's 投放, the quick cut), bringUp(key) (its 置顶, on the
+//             board only): asked of the host
 //   dropEntries(ids, track), dropFiles(urls, track): onto a track, in place
 //             of what is on it
 //   removeEntry(id): an entry's 移出轨道 (right click on it)
@@ -71,6 +72,7 @@ Rectangle {
     signal pickSource(string key)
     signal clearTrack(int track)
     signal takeLive(string key)
+    signal bringUp(string key)
     signal dropEntries(var entryIds, int track)
     signal dropFiles(var urls, int track)
     signal removeEntry(string entryId)

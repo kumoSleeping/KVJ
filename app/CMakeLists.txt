@@ -51,7 +51,8 @@ qt_add_qml_module(KVJ
         qml/StickerFrame.qml
         qml/Desk.qml
         qml/Effects.qml
-        qml/LiveBar.qml
+        qml/Reactions.qml
+        qml/Words.qml
         qml/IdList.qml
         qml/Sidebar.qml
         qml/Timeline.qml
@@ -132,6 +133,7 @@ qt_add_qml_module(KVJ
         qml/emoji/1f918.webp
         qml/emoji/2728.webp
         qml/emoji/1faa9.webp
+        qml/emoji/1f40d.webp
     SOURCES
         src/Engine.h src/Engine.cpp
         src/VideoSurface.h src/VideoSurface.cpp

@@ -547,21 +547,39 @@ Item {
                 elide: Text.ElideRight
             }
             Item { Layout.preferredWidth: 4 }
-            // What happens after the row's last entry.
+            // What happens after the row's last entry: two words and a
+            // drawing each, one width, so nothing moves when it flips.
             TextButton {
                 flat: true
                 implicitHeight: 22
                 leftPadding: 6
                 rightPadding: 8
                 font.pixelSize: Theme.sizeXs
-                iconName: row.loop ? "refresh" : ""
-                text: row.loop ? "循环" : "播完即停"
+                iconName: row.loop ? "refresh" : "arrow-right-to-line"
+                text: row.loop ? "循环" : "单次"
+                widest: "循环"
                 enabled: row.main ? !!row.view.player : !!row.player
                 onClicked: row.flipLoop()
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: row.loop ? "循环播放：放完这条轨道的最后一个素材后从第一个重来；点一下改为播完即停"
-                                       : "播完即停：放完这条轨道的最后一个素材后停在最后一帧；点一下改为循环播放"
+                ToolTip.text: row.loop ? "循环播放：放完这条轨道的最后一个素材后从第一个重来；点一下改为单次"
+                                       : "单次（播完即停）：放完这条轨道的最后一个素材后停在最后一帧；点一下改为循环播放"
+            }
+            Item { Layout.preferredWidth: 4 }
+            // This track's layer floated to the top on the board only, and
+            // chosen there to be sized; the audience sees it on 投放.
+            TextButton {
+                implicitHeight: 22
+                leftPadding: 8
+                rightPadding: 10
+                outlined: true
+                font.pixelSize: Theme.sizeXs
+                iconName: "arrow-up-to-line"
+                text: "置顶"
+                onClicked: row.view.bringUp(row.key)
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: row.name + " 在画板上浮到最上层并选中，好调整大小和位置（在画外时铺满画面）；不直接给观众，按「投放」才上屏"
             }
             Item { Layout.preferredWidth: 4 }
             // 快切: this track's layer floated to the top, to the audience with

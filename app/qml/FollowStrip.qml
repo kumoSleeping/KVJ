@@ -110,6 +110,8 @@ Card {
     }
 
     implicitWidth: 228
+    // One block, as tall as what it holds.
+    implicitHeight: column.implicitHeight
 
     Settings {
         category: "follow"
@@ -121,6 +123,7 @@ Card {
     }
 
     ColumnLayout {
+        id: column
         anchors.fill: parent
         spacing: 5
 
@@ -471,12 +474,7 @@ Card {
             }
         }
 
-        Item {
-            Layout.fillHeight: true
-            Layout.preferredHeight: 0
-        }
-
-        // The two helpers in full, at the foot: the speed, and the jump
+        // The two helpers in full, right under it: the speed, and the jump
         // threshold; each paused or resumed by its key.
         Assistants {
             Layout.fillWidth: true

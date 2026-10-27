@@ -1,7 +1,6 @@
 import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
-import QtQuick.Dialogs
 import QtQuick.Layouts
 import QtQuick.Shapes
 import QtQuick.Window
@@ -11,9 +10,11 @@ import KVJ
 // picture in the middle of a wide stage. Every picture source is a layer on
 // it; a source newly there waits on the stage at the picture's right
 // (Switcher.stack) until it is dragged in; cameras are taken in with the key at
-// the foot of that stage (+ 相机) and let go from their layer's menu. Stickers
-// from the gallery (LiveBar, the panel at the board's right) are posted here too; the effects, the words and the reactions on the air
-// show on it as they do for the audience. Right under the picture: 跟随 | 投放,
+// the foot of that stage (+ 相机) and let go from their layer's menu. Images
+// dragged in from elsewhere are posted as stickers where they are let go on
+// the picture, or wait in 画外 beside the sources when let go there; the
+// effects, the words and the reactions on the air show on it as they do for
+// the audience. Right under the picture: 跟随 | 投放,
 // the picture's sound, the output and 投放. In 跟随 every change here is on
 // the air at once; in 投放 the audience keeps what was last put out until 投放
 // (Switcher.apply, also Space); the PGM monitor above 音频对位 shows it meanwhile.
@@ -181,6 +182,16 @@ ColumnLayout {
         Qt.callLater(stackSources)
         Switcher.take(id, id => ratio(id), aspect)
     }
+    // A track's 置顶: its layer floated to the top and chosen here, on the
+    // board only (from 画外 it fills the picture); 投放 puts it on the air.
+    function bringUp(id) {
+        const i = slots.findIndex(s => s.source === id)
+        if (i < 0)
+            return
+        if (!Switcher.inPicture(slots[i]))
+            Switcher.updateSlot(i, { x: 0, y: 0, w: 1, h: 1, fit: "contain" })
+        choose(i)
+    }
 
     // —— Layer keys ——
     // Larger or smaller by `factor`, about its middle.
@@ -263,29 +274,16 @@ ColumnLayout {
         }
     }
 
-    // —— Stickers, posted here from the gallery ——
-    // Stickers in waiting, kept between runs: { id, kind: "image" | "text", source, text, name }.
+    // —— Stickers: images dropped on the picture, or kept in 画外 ——
+    // The images waiting in 画外, kept between runs: { id, kind: "image" | "text", source, text, name }.
     property var gallery: []
-    // How tall the next sticker is, as a share of the screen's height.
+    // How tall the next sticker is, as a share of the screen's height (the
+    // size the last one was given).
     property real placeSize: 0.3
-    // The sticker chosen on the canvas; the size bar works on it, or else on
-    // the one posted last.
+    // The sticker chosen on the canvas.
     property string chosenSid: ""
     onChosenSidChanged: if (chosenSid) selected = -1
-    // Editing the stickers: each posted one and each in the gallery shows a key
-    // that takes it down or out. Off at every start.
-    property bool editing: false
-    readonly property string sizing: {
-        Live.revision
-        return chosenSid && Live.find(chosenSid) >= 0 ? chosenSid
-             : Live.lastSid && Live.find(Live.lastSid) >= 0 ? Live.lastSid : ""
-    }
-    readonly property real sizingSize: {
-        Live.revision
-        const s = sizing ? Live.sticker(sizing) : null
-        return s ? s.size : placeSize
-    }
-    // A gallery item being dragged, and where the pointer is (composer coordinates).
+    // An image from 画外 being dragged, and where the pointer is (composer coordinates).
     property var carrying: null
     property point carryPoint
     readonly property point carryOnScreen: screen.mapFromItem(composer, carryPoint.x, carryPoint.y)
@@ -306,7 +304,8 @@ ColumnLayout {
         gallery = items
         store.gallery = JSON.stringify(items)
     }
-    function addImages(urls) {
+    // The images among `urls`, as stickers to post or keep.
+    function imagesIn(urls) {
         const added = []
         for (let i = 0; i < urls.length; ++i) {
             const url = urls[i].toString()
@@ -315,14 +314,13 @@ ColumnLayout {
             const name = decodeURIComponent(url.substring(url.lastIndexOf("/") + 1))
             added.push({ id: "g" + Date.now() + "_" + i, kind: "image", source: url, name: name })
         }
+        return added
+    }
+    function addImages(urls) {
+        const added = imagesIn(urls)
         if (added.length)
             setGallery(gallery.concat(added))
         return added
-    }
-    function addWords(text) {
-        const words = text.trim()
-        if (words.length)
-            setGallery(gallery.concat([{ id: "g" + Date.now(), kind: "text", text: words, name: words }]))
     }
     function forget(id) {
         setGallery(gallery.filter(g => g.id !== id))
@@ -339,14 +337,6 @@ ColumnLayout {
             postAt(carrying, carryOnScreen.x / screen.width, carryOnScreen.y / screen.height)
         carrying = null
     }
-    function setSize(size) {
-        placeSize = size
-        if (sizing)
-            Live.update(sizing, { size: size })
-    }
-    function pickImages() {
-        imageDialog.open()
-    }
 
     Settings {
         id: store
@@ -354,12 +344,6 @@ ColumnLayout {
         property string gallery: "[]"
         property alias size: composer.placeSize
         property alias zoom: composer.zoom
-    }
-    FileDialog {
-        id: imageDialog
-        fileMode: FileDialog.OpenFiles
-        nameFilters: ["图片 (*.png *.jpg *.jpeg *.gif *.webp *.svg *.bmp)"]
-        onAccepted: composer.addImages(selectedFiles)
     }
     readonly property Item focusItem: Window.activeFocusItem
     readonly property bool typing: !!focusItem && typeof focusItem.selectedText === "string"
@@ -382,13 +366,12 @@ ColumnLayout {
         enabled: composer.chosenSid === "" && composer.selected >= 0 && !composer.typing
         onActivated: composer.takeAway()
     }
-    // Esc lets the chosen sticker or layer go and ends editing.
+    // Esc lets the chosen sticker or layer go.
     Shortcut {
         sequence: "Esc"
-        enabled: composer.chosenSid !== "" || composer.editing || composer.selected >= 0
+        enabled: composer.chosenSid !== "" || composer.selected >= 0
         onActivated: {
             composer.chosenSid = ""
-            composer.editing = false
             composer.selected = -1
         }
     }
@@ -467,7 +450,7 @@ ColumnLayout {
             // Empty: pictures waiting in a tray, one sliding in from the
             // picture at the left, and two words.
             Column {
-                visible: shelf.waiting.length === 0
+                visible: shelf.waiting.length === 0 && composer.gallery.length === 0
                 anchors.centerIn: parent
                 width: parent.width - 16
                 spacing: 10
@@ -547,7 +530,7 @@ ColumnLayout {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.Wrap
-                    text: "拖出画面的画面在这里等着"
+                    text: "拖出画面的画面、拖进来的图片在这里等着"
                     font.pixelSize: Theme.sizeXs
                     color: Theme.faint
                 }
@@ -634,6 +617,105 @@ ColumnLayout {
                             }
                         }
                     }
+                    // The images kept here: a click posts one in the middle,
+                    // a drag where it is let go; × lets it go from here.
+                    Repeater {
+                        model: composer.gallery
+                        Item {
+                            id: kept
+                            required property var modelData
+                            readonly property bool moving: modelData.kind === "image" && /\.(gif|webp)$/i.test(modelData.source)
+                            width: shelfColumn.width
+                            height: width * 9 / 16
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: Theme.radius
+                                color: keptArea.containsMouse ? Theme.hover : Theme.bg
+                                opacity: composer.carrying && composer.carrying.id === kept.modelData.id ? 0.4 : 1
+                                Image {
+                                    id: keptThumb
+                                    anchors.fill: parent
+                                    anchors.margins: 4
+                                    visible: kept.modelData.kind === "image" && !(kept.moving && keptArea.containsMouse)
+                                    source: kept.modelData.kind === "image" ? kept.modelData.source : ""
+                                    sourceSize.width: 160
+                                    sourceSize.height: 160
+                                    fillMode: Image.PreserveAspectFit
+                                    asynchronous: true
+                                }
+                                // A GIF plays while the pointer is on it.
+                                Loader {
+                                    anchors.fill: parent
+                                    anchors.margins: 4
+                                    active: kept.moving && keptArea.containsMouse
+                                    sourceComponent: AnimatedImage {
+                                        source: kept.modelData.source
+                                        fillMode: Image.PreserveAspectFit
+                                    }
+                                }
+                                Text {
+                                    anchors.fill: parent
+                                    anchors.margins: 4
+                                    visible: kept.modelData.kind === "text" || keptThumb.status === Image.Error
+                                    text: kept.modelData.kind === "text" ? kept.modelData.text : "无法读取"
+                                    font.pixelSize: kept.modelData.kind === "text" ? Theme.sizeSm : Theme.sizeXs
+                                    font.weight: Font.DemiBold
+                                    color: kept.modelData.kind === "text" ? Theme.text : Theme.faint
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    wrapMode: Text.Wrap
+                                    elide: Text.ElideRight
+                                }
+                            }
+                            MouseArea {
+                                id: keptArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                preventStealing: true
+                                cursorShape: composer.carrying ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+                                property point start
+                                onPressed: mouse => start = mapToItem(composer, mouse.x, mouse.y)
+                                onPositionChanged: mouse => {
+                                    if (!pressed)
+                                        return
+                                    const p = mapToItem(composer, mouse.x, mouse.y)
+                                    if (!composer.carrying && Math.hypot(p.x - start.x, p.y - start.y) > 6)
+                                        composer.carrying = kept.modelData
+                                    if (composer.carrying)
+                                        composer.carryPoint = p
+                                }
+                                onReleased: {
+                                    if (composer.carrying)
+                                        composer.letGo()
+                                    else
+                                        composer.postAt(kept.modelData, 0.5, 0.5)
+                                }
+                                onCanceled: composer.carrying = null
+                                ToolTip.visible: containsMouse && !pressed
+                                ToolTip.delay: 600
+                                ToolTip.text: "在画外的图片 · 点一下贴在画面中间，或拖进画面里"
+                            }
+                            IconButton {
+                                anchors.top: parent.top
+                                anchors.right: parent.right
+                                implicitWidth: 18
+                                implicitHeight: 18
+                                iconSize: 10
+                                iconName: "x"
+                                tip: "从画外拿掉"
+                                visible: keptArea.containsMouse || hovered
+                                onClicked: composer.forget(kept.modelData.id)
+                            }
+                        }
+                    }
+                }
+            }
+            // Images dropped here wait here.
+            DropArea {
+                anchors.fill: parent
+                onDropped: drop => {
+                    if (drop.hasUrls)
+                        composer.addImages(drop.urls)
                 }
             }
             // A drag from the shelf: where the layer would go, at the pointer.
@@ -1540,7 +1622,6 @@ ColumnLayout {
                     area: stickerLayer
                     bounds: composer.stageBounds
                     chosen: composer.chosenSid
-                    editing: composer.editing
                     onChoose: sid => composer.chosenSid = sid
                     onResized: size => composer.placeSize = size
                 }
@@ -1561,13 +1642,13 @@ ColumnLayout {
         }
 
 
-        // Images from elsewhere dropped on the canvas: into the gallery and posted.
+        // Images from elsewhere dropped on the canvas: posted where they are let go.
         DropArea {
             anchors.fill: parent
             onDropped: drop => {
                 if (!drop.hasUrls)
                     return
-                const added = composer.addImages(drop.urls)
+                const added = composer.imagesIn(drop.urls)
                 const at = screen.mapFromItem(box, drop.x, drop.y)
                 for (let i = 0; i < added.length; ++i)
                     composer.postAt(added[i], at.x / screen.width + i * 0.04, at.y / screen.height + i * 0.04)
