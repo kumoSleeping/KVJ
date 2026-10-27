@@ -1434,10 +1434,12 @@ ColumnLayout {
                     enabled: !!modelData.id
                     onTriggered: {
                         const key = "camera:" + modelData.id
+                        // Held here: this entry is gone once the menu closes.
+                        const board = composer
                         if (!taken)
-                            composer.addCamera(modelData.id)
+                            board.addCamera(modelData.id)
                         // After the stack has taken it in (a moment later).
-                        Qt.callLater(() => composer.bringIn(key))
+                        Qt.callLater(() => board.bringIn(key))
                     }
                 }
                 onObjectAdded: (index, object) => cameraMenu.insertAction(index, object)

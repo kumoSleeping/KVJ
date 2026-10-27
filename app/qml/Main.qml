@@ -863,6 +863,37 @@ ApplicationWindow {
         if (app.cameraIds.indexOf(id) < 0)
             app.setCameras(app.cameraIds.concat([id]))
     }
+    // A camera taken in that goes away (unplugged, the iPhone taken off)
+    // leaves the board by itself; one not yet seen this run may still be
+    // waking, and is given a few seconds from the start.
+    property var seenCameras: ({})
+    property bool camerasSettled: false
+    Timer {
+        interval: 6000
+        running: !app.camerasSettled && app.cameraIds.length > 0
+        onTriggered: {
+            app.camerasSettled = true
+            app.checkCameras()
+        }
+    }
+    function checkCameras() {
+        if (!app.cameraIds.length)
+            return
+        const now = Cameras.list.map(c => c.id)
+        const seen = Object.assign({}, app.seenCameras)
+        for (const id of now)
+            seen[id] = true
+        app.seenCameras = seen
+        // (An empty list may be the camera stack not answering yet: nothing goes on that.)
+        const settled = app.camerasSettled && now.length > 0
+        for (const id of app.cameraIds.filter(id => (seen[id] || settled) && now.indexOf(id) < 0))
+            app.removeCamera("camera:" + id)
+    }
+    onCameraIdsChanged: Qt.callLater(app.checkCameras)
+    Connections {
+        target: app.cameraIds.length ? Cameras : null
+        function onChanged() { app.checkCameras() }
+    }
     function removeCamera(key) {
         app.setCameras(app.cameraIds.filter(c => "camera:" + c !== key))
         Switcher.rename({ [key]: "" })

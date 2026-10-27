@@ -18,7 +18,8 @@ Menu {
         readonly property bool risky: !!item.action && item.action.risky === true
         contentItem: Text {
             text: item.text
-            font: menu.font
+            // (No menu while an entry is being taken out of it.)
+            font: menu ? menu.font : Qt.application.font
             color: !item.enabled ? Theme.faint : item.risky ? Theme.danger : Theme.text
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
