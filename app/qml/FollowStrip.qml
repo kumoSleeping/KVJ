@@ -5,8 +5,8 @@ import QtQuick.Controls.impl
 import QtQuick.Layouts
 import KVJ
 
-// 音频对位, as a narrow card standing in the top row between the mixer's
-// preview and the effects. Top to bottom: its name and, at the corner, a light
+// 音频对位, as a narrow card under the PGM monitor, between the board and the
+// effects. Top to bottom: its name and, at the corner, a light
 // (green while listening, red while not); following's own small picture
 // (FollowMonitor; the card's tone until following has found the music); what
 // it found (the title, or the phase) and how fast it hears the music; the
@@ -151,13 +151,20 @@ Card {
             }
         }
 
-        // Following's own picture, where it puts the music.
+        // Following's own picture, where it puts the music: 16:9 at the card's
+        // width, smaller (centred) when the card is short.
         Item {
+            id: monitorBox
+            readonly property real full: width * 9 / 16 + 3
             Layout.fillWidth: true
-            implicitHeight: monitor.implicitHeight
+            Layout.fillHeight: true
+            Layout.preferredHeight: full
+            Layout.maximumHeight: full
+            Layout.minimumHeight: 48
             FollowMonitor {
                 id: monitor
-                width: parent.width
+                width: Math.min(parent.width, (parent.height - 3) * 16 / 9)
+                anchors.horizontalCenter: parent.horizontalCenter
                 active: root.following
                 mirror: !!root.app && root.app.aiMain
                 match: root.match
@@ -169,7 +176,7 @@ Card {
             Rectangle {
                 visible: !root.match
                 width: parent.width
-                height: width * 9 / 16
+                height: parent.height - 3
                 radius: Theme.radius
                 color: Theme.inset
                 ColorImage {
@@ -402,7 +409,10 @@ Card {
             }
         }
 
-        Item { Layout.fillHeight: true }
+        Item {
+            Layout.fillHeight: true
+            Layout.preferredHeight: 0
+        }
 
         // The two helpers in full, at the foot: the speed, and the jump
         // threshold; each paused or resumed by its key.

@@ -956,8 +956,6 @@ ApplicationWindow {
                                 id: mixer
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
-                                // The drawer's key sits over the board's top left.
-                                headLeft: 30
                                 sources: app.sources
                                 textures: desk.textures
                                 aspect: desk.aspect
@@ -975,15 +973,64 @@ ApplicationWindow {
                         }
                     }
 
-                    // —— Smart following: one, on the track whose ear is lit ——
-                    FollowStrip {
-                        id: strip
-                        Layout.preferredWidth: implicitWidth
+                    // —— What the audience sees, small, over smart following ——
+                    ColumnLayout {
+                        Layout.preferredWidth: strip.implicitWidth
                         Layout.fillWidth: false
                         Layout.fillHeight: true
-                        app: app
-                        surface: projection.surface
-                        rowHeight: timeline.mainRowHeight
+                        spacing: Theme.gap
+
+                        // The program (PGM) as the projection draws it, the
+                        // stickers and effects on the air included.
+                        Card {
+                            Layout.fillWidth: true
+                            implicitHeight: (width - 16) / Math.max(0.2, desk.aspect) + 16
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                color: "black"
+                                radius: Theme.radius
+                                clip: true
+                                Stage {
+                                    id: pgmStage
+                                    anchors.fill: parent
+                                    lite: true
+                                    entry: projection.entry
+                                    Program {
+                                        anchors.fill: parent
+                                        now: pgmStage.now
+                                        textures: desk.textures
+                                        operator: true
+                                    }
+                                }
+                                Rectangle {
+                                    x: 6
+                                    y: 6
+                                    width: pgmTag.implicitWidth + 10
+                                    height: 16
+                                    radius: 4
+                                    color: projection.visible ? Theme.danger : "#8c000000"
+                                    Text {
+                                        id: pgmTag
+                                        anchors.centerIn: parent
+                                        text: projection.visible ? "观众画面 · 投屏中" : "观众画面"
+                                        font.pixelSize: 9
+                                        font.weight: Font.DemiBold
+                                        color: "white"
+                                    }
+                                }
+                            }
+                        }
+
+                        // —— Smart following: one, on the track whose ear is lit ——
+                        FollowStrip {
+                            id: strip
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            app: app
+                            surface: projection.surface
+                            rowHeight: timeline.mainRowHeight
+                        }
                     }
 
                     // —— Effects, at the far right ——

@@ -7,10 +7,9 @@ import QtQuick.Layouts
 import QtQuick.Window
 import KVJ
 
-// The output, without a monitor of its own (the board, Composer, shows what
-// the audience sees): where the picture goes, how sharp, the key that projects
-// it and the picture's sound, in a popover opened from the board's head
-// (openOutput). It also keeps the window's light copy of every picture source
+// The output, without a monitor of its own: where the picture goes, how sharp
+// and the key that projects it, in a popover opened from the board's head
+// (openOutput), and the picture's sound in another (openSound). It also keeps the window's light copy of every picture source
 // and their textures, for the board and the timeline. It takes no room: place
 // it anywhere in the window.
 Item {
@@ -149,8 +148,7 @@ Item {
     }
     readonly property bool outputOpen: outputPop.visible
 
-    // The output: which screen, how, the key that projects, and the picture's
-    // sound. Lower quality is lighter on a machine that also runs the DJ
+    // The output: which screen, how, and the key that projects. Lower quality is lighter on a machine that also runs the DJ
     // software. Set once before a show.
     Popup {
         id: outputPop
@@ -203,11 +201,41 @@ Item {
                     checked: Qt.application.screens.length > 1
                 }
             }
-            Rectangle {
+            TextButton {
                 Layout.fillWidth: true
-                implicitHeight: 1
-                color: Theme.line
+                primary: true
+                iconName: desk.projection && desk.projection.visible ? "square" : "monitor"
+                text: desk.projection && desk.projection.visible ? "收起投屏" : "打开投屏"
+                onClicked: {
+                    desk.projection.visible ? desk.projection.closeOutput()
+                                            : desk.projection.openOn(screenBox.currentIndex, fullscreen.checked)
+                    outputPop.close()
+                }
             }
+        }
+    }
+
+    function openSound(item) {
+        soundPop.parent = item
+        soundPop.x = item.width - soundPop.width
+        soundPop.y = item.height + 6
+        soundPop.open()
+    }
+    readonly property bool soundOpen: soundPop.visible
+
+    // The picture's own sound: on or off, where and how loud.
+    Popup {
+        id: soundPop
+        width: 380
+        padding: 12
+        background: Rectangle {
+            radius: Theme.radiusLg
+            color: Theme.raised
+            border.width: 1
+            border.color: Theme.line
+        }
+        contentItem: ColumnLayout {
+            spacing: 8
             // The picture's sound, off by default (the room hears the DJ), on an
             // output of its own: headphones to listen in, or the speakers. Where
             // and how loud can be set before it is turned on.
@@ -215,7 +243,7 @@ Item {
                 Layout.fillWidth: true
                 spacing: 8
                 Toggle {
-                    text: "画面声音"
+                    text: "播放声音"
                     checked: desk.soundOn
                     onToggled: desk.soundOn = checked
                 }
@@ -256,17 +284,6 @@ Item {
                 font.pixelSize: Theme.sizeXs
                 color: Theme.warn
                 elide: Text.ElideRight
-            }
-            TextButton {
-                Layout.fillWidth: true
-                primary: true
-                iconName: desk.projection && desk.projection.visible ? "square" : "monitor"
-                text: desk.projection && desk.projection.visible ? "收起投屏" : "打开投屏"
-                onClicked: {
-                    desk.projection.visible ? desk.projection.closeOutput()
-                                            : desk.projection.openOn(screenBox.currentIndex, fullscreen.checked)
-                    outputPop.close()
-                }
             }
         }
     }

@@ -5,8 +5,8 @@ import QtQuick.Layouts
 import KVJ
 
 // One row of the timeline, as an editor's track on a clock of its own: at
-// its right end the header (the source's own picture, which a press chooses
-// on the preview; an ear, lit while following listens to it, pressed to make
+// its right end the header (the track's name, no picture, which a press
+// chooses on the board; an ear, lit while following listens to it, pressed to make
 // it do so; ⋯ for its menu), across the rest the row's play bar, its
 // ruler and its lane. The bar
 // drives this track's player: play and pause, where it is, its cursor and the
@@ -81,12 +81,6 @@ Item {
     readonly property bool followed: !camera && view.followTrack === track
     readonly property bool onAir: view.onAir.indexOf(key) >= 0
     readonly property bool inPreview: view.inPreview.indexOf(key) >= 0
-    readonly property var texture: {
-        view.textures ? view.textures.revision : 0
-        view.textures ? view.textures.map : null
-        return view.textures && key ? view.textures.texture(key) : null
-    }
-    readonly property real ratio: view.textures && key ? view.textures.aspect(key) : 16 / 9
 
     readonly property int barHeight: 24
     readonly property int rulerHeight: 16
@@ -328,7 +322,7 @@ Item {
         }
     }
 
-    // —— The header, at the row's right end: the source's own picture ——
+    // —— The header, at the row's right end: the track's name and keys ——
     Item {
         id: header
         x: row.width - row.view.headerWidth + 8
@@ -379,46 +373,85 @@ Item {
             (row.camera ? cameraMenu : trackMenu).popup(item, x, y)
         }
 
-        // The source's own picture, fitted; on the air an ink edge. Over it
-        // the ear (lit on the track following listens to; pressed, following
-        // listens to this one) and, under the pointer, ⋯.
+        // The track's name, no picture (the board shows them all): on the
+        // air an ink edge and PGM. Its ear (lit on the track following
+        // listens to; pressed, following listens to this one) and ⋯. A press
+        // chooses its layer on the board, a right click opens its menu.
         Rectangle {
             id: picture
             y: 2
             width: parent.width
             height: parent.height - 4
             radius: Theme.radius
-            color: "black"
-            ShaderEffect {
-                readonly property real fit: Math.min(parent.width / Math.max(0.01, row.ratio), parent.height)
-                width: fit * row.ratio
-                height: fit
-                anchors.centerIn: parent
-                visible: !!row.texture
-                property var source: row.texture
+            color: Theme.inset
+            border.width: row.onAir ? 2 : 0
+            border.color: Theme.text
+            HoverHandler { id: pictureHover }
+            MouseArea {
+                id: pictureTap
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                cursorShape: Qt.PointingHandCursor
+                onClicked: mouse => mouse.button === Qt.RightButton ? header.openMenu(pictureTap, mouse.x, mouse.y)
+                                                                    : row.view.pickSource(row.key)
+                ToolTip.visible: pictureHover.hovered && !earKey.hovered && !moreKey.hovered
+                ToolTip.delay: 700
+                ToolTip.text: row.name + " · 点一下在画板上选中 · 右键：移除轨道"
             }
-            // Only a picture that has none shows its name.
             Text {
-                anchors.centerIn: parent
-                width: parent.width - 16
-                visible: !row.texture
-                horizontalAlignment: Text.AlignHCenter
+                x: 6
+                y: 6
+                width: parent.width - 12
                 text: row.name
                 font.pixelSize: Theme.sizeXs
-                color: "#8b929c"
+                font.weight: Font.DemiBold
+                color: Theme.text
                 elide: Text.ElideRight
             }
-            Rectangle {
-                anchors.fill: parent
-                radius: parent.radius
-                color: "transparent"
-                border.width: row.onAir ? 2 : 0
-                border.color: Theme.text
+            Row {
+                x: 4
+                y: 26
+                spacing: 2
+                // The ear: which track following listens to.
+                Rectangle {
+                    id: ear
+                    visible: !row.camera
+                    width: 24
+                    height: 24
+                    radius: 12
+                    color: row.followed ? Theme.text : earKey.hovered ? Theme.hover : "transparent"
+                    ColorImage {
+                        anchors.centerIn: parent
+                        source: "icons/ear.svg"
+                        sourceSize: Qt.size(13, 13)
+                        color: row.followed ? Theme.bg : Theme.muted
+                    }
+                    MouseArea {
+                        id: earKey
+                        property bool hovered: containsMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: row.view.pickFollow(row.track)
+                        ToolTip.visible: containsMouse
+                        ToolTip.delay: 400
+                        ToolTip.text: row.followed ? "音频对位跟随这条轨道" : "改为跟随这条轨道"
+                    }
+                }
+                IconButton {
+                    id: moreKey
+                    implicitWidth: 24
+                    implicitHeight: 24
+                    iconSize: 13
+                    iconName: "ellipsis"
+                    tip: row.camera ? "这个相机：移除" : "这条轨道：移除、跟随速度"
+                    onClicked: header.openMenu(moreKey, 0, moreKey.height + 2)
+                }
             }
             Rectangle {
                 visible: row.onAir
-                x: 4
-                y: parent.height - height - 4
+                x: 6
+                y: parent.height - height - 6
                 width: tag.implicitWidth + 8
                 height: 15
                 radius: 3
@@ -432,62 +465,6 @@ Item {
                     color: Theme.bg
                 }
             }
-            HoverHandler { id: pictureHover }
-            MouseArea {
-                id: pictureTap
-                anchors.fill: parent
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                cursorShape: Qt.PointingHandCursor
-                onClicked: mouse => mouse.button === Qt.RightButton ? header.openMenu(pictureTap, mouse.x, mouse.y)
-                                                                    : row.view.pickSource(row.key)
-                ToolTip.visible: pictureHover.hovered && !earKey.hovered && !moreKey.hovered
-                ToolTip.delay: 700
-                ToolTip.text: row.name + " · 点一下在画板上选中 · 右键：移除轨道"
-            }
-            // The ear: which track following listens to.
-            Rectangle {
-                id: ear
-                visible: !row.camera && (row.followed || pictureHover.hovered)
-                x: 4
-                y: 4
-                width: 22
-                height: 22
-                radius: 11
-                color: row.followed ? "#ffffff" : earKey.hovered ? "#cc000000" : "#8c000000"
-                ColorImage {
-                    anchors.centerIn: parent
-                    source: "icons/ear.svg"
-                    sourceSize: Qt.size(13, 13)
-                    color: row.followed ? "#000000" : "#ffffff"
-                }
-                MouseArea {
-                    id: earKey
-                    property bool hovered: containsMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: row.view.pickFollow(row.track)
-                    ToolTip.visible: containsMouse
-                    ToolTip.delay: 400
-                    ToolTip.text: row.followed ? "音频对位跟随这条轨道" : "改为跟随这条轨道"
-                }
-            }
-            IconButton {
-                id: moreKey
-                x: parent.width - width - 4
-                y: 4
-                implicitWidth: 22
-                implicitHeight: 22
-                iconSize: 13
-                iconName: "ellipsis"
-                icon.color: "#ffffff"
-                tip: row.camera ? "这个相机：移除" : "这条轨道：移除、跟随速度"
-                background: Rectangle {
-                    radius: 11
-                    color: moreKey.hovered ? "#cc000000" : "#8c000000"
-                }
-                onClicked: header.openMenu(moreKey, 0, moreKey.height + 2)
-            }
         }
     }
 
@@ -497,12 +474,18 @@ Item {
         width: row.width - row.view.headerWidth
         height: row.height
 
-        // A camera: live, without a timeline.
+        // A camera: live, without a timeline; its picture is on the board.
         Rectangle {
             visible: row.camera
             anchors.fill: parent
             radius: Theme.radius
             color: Theme.inset
+            Text {
+                anchors.centerIn: parent
+                text: row.name + " · 直播画面，在画板上摆放"
+                font.pixelSize: Theme.sizeXs
+                color: Theme.faint
+            }
         }
 
         RowLayout {

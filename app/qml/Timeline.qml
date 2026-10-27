@@ -31,7 +31,7 @@ import KVJ
 //             its player is `player` for track 0, a TrackPlayer for 1..3. A
 //             camera has no entries or player. Empty: one main row from
 //             `entries`.
-//   textures  the window's SourceTextures, for the headers' pictures
+//   textures  the window's SourceTextures (the headers no longer show pictures)
 //   followTrack  the track following listens to (a lit ear on its picture)
 //   canAddTrack  an aux track can be added (the + menu's 画面 N, drops that
 //             insert a track)
@@ -72,8 +72,8 @@ Rectangle {
     readonly property int mainRowHeight: rowHeight
     // Rows in view before the rest scroll.
     property int visibleRows: 2
-    // The rows' pictures at their right, 16:9 the row's height.
-    readonly property int headerWidth: Math.round((rowHeight - 4) * 16 / 9) + 8
+    // The rows' headers at their right: a name and two keys, no picture.
+    readonly property int headerWidth: 84
     readonly property int rowGap: 4
     // Room at the rows' right for their scroll bar.
     readonly property int barRoom: 10

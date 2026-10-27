@@ -16,11 +16,12 @@ import QtQuick
 // the same share), lines }.
 //
 // A split line hides the picture on one side of it: { points: [[x, y, sharp],
-// …] (in shares of the slot; `sharp` 1 where the line runs straight into and
-// out of the point, else it curves through it), closed (the points make a
-// shape: the picture shows inside it), flip (the other side hidden) }. An open
-// line goes on straight past its ends; by default the side above it, as it
-// runs from its first point to its last, is hidden.
+// …] (in shares of the slot: its two ends and at most one point between them
+// where it bends; `sharp` 1 where the line runs straight into and out of the
+// point, else it curves through it), closed (always false now; the shapes of
+// before are opened), flip (the other side hidden) }. A line goes on straight
+// past its ends; by default the side above it, as it runs from its first
+// point to its last, is hidden.
 //
 // Every picture source is in the preview, once: one newly there is stacked on
 // the stage at the picture's right (stack()), to be brought in by the
@@ -47,8 +48,9 @@ QtObject {
             ? o.points.filter(p => Array.isArray(p) && p.length >= 2 && isFinite(p[0]) && isFinite(p[1]))
                       .map(p => [+p[0], +p[1], p[2] ? 1 : 0])
             : []
-        const closed = o.closed === true && points.length >= 3
-        return { points: points, closed: closed, flip: o.flip === true }
+        // Its ends and the middle one of the points between them, if any.
+        const kept = points.length > 3 ? [points[0], points[Math.floor(points.length / 2)], points[points.length - 1]] : points
+        return { points: kept, closed: false, flip: o.flip === true }
     }
     function slot(s, i) {
         const o = s && typeof s === "object" ? s : {}
@@ -229,8 +231,8 @@ QtObject {
         updateSlot(i, { z: bottom })
     }
     // Where the next source waits: down the stage at the picture's right, a
-    // column at a time, within the picture's height (the board's stage is
-    // narrow above and below it). `ratio`: its picture's width / height;
+    // column at a time, within the picture's height (under it are the
+    // board's keys). `ratio`: its picture's width / height;
     // `aspect`: the projection's.
     function parking(layout, ratio, aspect) {
         const w = 0.24
@@ -238,11 +240,11 @@ QtObject {
         const taken = (layout ? layout.slots : []).filter(s => s.x >= 1)
         for (let col = 0; col < 4; ++col) {
             const x = 1.05 + col * (w + 0.04)
-            for (let y = -0.04; y + h <= 1.08; y += h + 0.04)
+            for (let y = 0; y + h <= 1.0001; y += h + 0.04)
                 if (!taken.some(s => s.x < x + w && x < s.x + s.w && s.y < y + h && y < s.y + s.h))
                     return { x: x, y: y, w: w, h: h }
         }
-        return { x: 1.05, y: -0.04, w: w, h: h }
+        return { x: 1.05, y: 0, w: w, h: h }
     }
     // Every source waiting on the stage at the right parked anew, in the order
     // they wait there: their places of before may lie where the board no
