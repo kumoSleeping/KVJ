@@ -67,7 +67,7 @@ QtObject {
                 shape: shapes.indexOf(m.shape) >= 0 ? m.shape : "rect",
                 radius: Math.max(0, Math.min(0.5, num(m.radius, 0.08))),
                 feather: Math.max(0, Math.min(0.5, num(m.feather, 0))),
-                blend: Math.max(0, Math.min(0.5, num(m.blend, 0.12))),
+                blend: Math.max(0, Math.min(1, num(m.blend, 0.5))),
                 lines: lines
             }
         }
@@ -191,15 +191,16 @@ QtObject {
             return
         updateSlot(i, { mask: Object.assign({}, preview.slots[i].mask, mask) })
     }
-    // A split line across slot `i`, an arc from its lower left to its upper
-    // right, the side at the upper left hidden; its
-    // index among the slot's lines. Its ends sit a little inside the slot, off
-    // the slot's own handles; the line goes on past them.
+    // A split line across slot `i`, an arc from its lower left corner to its
+    // upper right corner, the side at the upper left hidden; its index among
+    // the slot's lines.
     function addLine(i) {
         if (!preview || i < 0 || i >= preview.slots.length)
             return -1
-        const lines = preview.slots[i].mask.lines.concat([{ points: [[0.08, 0.92, 0], [0.62, 0.62, 0], [0.92, 0.08, 0]], closed: false, flip: false }])
-        setMask(i, { lines: lines })
+        const first = preview.slots[i].mask.lines.length === 0
+        const lines = preview.slots[i].mask.lines.concat([{ points: [[0, 1, 0], [0.7, 0.7, 0], [1, 0, 0]], closed: false, flip: false }])
+        // The first line of a layer comes with the band at the middle of its range.
+        setMask(i, first ? { lines: lines, blend: 0.5 } : { lines: lines })
         return lines.length - 1
     }
     function setLine(i, k, changes) {

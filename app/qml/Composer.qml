@@ -1012,7 +1012,7 @@ ColumnLayout {
                         return
                     const r = rectOf(composer.slot)
                     const reach = Math.max(0, (mouse.x - h.at.x) * h.nx + (mouse.y - h.at.y) * h.ny)
-                    Switcher.setMask(composer.selected, { blend: Math.min(0.5, 2 * reach / Math.max(1, Math.min(r.width, r.height))) })
+                    Switcher.setMask(composer.selected, { blend: Math.min(1, 2 * reach / Math.max(1, Math.min(r.width, r.height))) })
                 }
             }
             onDoubleClicked: mouse => {
@@ -1587,7 +1587,7 @@ ColumnLayout {
                         Layout.preferredWidth: 80
                         visible: !!composer.slot && composer.slot.mask.lines.length > 0
                         from: 0
-                        to: 0.5
+                        to: 1
                         value: composer.slot ? composer.slot.mask.blend : 0
                         onMoved: Switcher.setMask(composer.selected, { blend: value })
                     }
