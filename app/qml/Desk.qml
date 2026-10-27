@@ -77,6 +77,8 @@ Item {
     property bool soundOn: false
     property string soundDevice: ""
     property real soundVolume: 0.8
+    // Whose sound: 画面 1 (0) or 画面 2 (1).
+    property int soundTrack: 0
 
     // The picture's shape, the projection's (Projection.aspect): the monitors,
     // the stickers and the danmaku lanes all take it.
@@ -90,6 +92,7 @@ Item {
         property alias sound: desk.soundOn
         property alias soundDevice: desk.soundDevice
         property alias soundVolume: desk.soundVolume
+        property alias soundTrack: desk.soundTrack
     }
     // The shape the projection will have before it opens: the chosen screen's
     // when it fills it, else its 16:9 window.
@@ -140,7 +143,13 @@ Item {
         }
     }
 
+    // A second press on the key that opened it puts it away (a press on
+    // the key does not count as outside it).
     function openOutput(item) {
+        if (outputPop.visible && outputPop.parent === item) {
+            outputPop.close()
+            return
+        }
         outputPop.parent = item
         outputPop.x = item.width - outputPop.width
         outputPop.y = item.height + 6
@@ -154,6 +163,8 @@ Item {
         id: outputPop
         width: 400
         padding: 14
+        margins: 8
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
         background: Rectangle {
             radius: Theme.radiusLg
             color: Theme.raised
@@ -215,10 +226,16 @@ Item {
         }
     }
 
+    // Under its key, the on/off switch first, right under the pointer
+    // that opened it; a second press on the key puts it away.
     function openSound(item) {
+        if (soundPop.visible && soundPop.parent === item) {
+            soundPop.close()
+            return
+        }
         soundPop.parent = item
-        soundPop.x = item.width - soundPop.width
-        soundPop.y = item.height + 6
+        soundPop.x = -4
+        soundPop.y = item.height + 4
         soundPop.open()
     }
     readonly property bool soundOpen: soundPop.visible
@@ -226,8 +243,10 @@ Item {
     // The picture's own sound: on or off, where and how loud.
     Popup {
         id: soundPop
-        width: 380
+        width: 300
         padding: 12
+        margins: 8
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
         background: Rectangle {
             radius: Theme.radiusLg
             color: Theme.raised
@@ -239,23 +258,52 @@ Item {
             // The picture's sound, off by default (the room hears the DJ), on an
             // output of its own: headphones to listen in, or the speakers. Where
             // and how loud can be set before it is turned on.
+            Toggle {
+                text: "播放声音"
+                checked: desk.soundOn
+                onToggled: desk.soundOn = checked
+            }
+            // Which track is heard: one track's sound, never the mix.
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
-                Toggle {
-                    text: "播放声音"
-                    checked: desk.soundOn
-                    onToggled: desk.soundOn = checked
-                }
-                Select {
-                    id: outputBox
-                    readonly property var outputs: desk.sound ? desk.sound.devices : []
+                Caption { text: "播放" }
+                Rectangle {
                     Layout.fillWidth: true
-                    Layout.minimumWidth: 90
-                    model: ["系统默认输出"].concat(outputs.map(d => d.name))
-                    currentIndex: outputs.findIndex(d => d.id === desk.soundDevice) + 1
-                    onActivated: index => desk.soundDevice = index > 0 ? outputs[index - 1].id : ""
+                    implicitHeight: 28
+                    radius: Theme.radius
+                    color: Theme.inset
+                    Row {
+                        id: soundTracks
+                        anchors.fill: parent
+                        anchors.margins: 2
+                        spacing: 2
+                        Repeater {
+                            model: [0, 1]
+                            TextButton {
+                                required property int modelData
+                                readonly property bool on: desk.soundTrack === modelData
+                                width: (soundTracks.width - soundTracks.spacing) / 2
+                                height: 24
+                                text: "画面 " + (modelData + 1) + " 的声音"
+                                font.weight: on ? Font.DemiBold : Font.Medium
+                                background: Rectangle {
+                                    radius: Theme.radius - 1
+                                    color: parent.on ? Theme.raised : parent.hovered ? Theme.hover : "transparent"
+                                }
+                                onClicked: desk.soundTrack = modelData
+                            }
+                        }
+                    }
                 }
+            }
+            Select {
+                id: outputBox
+                readonly property var outputs: desk.sound ? desk.sound.devices : []
+                Layout.fillWidth: true
+                model: ["系统默认输出"].concat(outputs.map(d => d.name))
+                currentIndex: outputs.findIndex(d => d.id === desk.soundDevice) + 1
+                onActivated: index => desk.soundDevice = index > 0 ? outputs[index - 1].id : ""
             }
             RowLayout {
                 Layout.fillWidth: true

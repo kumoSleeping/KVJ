@@ -310,6 +310,75 @@ QtObject {
         preview = next
     }
 
+    // The quick cut: source `id` alone on the picture, filling it plainly
+    // (whole, no round corners or split lines), every other layer that
+    // reached into the picture parked at its right, and that on the air at
+    // once with the dissolve (`fadeMs`; 0 cuts), in either mode. The stickers
+    // are left as they are.
+    property bool taking: false
+    function take(id, ratio, aspect) {
+        const next = copy(preview)
+        const at = next.slots.findIndex(s => s.source === id)
+        if (at < 0)
+            return
+        const top = next.slots.reduce((z, s) => Math.max(z, s.z + 1), 0)
+        const mine = slot({ source: id, x: 0, y: 0, w: 1, h: 1, z: top, fit: "contain" }, top)
+        const rest = next.slots.filter((s, i) => i !== at)
+        next.slots = rest.filter(s => !inPicture(s)).concat([mine])
+        for (const s of rest.filter(s => inPicture(s)))
+            next.slots.push(slot(Object.assign({}, s, parking(next, ratio(s.source), aspect)), s.z))
+        const ms = fadeMs > 0 ? fadeMs : 0
+        taking = true
+        preview = next
+        taking = false
+        if (ms > 0 && JSON.stringify(next) !== JSON.stringify(program)) {
+            // `take`: the board shows this dissolve too (it shows the
+            // preview, which is already the new layout).
+            transition = { from: copy(program), to: copy(next), born: Date.now(), ms: ms, take: true }
+            done.interval = ms + 50
+            done.restart()
+        } else {
+            done.stop()
+            transition = null
+        }
+        program = copy(next)
+    }
+
+    // A source put away for a while (the second track switched off): its
+    // slots in both layouts are kept, with their lines, and leave the
+    // board; bringBack() puts them where they were. Kept between runs.
+    property var aside: ({})
+    function setAside(id) {
+        const pre = preview.slots.find(s => s.source === id)
+        const air = program.slots.find(s => s.source === id)
+        if (!pre && !air)
+            return
+        const next = Object.assign({}, aside)
+        next[id] = { preview: pre || null, program: air || null }
+        aside = next
+        store.aside = JSON.stringify(aside)
+        rename({ [id]: "" })
+    }
+    function bringBack(id) {
+        const kept = aside[id]
+        if (!kept)
+            return
+        const next = Object.assign({}, aside)
+        delete next[id]
+        aside = next
+        store.aside = JSON.stringify(aside)
+        const put = (layout, s) => {
+            const out = copy(layout)
+            if (s && !out.slots.some(o => o.source === id))
+                out.slots.push(slot(s, s.z))
+            return out
+        }
+        const air = put(program, kept.program)
+        const pre = put(preview, kept.preview)
+        program = air
+        preview = pre
+    }
+
     // Sources renamed or gone (a track removed, the ones under it moved up):
     // `names` maps an id to its new one, or to "" when it is gone; ids not in
     // it stay. On the air too, at once: a source that is gone shows nothing.
@@ -388,6 +457,7 @@ QtObject {
         property int fadeMs: 600
         property int fadeLength: 600
         property bool follow: false
+        property string aside: "{}"
     }
     // Written a moment after the last change, not on every step of a drag.
     property Timer saving: Timer {
@@ -402,7 +472,7 @@ QtObject {
         if (!loaded)
             return
         saving.restart()
-        if (follow) {
+        if (follow && !taking) {
             done.stop()
             transition = null
             program = copy(preview)
@@ -428,6 +498,11 @@ QtObject {
         fadeLength = Math.max(1, store.fadeLength)
         fadeMs = Math.max(0, store.fadeMs)
         follow = store.follow
+        try {
+            aside = JSON.parse(store.aside) || {}
+        } catch (error) {
+            aside = {}
+        }
         loaded = true
     }
 }

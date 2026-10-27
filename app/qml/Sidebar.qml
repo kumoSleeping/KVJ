@@ -386,8 +386,8 @@ Rectangle {
                         }
                         // Dragged down onto a track row of the timeline, they
                         // go on that track. The window carries the drag (Main's
-                        // stand-in): this row may be made anew by the drop
-                        // while it is still under way. Nothing takes the drag
+                        // stand-in) and ends it: this row may be made anew
+                        // (any entry changing) while it is still under way. Nothing takes the drag
                         // over once it has begun. (On the row, not the
                         // MouseArea: a handler in an item opens it to every
                         // button.)
@@ -405,7 +405,6 @@ Rectangle {
                             }
                             onCentroidChanged: if (active) bar.dragMove(centroid.scenePosition)
                         }
-                        Component.onDestruction: if (rowDrag.active) bar.dragEnd(false)
                         Loader {
                             anchors.fill: parent
                             anchors.leftMargin: (slot.dir ? 4 : 8) + slot.modelData.depth * 16

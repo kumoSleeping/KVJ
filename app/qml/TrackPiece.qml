@@ -118,13 +118,6 @@ Item {
             height: parent.height
             color: Theme.dark ? "#8c000000" : "#7dffffff"
         }
-        Rectangle {
-            visible: !wave.ready
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            height: 1
-            color: Theme.line
-        }
         Text {
             visible: wave.analysing && piece.width > 120
             anchors.centerIn: parent

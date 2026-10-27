@@ -28,6 +28,8 @@
     <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>KVJ 需要读取你选择的麦克风或声卡输入，用来识别正在播放的音乐并同步画面；不会保存录音。</string>
+    <key>NSCameraUseContinuityCameraDeviceType</key>
+    <true/>
     <key>NSCameraUsageDescription</key>
     <string>KVJ 用相机画面作为投放的画面源；不会保存录像。</string>
     <key>NSBluetoothAlwaysUsageDescription</key>

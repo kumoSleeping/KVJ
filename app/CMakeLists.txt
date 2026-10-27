@@ -91,6 +91,9 @@ qt_add_qml_module(KVJ
         qml/icons/minus.svg
         qml/icons/monitor.svg
         qml/icons/panel-left.svg
+        qml/icons/image.svg
+        qml/icons/message-square.svg
+        qml/icons/sparkles.svg
         qml/icons/pause.svg
         qml/icons/play.svg
         qml/icons/plus.svg

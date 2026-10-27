@@ -4,15 +4,13 @@ import QtQuick.Controls.impl
 import QtQuick.Layouts
 import KVJ
 
-// One row of the timeline, as an editor's track on a clock of its own: at
-// its right end the header (the track's name, no picture, which a press
-// chooses on the board; an ear, lit while following listens to it, pressed to make
-// it do so; ⋯ for its menu), across the rest the row's play bar, its
-// ruler and its lane. The bar
-// drives this track's player: play and pause, where it is, its cursor and the
-// key that plays from it, the whole row at a glance, the speed with − / +
-// and 复原, and what happens after its last entry. Its keys rest while
-// following leads that player.
+// One row of the timeline, as an editor's track on a clock of its own: its
+// keys on top (the track's name first, which a press chooses on the board,
+// then what drives this track's player: play and pause, where it is, its
+// cursor and the key that plays from it, the speed with − / + and 复原, what
+// happens after its last entry, and 投放 画面 N, the quick cut), under them
+// the whole row at a glance, then the row's ruler and its lane. Its keys rest while following leads that
+// player.
 //
 // Each row has its own view of its own length: pinch (or ⌘/Ctrl/Alt +
 // scroll) over it zooms it about the pointer, a sideways swipe or a wheel
@@ -20,14 +18,13 @@ import KVJ
 // ruler) zoom and fit it; zoomed in, the overview on the bar frames what the
 // lane shows, and the lane follows its own playhead unless it was touched a
 // moment ago. A press anywhere on a track's row makes it the active row, the
-// one Enter, 跳至光标处 and the zoom keys act on (its picture sits on a deeper tone);
+// one Enter, 跳至光标处 and the zoom keys act on (its name is inked);
 // a press or drag on its timeline (the overview, the ruler, the lane) only
 // places this row's cursor: nothing a click does moves a picture. A
 // right click on an entry offers 移出轨道, elsewhere on the lane or on the
-// picture the track's menu (移除轨道, also under ⋯). A camera has no timeline, and an
-// empty track's lane is left blank. While entries or files dragged here would
+// name the track's menu (清空轨道). An empty track's lane is left blank. While entries or files dragged here would
 // land on this track (the Timeline judges where a drag drops), the row lights
-// up and a block after its last entry shows them.
+// up and its lane is veiled with what replaces its entries.
 //
 //   view      the Timeline (the main player's state, the active row, the drop)
 //   spec      { key, kind, track, cameraId, name, entries, player }
@@ -82,8 +79,12 @@ Item {
     readonly property bool onAir: view.onAir.indexOf(key) >= 0
     readonly property bool inPreview: view.inPreview.indexOf(key) >= 0
 
-    readonly property int barHeight: 24
+    // The keys' line, the whole row at a glance under it, the ruler.
+    readonly property int barHeight: 32
+    readonly property int overviewHeight: 20
     readonly property int rulerHeight: 16
+    // The audience sees this track and nothing else.
+    readonly property bool onAirAlone: onAir && view.onAir.length === 1
 
     // —— The row's view: pixels a second (0 = all of it fits) and the second at the left edge ——
     property real zoom: 0
@@ -139,6 +140,7 @@ Item {
     function touch() {
         touchedAt = Date.now()
         keep()
+        view.mirror(row)
     }
     // Zoom by `factor` keeping the second under `x` (lane pixels) where it is.
     function zoomAt(x, factor) {
@@ -156,6 +158,7 @@ Item {
         zoom = 0
         viewStart = 0
         keep()
+        view.mirror(row)
     }
     // The − / + keys: a step about the playhead, or the cursor, if the lane
     // shows it, as an editor's zoom keys do; else about the middle.
@@ -200,14 +203,7 @@ Item {
                 return
             if (swipeAxis === 0)
                 swipeAxis = Math.abs(p.x) >= Math.abs(p.y) ? 1 : 2
-            if (swipeAxis === 2 && view.overflow)
-                view.scrollRows(-p.y)
-            else
-                pan(-(swipeAxis === 1 ? p.x : p.y))
-            return
-        }
-        if (view.overflow && Math.abs(a.y) > Math.abs(a.x) && !(wheel.modifiers & Qt.ShiftModifier)) {
-            view.scrollRows(-a.y / 120 * view.rowHeight / 2)
+            pan(-(swipeAxis === 1 ? p.x : p.y))
             return
         }
         const notches = (Math.abs(a.x) > Math.abs(a.y) ? a.x : a.y) / 120
@@ -315,37 +311,21 @@ Item {
         repeat: true
         running: row.visible && row.zoomed && row.playT >= 0 && row.playing
         onTriggered: {
-            if (Date.now() - row.touchedAt < 4000)
+            if (Date.now() - row.touchedAt < 4000 || (row.view.viewsLocked && row.view.activeItem !== row))
                 return
-            if (row.playT < row.viewLeft || row.playT > row.viewLeft + row.span * 0.97)
+            if (row.playT < row.viewLeft || row.playT > row.viewLeft + row.span * 0.97) {
                 row.viewStart = Math.max(0, row.playT - row.span * 0.1)
+                row.view.mirror(row)
+            }
         }
     }
 
-    // —— The header, at the row's right end: the track's name and keys ——
+    // The track's menu: a right click on an empty part of its lane. Clearing
+    // a track puts what is on it back in the library.
     Item {
         id: header
-        x: row.width - row.view.headerWidth + 8
-        width: row.view.headerWidth - 8
-        height: row.height
-
-        // The active row's picture sits on a deeper tone.
-        Rectangle {
-            visible: row.active
-            x: -4
-            y: -2
-            width: parent.width + 4
-            height: parent.height + 4
-            radius: Theme.radius + 2
-            color: Theme.selected
-        }
-        // The track's menu: ⋯ on its picture, or a right click on the picture
-        // or on an empty part of its lane. Removing a track puts what is on
-        // it back in the library, and the tracks under it move one up; the
-        // only track left is emptied instead.
         PopMenu {
             id: trackMenu
-            readonly property bool alone: row.view.rows.filter(r => r.kind !== "camera").length <= 1
             PopAction {
                 enabled: !!row.player && !row.main
                 text: row.player && row.player.followMain ? "不再跟随画面 1 的速度" : "跟随画面 1 的速度"
@@ -353,140 +333,22 @@ Item {
             }
             MenuSeparator {}
             PopAction {
-                enabled: !row.view.running && (!trackMenu.alone || row.entries.length > 0)
-                text: row.view.running ? "移除轨道（先停止监听）"
-                    : trackMenu.alone ? "清空轨道（素材回到素材库）"
-                    : row.entries.length ? "移除轨道（素材回到素材库）" : "移除轨道"
+                enabled: !row.view.running && row.clips.length > 0
+                text: row.view.running ? "清空轨道（先停止监听）" : "清空轨道（素材回到素材库）"
                 risky: true
-                onTriggered: row.view.removeRow(row.key)
-            }
-        }
-        PopMenu {
-            id: cameraMenu
-            PopAction {
-                text: "移除相机"
-                risky: true
-                onTriggered: row.view.removeRow(row.key)
+                onTriggered: row.view.clearTrack(row.track)
             }
         }
         function openMenu(item, x, y) {
-            (row.camera ? cameraMenu : trackMenu).popup(item, x, y)
-        }
-
-        // The track's name, no picture (the board shows them all): on the
-        // air an ink edge and PGM. Its ear (lit on the track following
-        // listens to; pressed, following listens to this one) and ⋯. A press
-        // chooses its layer on the board, a right click opens its menu.
-        Rectangle {
-            id: picture
-            y: 2
-            width: parent.width
-            height: parent.height - 4
-            radius: Theme.radius
-            color: Theme.inset
-            border.width: row.onAir ? 2 : 0
-            border.color: Theme.text
-            HoverHandler { id: pictureHover }
-            MouseArea {
-                id: pictureTap
-                anchors.fill: parent
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                cursorShape: Qt.PointingHandCursor
-                onClicked: mouse => mouse.button === Qt.RightButton ? header.openMenu(pictureTap, mouse.x, mouse.y)
-                                                                    : row.view.pickSource(row.key)
-                ToolTip.visible: pictureHover.hovered && !earKey.hovered && !moreKey.hovered
-                ToolTip.delay: 700
-                ToolTip.text: row.name + " · 点一下在画板上选中 · 右键：移除轨道"
-            }
-            Text {
-                x: 6
-                y: 6
-                width: parent.width - 12
-                text: row.name
-                font.pixelSize: Theme.sizeXs
-                font.weight: Font.DemiBold
-                color: Theme.text
-                elide: Text.ElideRight
-            }
-            Row {
-                x: 4
-                y: 26
-                spacing: 2
-                // The ear: which track following listens to.
-                Rectangle {
-                    id: ear
-                    visible: !row.camera
-                    width: 24
-                    height: 24
-                    radius: 12
-                    color: row.followed ? Theme.text : earKey.hovered ? Theme.hover : "transparent"
-                    ColorImage {
-                        anchors.centerIn: parent
-                        source: "icons/ear.svg"
-                        sourceSize: Qt.size(13, 13)
-                        color: row.followed ? Theme.bg : Theme.muted
-                    }
-                    MouseArea {
-                        id: earKey
-                        property bool hovered: containsMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: row.view.pickFollow(row.track)
-                        ToolTip.visible: containsMouse
-                        ToolTip.delay: 400
-                        ToolTip.text: row.followed ? "音频对位跟随这条轨道" : "改为跟随这条轨道"
-                    }
-                }
-                IconButton {
-                    id: moreKey
-                    implicitWidth: 24
-                    implicitHeight: 24
-                    iconSize: 13
-                    iconName: "ellipsis"
-                    tip: row.camera ? "这个相机：移除" : "这条轨道：移除、跟随速度"
-                    onClicked: header.openMenu(moreKey, 0, moreKey.height + 2)
-                }
-            }
-            Rectangle {
-                visible: row.onAir
-                x: 6
-                y: parent.height - height - 6
-                width: tag.implicitWidth + 8
-                height: 15
-                radius: 3
-                color: Theme.text
-                Text {
-                    id: tag
-                    anchors.centerIn: parent
-                    text: "PGM"
-                    font.pixelSize: 9
-                    font.weight: Font.DemiBold
-                    color: Theme.bg
-                }
-            }
+            trackMenu.popup(item, x, y)
         }
     }
 
     // —— The play bar, the ruler and the lane ——
     Item {
         id: body
-        width: row.width - row.view.headerWidth
+        width: row.width
         height: row.height
-
-        // A camera: live, without a timeline; its picture is on the board.
-        Rectangle {
-            visible: row.camera
-            anchors.fill: parent
-            radius: Theme.radius
-            color: Theme.inset
-            Text {
-                anchors.centerIn: parent
-                text: row.name + " · 直播画面，在画板上摆放"
-                font.pixelSize: Theme.sizeXs
-                color: Theme.faint
-            }
-        }
 
         RowLayout {
             id: bar
@@ -495,13 +357,67 @@ Item {
             height: row.barHeight
             spacing: 2
 
+            // The track's name: inked while it is the active row, PGM's dot
+            // while the audience sees it. A press chooses its layer on the
+            // board; a right click opens its menu.
+            Rectangle {
+                implicitWidth: nameText.implicitWidth + (row.onAir ? 22 : 14)
+                implicitHeight: 20
+                radius: 10
+                color: row.active && row.view.rows.length > 1 ? Theme.text : nameArea.containsMouse ? Theme.hover : Theme.inset
+                Rectangle {
+                    visible: row.onAir
+                    x: 7
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 6
+                    height: 6
+                    radius: 3
+                    color: Theme.danger
+                }
+                Text {
+                    id: nameText
+                    x: row.onAir ? 16 : 7
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: row.name
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                    color: row.active && row.view.rows.length > 1 ? Theme.bg : Theme.body
+                }
+                MouseArea {
+                    id: nameArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: mouse => {
+                        row.view.activate(row.key)
+                        if (mouse.button === Qt.RightButton)
+                            header.openMenu(nameArea, mouse.x, mouse.y)
+                        else
+                            row.view.pickSource(row.key)
+                    }
+                    ToolTip.visible: containsMouse
+                    ToolTip.delay: 700
+                    ToolTip.text: row.name + (row.onAir ? "（观众正看到）" : "") + " · 点一下在画板上选中 · 右键：清空轨道"
+                }
+            }
+            Item { Layout.preferredWidth: 2 }
+
+            // Play / pause: a round key, ink while it plays.
             IconButton {
-                implicitWidth: 22
-                implicitHeight: 22
-                iconSize: 12
+                id: playKey
+                implicitWidth: 28
+                implicitHeight: 28
+                iconSize: 15
                 iconName: row.playing ? "pause" : "play"
-                active: row.playing
                 enabled: row.canPlay
+                icon.color: !enabled ? Theme.faint : row.playing ? Theme.bg : Theme.text
+                background: Rectangle {
+                    radius: 14
+                    color: row.playing ? (playKey.hovered ? Theme.body : Theme.text)
+                         : playKey.down ? Theme.selected : playKey.hovered && playKey.enabled ? Theme.hover : Theme.inset
+                    Behavior on color { ColorAnimation { duration: 90 } }
+                }
                 tip: (row.playing ? "暂停" : "播放") + row.name
                 onClicked: row.togglePlay()
             }
@@ -540,109 +456,27 @@ Item {
                 ToolTip.delay: 600
                 ToolTip.text: "从光标处播放" + row.name + "（快捷键开着时，选中的轨道也可按回车）"
             }
-            Item { Layout.preferredWidth: 4 }
-
-            // The row's whole length at a glance: where its picture is, a
-            // notch where one entry meets the next, its cursor as a hollow
-            // ball and, zoomed in, a frame round what the lane shows. A press
-            // or drag places the cursor, never the picture.
-            Item {
-                id: seek
-                Layout.fillWidth: true
-                Layout.minimumWidth: 60
-                Layout.preferredHeight: row.barHeight
-                readonly property real share: row.total > 0 && row.playT >= 0 ? Math.max(0, Math.min(1, row.playT / row.total)) : 0
-                function timeAt(x) {
-                    return Math.max(0, Math.min(1, x / width)) * row.total
+            // The track on the air alone, and played from its cursor: from 画面 2
+            // on the air straight to 画面 1 where its cursor was just put.
+            // Dim while the track is the picture already (跳至 does it).
+            TextButton {
+                implicitHeight: 20
+                leftPadding: 6
+                rightPadding: 6
+                outlined: true
+                font.pixelSize: 11
+                text: "投放并跳至"
+                enabled: row.canJump && !row.onAirAlone
+                onClicked: {
+                    row.view.activate(row.key)
+                    row.view.takeLive(row.key)
+                    row.jump()
                 }
-                Rectangle {
-                    visible: row.zoomed && row.total > 0
-                    x: seek.width * row.viewLeft / row.extent
-                    width: Math.max(6, seek.width * row.span / row.extent)
-                    anchors.verticalCenter: parent.verticalCenter
-                    height: 14
-                    radius: 3
-                    color: Theme.dark ? "#1affffff" : "#12000000"
-                    border.width: 1
-                    border.color: Theme.line
-                }
-                Rectangle {
-                    id: groove
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: parent.width
-                    height: 4
-                    radius: 2
-                    color: Theme.line
-                    Rectangle {
-                        width: parent.width * seek.share
-                        height: parent.height
-                        radius: 2
-                        color: row.canSeek ? Theme.text : Theme.muted
-                    }
-                    Repeater {
-                        model: row.clips.filter(c => c.start > 0)
-                        Rectangle {
-                            required property var modelData
-                            x: groove.width * modelData.start / Math.max(1, row.total) - 1
-                            width: 2
-                            height: groove.height
-                            color: Theme.raised
-                        }
-                    }
-                }
-                Rectangle {
-                    visible: row.playT >= 0
-                    x: seek.width * seek.share - width / 2
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 11
-                    height: 11
-                    radius: 5.5
-                    color: row.canSeek ? Theme.text : Theme.muted
-                }
-                Rectangle {
-                    visible: row.markT >= 0 && row.total > 0
-                    x: seek.width * row.markT / row.total - width / 2
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 11
-                    height: 11
-                    radius: 5.5
-                    color: Theme.raised
-                    border.width: 2
-                    border.color: row.active ? Theme.text : Theme.muted
-                    scale: seekArea.pressed ? 1.2 : 1
-                }
-                // Where a press would put the cursor.
-                Rectangle {
-                    visible: seekArea.containsMouse && !seekArea.pressed && seekArea.enabled
-                    x: seekArea.mouseX - width / 2
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 11
-                    height: 11
-                    radius: 5.5
-                    color: "transparent"
-                    border.width: 1.5
-                    border.color: Theme.faint
-                }
-                MouseArea {
-                    id: seekArea
-                    anchors.fill: parent
-                    enabled: row.clips.length > 0
-                    hoverEnabled: true
-                    preventStealing: true
-                    cursorShape: Qt.PointingHandCursor
-                    onPressed: mouse => row.markTime(seek.timeAt(mouse.x))
-                    onPositionChanged: mouse => {
-                        if (pressed)
-                            row.markTime(seek.timeAt(mouse.x))
-                    }
-                    onWheel: wheel => row.scroll(wheel, row.laneWidth / 2)
-                    ToolTip.visible: containsMouse && !pressed
-                    ToolTip.delay: 900
-                    ToolTip.text: "按下或拖动放光标；回车或「跳至」从光标处播放"
-                }
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: "把" + row.name + "投给观众（快切）并从光标处播放（选中的轨道也可按 " + (Qt.platform.os === "osx" ? "⌘" : "Ctrl+") + "回车）"
             }
-
-            Item { Layout.preferredWidth: 6 }
+            Item { Layout.fillWidth: true }
             // The speed: a percent a key, the bar, 复原 (or a double-click on the readout).
             IconButton {
                 implicitWidth: 22
@@ -739,7 +573,132 @@ Item {
                 ToolTip.text: row.loop ? "循环播放：放完这条轨道的最后一个素材后从第一个重来；点一下改为播完即停"
                                        : "播完即停：放完这条轨道的最后一个素材后停在最后一帧；点一下改为循环播放"
             }
+            Item { Layout.preferredWidth: 4 }
+            // 快切: this track alone, filling the picture, to the audience
+            // with the board's dissolve; whatever else was on the picture
+            // goes off it (to the stage at its right).
+            TextButton {
+                implicitHeight: 22
+                leftPadding: 8
+                rightPadding: 10
+                outlined: !row.onAirAlone
+                primary: row.onAirAlone
+                font.pixelSize: Theme.sizeXs
+                iconName: "cast"
+                text: "投放" + row.name
+                onClicked: row.view.takeLive(row.key)
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: "快切（" + (row.track === 0 ? "[" : "]") + "）：清掉画面上的其它画面，" + row.name + " 铺满整个画面投给观众（用画板的渐变设置）"
+            }
         }
+
+        // The row's whole length at a glance: where its picture is, a
+        // notch where one entry meets the next, its cursor as a hollow
+        // ball and, zoomed in, a frame round what the lane shows. A press
+        // or drag places the cursor, never the picture.
+        Item {
+            id: seek
+            visible: !row.camera
+            y: row.barHeight
+            width: parent.width
+            height: row.overviewHeight
+            readonly property real share: row.total > 0 && row.playT >= 0 ? Math.max(0, Math.min(1, row.playT / row.total)) : 0
+            function timeAt(x) {
+                return Math.max(0, Math.min(1, x / width)) * row.total
+            }
+            // The whole track: each entry a soft segment, what has played of
+            // it a shade deeper (not ink), a gap where one meets the next.
+            Item {
+                id: groove
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width
+                height: 8
+                Repeater {
+                    model: row.clips.length ? row.clips : [{ start: 0, length: row.extent }]
+                    Rectangle {
+                        required property var modelData
+                        readonly property real from: groove.width * modelData.start / Math.max(1e-6, row.extent)
+                        readonly property real to: groove.width * (modelData.start + modelData.length) / Math.max(1e-6, row.extent)
+                        x: from + (modelData.start > 0 ? 1.5 : 0)
+                        width: Math.max(2, to - x)
+                        height: groove.height
+                        radius: 4
+                        color: Theme.dark ? "#2a303a" : "#e9e9ee"
+                        clip: true
+                        Rectangle {
+                            width: Math.max(0, Math.min(parent.width, groove.width * seek.share - parent.x))
+                            height: parent.height
+                            color: row.canSeek ? (Theme.dark ? "#6b7380" : "#9a9aa2") : (Theme.dark ? "#3a404a" : "#cfcfd5")
+                        }
+                    }
+                }
+            }
+            // The part the lane shows, while zoomed in: a clear window over it.
+            Rectangle {
+                visible: row.zoomed && row.total > 0
+                x: Math.max(0, Math.min(seek.width - width, seek.width * row.viewLeft / row.extent))
+                width: Math.max(10, seek.width * row.span / row.extent)
+                height: parent.height
+                radius: 5
+                color: Theme.dark ? "#22ffffff" : "#14000000"
+                border.width: 1.5
+                border.color: Theme.dark ? "#c3c8d0" : "#55555c"
+            }
+            // The playhead: an upright capsule.
+            Rectangle {
+                visible: row.playT >= 0
+                x: seek.width * seek.share - width / 2
+                anchors.verticalCenter: parent.verticalCenter
+                width: 4
+                height: 16
+                radius: 2
+                color: row.canSeek ? Theme.text : Theme.muted
+            }
+            Rectangle {
+                visible: row.markT >= 0 && row.total > 0
+                x: seek.width * row.markT / row.total - width / 2
+                anchors.verticalCenter: parent.verticalCenter
+                width: 11
+                height: 11
+                radius: 5.5
+                color: Theme.raised
+                border.width: 2
+                border.color: row.active ? Theme.text : Theme.muted
+                scale: seekArea.pressed ? 1.2 : 1
+            }
+            // Where a press would put the cursor.
+            Rectangle {
+                visible: seekArea.containsMouse && !seekArea.pressed && seekArea.enabled
+                x: seekArea.mouseX - width / 2
+                anchors.verticalCenter: parent.verticalCenter
+                width: 11
+                height: 11
+                radius: 5.5
+                color: "transparent"
+                border.width: 1.5
+                border.color: Theme.faint
+            }
+            MouseArea {
+                id: seekArea
+                anchors.fill: parent
+                enabled: row.clips.length > 0
+                hoverEnabled: true
+                preventStealing: true
+                cursorShape: Qt.PointingHandCursor
+                onPressed: mouse => row.markTime(seek.timeAt(mouse.x))
+                onPositionChanged: mouse => {
+                    if (pressed)
+                        row.markTime(seek.timeAt(mouse.x))
+                }
+                onWheel: wheel => row.scroll(wheel, row.laneWidth / 2)
+                ToolTip.visible: containsMouse && !pressed
+                ToolTip.delay: 900
+                ToolTip.text: "按下或拖动放光标；回车或「跳至」从光标处播放"
+            }
+        }
+
+
 
         // The row's ruler, in each entry's own time: its playhead's flag and
         // its cursor's diamond. A press or drag places the cursor, a
@@ -747,7 +706,7 @@ Item {
         Item {
             id: ruler
             visible: !row.camera
-            y: row.barHeight
+            y: row.barHeight + row.overviewHeight
             width: parent.width
             height: row.rulerHeight
             clip: true
@@ -866,7 +825,7 @@ Item {
         Item {
             id: lane
             visible: !row.camera
-            y: row.barHeight + row.rulerHeight
+            y: row.barHeight + row.overviewHeight + row.rulerHeight
             width: parent.width
             height: parent.height - y
             clip: true
@@ -943,22 +902,21 @@ Item {
                     }
                 }
             }
-            // Where what is dragged here would land: after the row's last entry.
+            // What is dragged here takes the track's place, as a record put
+            // on a deck: the whole lane, veiled, says so.
             Rectangle {
                 visible: row.dropOnto
-                readonly property real end: (row.total - row.viewLeft) * row.pps + 3
-                x: Math.max(0, Math.min(lane.width - width, end))
-                width: Math.min(lane.width, 150)
+                width: lane.width
                 height: lane.height
                 radius: Theme.radius
-                color: Theme.selected
+                color: Qt.rgba(Theme.selected.r, Theme.selected.g, Theme.selected.b, 0.88)
                 border.width: 2
                 border.color: Theme.text
                 Text {
-                    x: 8
-                    y: 6
-                    width: parent.width - 16
-                    text: row.view.dropTitle
+                    x: 10
+                    y: 8
+                    width: parent.width - 20
+                    text: (row.clips.length ? "替换为：" : "放上：") + row.view.dropTitle
                     font.pixelSize: Theme.sizeXs
                     font.weight: Font.DemiBold
                     color: Theme.text

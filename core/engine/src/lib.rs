@@ -214,13 +214,16 @@ impl Engine {
     pub fn document(&self) -> Result<Document> {
         self.with_store(|s| Ok(s.doc.clone()))
     }
-    pub fn edit(&self, revision: u64, edit: Edit) -> Result<Document> {
+    /// Applied to the Set as it is now, whatever revision the caller last saw
+    /// (`_revision`): an edit names its entries by id and is checked against
+    /// the current Set, so two quick edits, or an on/off between them, no
+    /// longer turn the second away.
+    pub fn edit(&self, _revision: u64, edit: Edit) -> Result<Document> {
         let _gate = self.gate.lock().unwrap();
         if self.running() {
             bail!("请先停止跟随再编辑 Set");
         }
         let document = self.with_store(|s| {
-            anyhow::ensure!(s.doc.revision == revision, "Set 已更新，请重试");
             let mut next = s.doc.clone();
             next.edit(edit)?;
             s.commit(next)
@@ -254,16 +257,15 @@ impl Engine {
     /// Files and folders (searched recursively) become entries of one Set, on `track`.
     /// `placed`: the new entries are on (on the timeline, followed) or only
     /// in the Set, to be placed later.
-    pub fn import(&self, set_id: &str, revision: u64, paths: &[String], track: u8, placed: bool) -> Result<Document> {
+    /// Added to the Set as it is then, like `edit`, whatever revision the
+    /// caller last saw.
+    pub fn import(&self, set_id: &str, _revision: u64, paths: &[String], track: u8, placed: bool) -> Result<Document> {
         anyhow::ensure!(track <= document::LAST_TRACK, "轨道不存在");
         let _gate = self.gate.lock().unwrap();
         if self.running() {
             bail!("请先停止跟随再导入素材");
         }
-        self.with_store(|s| {
-            anyhow::ensure!(s.doc.revision == revision, "Set 已更新，请重试");
-            s.doc.set_mut(set_id).map(|_| ())
-        })?;
+        self.with_store(|s| s.doc.set_mut(set_id).map(|_| ()))?;
         let mut files = vec![];
         let mut pending: Vec<PathBuf> = paths.iter().rev().map(PathBuf::from).collect();
         while let Some(path) = pending.pop() {
@@ -297,7 +299,6 @@ impl Engine {
             })
             .collect::<Result<Vec<_>>>()?;
         let document = self.with_store(|s| {
-            anyhow::ensure!(s.doc.revision == revision, "Set 已更新，素材未加入，请重试");
             let mut next = s.doc.clone();
             let set = next.set_mut(set_id)?;
             set.entries

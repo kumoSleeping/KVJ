@@ -8,10 +8,11 @@ import KVJ
 
 // The operator's one window, a player first: a top bar (in the title bar's row
 // on macOS) with the way into the sender and the light or dark look, and under
-// it the canvas: the board (the picture, made and seen in one place, with the
-// gallery of stickers, words and reactions under it), smart following and the
-// effects as cards, the Sets and their entries in a drawer
-// over its left side; across the whole foot the player's timeline. While smart following is on it plays the
+// it the canvas, all on one plain ground: the board (the picture, made and
+// seen in one place, the panel of stickers, words and reactions and effects
+// out at its right when wanted), at the far right the audience's picture over
+// smart following, the Sets and their entries in a drawer over its left
+// side; across the whole foot the player's timeline, one track or two. While smart following is on it plays the
 // picture from the music (where, and how fast) and the player's own keys rest;
 // paused or stopped, the player carries on from there. The sender for the DJ's
 // computer is a small window of its own; the projection window shows only the
@@ -129,7 +130,7 @@ ApplicationWindow {
     // change the speed by 1%; Enter plays from the timeline's cursor; − and =
     // zoom the timeline out and in, \ shows the whole Set, as in Premiere.
     // None while words are typed.
-    // Space does nothing: one touch of it during a show is too easy.
+    // Space is the board's 投放 (only in 投放 mode, with changes waiting).
     property bool keysOn: true
     readonly property bool typing: !!activeFocusItem && typeof activeFocusItem.selectedText === "string"
     // They work from the projection window too (it takes the focus when it
@@ -294,6 +295,40 @@ ApplicationWindow {
             return
         transport.toggle()
         app.tick()
+    }
+    // A paused track that comes onto the picture (a quick cut, [ / ], ⌘ Enter,
+    // 投放, dragged in while following) starts playing. What is on the picture
+    // as KVJ starts is only noted.
+    property var shownBefore: null
+    function noteShown() {
+        app.shownBefore = Switcher.loaded ? Switcher.shownSourcesOf(Switcher.program) : null
+    }
+    Connections {
+        target: Switcher
+        function onLoadedChanged() { app.noteShown() }
+        function onProgramChanged() { app.playShown() }
+    }
+    function playShown() {
+        const before = app.shownBefore
+        if (!before)
+            return
+        const now = Switcher.shownSourcesOf(Switcher.program)
+        app.shownBefore = now
+        for (const id of now) {
+            if (before.indexOf(id) >= 0 || !id.startsWith("track:"))
+                continue
+            const t = Number(id.substring(6))
+            if (t === 0) {
+                if (app.manualSeek && transport.entry && !transport.playing) {
+                    transport.toggle()
+                    app.tick()
+                }
+            } else {
+                const p = app.auxPlayers[t - 1]
+                if (p && !p.playing)
+                    p.toggle()
+            }
+        }
     }
     function seekBy(seconds) {
         if (app.keyPlayer) {
@@ -471,6 +506,7 @@ ApplicationWindow {
         case "fill": mixer.fill(Math.max(0, mixer.selected)); break
         case "revert": Switcher.revert(); break
         case "drawer": app.setsOpen = Number(w[1] || 0) > 0; break
+        case "panel": if (w[1] === "off") liveBar.open = false; else liveBar.show(Number(w[1] || 0)); break
         case "noline": Switcher.setMask(Math.max(0, mixer.selected), { lines: [] }); break
         default: return "unknown"
         }
@@ -510,6 +546,26 @@ ApplicationWindow {
                     Engine.moveEntry(set.id, id)
         }
     }
+    // Dropped from the drawer (or the Finder) onto a track: what was on it
+    // goes back to the library and the drop takes its place, as a record put
+    // on a deck. Not while following runs on that track (it would lose its
+    // material).
+    function replaceOn(ids, track) {
+        if (app.running && app.followTrack === track)
+            return app.placeOn(ids, track)
+        const gone = app.placedOn(track).map(e => e.id).filter(id => ids.indexOf(id) < 0)
+        if (gone.length && app.currentSet)
+            Engine.enableEntries(app.currentSet.id, gone, false)
+        app.placeOn(ids, track)
+    }
+    function replaceWithFiles(urls, track) {
+        if (!urls || urls.length === 0 || !app.editable)
+            return
+        const gone = app.placedOn(track).map(e => e.id)
+        if (gone.length && app.currentSet)
+            Engine.enableEntries(app.currentSet.id, gone, false)
+        app.addUrls(urls, track)
+    }
     // Back to the library only.
     function takeOff(id) {
         for (const set of app.sets)
@@ -521,12 +577,10 @@ ApplicationWindow {
         return app.entries.filter(e => (e.track || 0) === track && e.enabled !== false)
     }
     // A double-click in the drawer: onto the first track from the top with
-    // nothing on it, else onto a new one, else the main track's end.
+    // nothing on it, else the first track's end.
     function placeAnywhere(ids) {
-        const rows = app.trackRows.filter(r => r.kind === "track")
-        const empty = rows.find(r => app.placedOn(r.track).length === 0)
-        const fresh = [1, 2, 3].find(t => app.shownAux.indexOf(t) < 0)
-        app.placeOn(ids, empty ? empty.track : fresh || 0)
+        const empty = app.trackRows.find(r => app.placedOn(r.track).length === 0)
+        app.placeOn(ids, empty ? empty.track : 0)
     }
     // KVJ keeps one library of videos (the engine's first Set): an older
     // document with several is made one, an empty one gets its library.
@@ -542,43 +596,6 @@ ApplicationWindow {
         target: Engine
         function onDocumentChanged() { Qt.callLater(app.oneLibrary) }
     }
-    // A new track at row `position` (0 = the top): the tracks from there on
-    // move one number down the list (画面 2 becomes 画面 3…), then the
-    // entries or files go on it. Four tracks at most.
-    function insertTrack(position) {
-        const shown = [0].concat(app.shownAux)
-        if (shown.length >= 4)
-            return -1
-        const at = Math.max(0, Math.min(shown.length, position))
-        const order = shown.slice(0, at).concat([-1]).concat(shown.slice(at))
-        // Each track's entries to its new number (its place in the order);
-        // those moving down first, from the last, so none lands on another.
-        const moves = order.map((from, to) => ({ from: from, to: to })).filter(m => m.from >= 0 && m.from !== m.to)
-        moves.sort((a, b) => (b.to > b.from) - (a.to > a.from) || (a.to > a.from ? b.from - a.from : a.from - b.from))
-        for (const m of moves) {
-            const ids = app.entries.filter(e => (e.track || 0) === m.from).map(e => e.id)
-            if (ids.length)
-                Engine.setTrack(app.currentSet.id, ids, m.to)
-        }
-        app.setAddedTracks(order.map((t, i) => (t >= 0 && app.addedTracks.indexOf(t) >= 0) || t < 0 ? i : -1)
-                                .filter(i => i > 0))
-        return at
-    }
-    function insertEntries(ids, position) {
-        if (!app.editable || !app.currentSet)
-            return
-        const track = app.insertTrack(position)
-        if (track >= 0)
-            app.placeOn(ids, track)
-    }
-    function insertFiles(urls, position) {
-        if (!app.editable || !app.currentSet)
-            return
-        const track = app.insertTrack(position)
-        if (track >= 0)
-            app.addUrls(urls, track)
-    }
-
     function clock(seconds, tenths) {
         const s = Math.max(0, seconds)
         const m = Math.floor(s / 60)
@@ -667,8 +684,8 @@ ApplicationWindow {
         cameraIds: app.cameraIds
         wantedIds: desk.allIds
     }
-    // The picture sources on offer to the mixer (Switcher): the main track,
-    // the aux tracks that have entries, the cameras taken in.
+    // The picture sources on offer to the mixer (Switcher): the tracks shown
+    // and the cameras taken in (on the board, not on the timeline).
     property var cameraIds: []
     Settings {
         id: sourceStore
@@ -678,23 +695,33 @@ ApplicationWindow {
         Component.onCompleted: {
             try {
                 app.cameraIds = JSON.parse(cameras)
-                app.addedTracks = JSON.parse(tracks)
             } catch (e) {
                 app.cameraIds = []
-                app.addedTracks = []
             }
+            // Always two tracks: a second one put away by the old 单轨 mode
+            // comes back; the layers of any others wait aside.
+            Qt.callLater(() => {
+                Switcher.bringBack("track:1")
+                for (const t of [2, 3])
+                    Switcher.setAside("track:" + t)
+            })
         }
     }
     function setCameras(ids) {
         app.cameraIds = ids
         sourceStore.cameras = JSON.stringify(ids)
     }
-    // Aux tracks shown while still empty: added with the timeline's + 轨道.
-    property var addedTracks: []
-    readonly property var shownAux: [1, 2, 3].filter(t => app.auxPlayers[t - 1].entries.some(e => e.enabled !== false)
-                                                     || app.addedTracks.indexOf(t) >= 0)
-    // The timeline's rows, which are also the mixer's sources: the main track,
-    // the aux tracks shown, the cameras taken in.
+    function addCamera(id) {
+        if (app.cameraIds.indexOf(id) < 0)
+            app.setCameras(app.cameraIds.concat([id]))
+    }
+    function removeCamera(key) {
+        app.setCameras(app.cameraIds.filter(c => "camera:" + c !== key))
+        Switcher.rename({ [key]: "" })
+    }
+    // Always two tracks, as a DJ's two decks.
+    readonly property var shownAux: [1]
+    // The timeline's rows: the two tracks.
     readonly property var trackRows: {
         const rows = [{ key: "track:0", kind: "track", track: 0, name: "画面 1",
                         entries: app.entries.filter(app.isMain), player: app }]
@@ -702,71 +729,46 @@ ApplicationWindow {
             const p = app.auxPlayers[t - 1]
             rows.push({ key: "track:" + t, kind: "track", track: t, name: "画面 " + (t + 1), entries: p.entries, player: p })
         }
-        // Names only once there are cameras: the list wakes the camera stack.
+        return rows
+    }
+    // The mixer's sources: the tracks, then the cameras. Names only once
+    // there are cameras: the list wakes the camera stack.
+    readonly property var sources: {
+        const list = app.trackRows.map(r => ({ id: r.key, name: r.name }))
         const cams = app.cameraIds.length ? Cameras.list : []
         for (const id of app.cameraIds) {
             const c = cams.find(c => c.id === id)
-            rows.push({ key: "camera:" + id, kind: "camera", cameraId: id, name: c ? c.name : "相机（未连接）" })
+            list.push({ id: "camera:" + id, name: c ? c.name : "相机（未连接）" })
         }
-        return rows
+        return list
     }
-    readonly property var sources: trackRows.map(r => ({ id: r.key, name: r.name }))
-    function addTrack() {
-        const t = [1, 2, 3].find(t => app.shownAux.indexOf(t) < 0)
-        if (t)
-            app.setAddedTracks(app.addedTracks.concat([t]))
-    }
-    // A row taken off the timeline. A camera goes, its layer with it. A track's
-    // entries go back to the library and the tracks under it move one up (画面
-    // 3 becomes 画面 2…), their layers renamed along, so what the mixer shows
-    // stays where it was; the track's own layer goes. The only track left is
-    // emptied instead. Not while following runs (moving tracks is an edit).
-    function removeRow(key) {
-        if (key.startsWith("camera:")) {
-            app.setCameras(app.cameraIds.filter(c => "camera:" + c !== key))
-            Switcher.rename({ [key]: "" })
-            return
-        }
-        if (!app.editable || !app.currentSet)
-            return
-        const t = Number(key.substring(6))
-        const placed = app.placedOn(t).map(e => e.id)
-        if (placed.length)
-            Engine.enableEntries(app.currentSet.id, placed, false)
-        const shown = [0].concat(app.shownAux)
-        if (shown.length <= 1)
-            return
-        const order = shown.filter(k => k !== t)
-        const moves = order.map((from, to) => ({ from: from, to: to, ids: app.entries.filter(e => (e.track || 0) === from).map(e => e.id) }))
-                           .filter(m => m.from !== m.to)
-        for (const m of moves)
-            if (m.ids.length)
-                Engine.setTrack(app.currentSet.id, m.ids, m.to)
-        app.setAddedTracks(order.map((from, to) => to > 0 && app.addedTracks.indexOf(from) >= 0 ? to : -1).filter(to => to > 0))
-        const names = {}
-        for (let k = 0; k < 4; ++k)
-            names["track:" + k] = order.indexOf(k) >= 0 ? "track:" + order.indexOf(k) : ""
-        Switcher.rename(names)
-        const followed = order.indexOf(strip.followTrack)
-        strip.followTrack = Math.max(0, followed)
-    }
-    function setAddedTracks(list) {
-        app.addedTracks = list
-        sourceStore.tracks = JSON.stringify(list)
-    }
-    // A track's picture pressed on the timeline: its layer chosen on the preview.
+    // A track emptied: what is on it goes back to the library. Not while
+    // following runs (it is an edit).
+    // A track's name pressed on the timeline: its layer chosen on the board.
     function pickSource(key) {
         mixer.selectSource(key)
     }
-    // The sound of what the picture shows, on the picture's timing.
+    function clearTrack(t) {
+        if (!app.editable || !app.currentSet)
+            return
+        const placed = app.placedOn(t).map(e => e.id)
+        if (placed.length)
+            Engine.enableEntries(app.currentSet.id, placed, false)
+    }
+    // The sound of one track (desk.soundTrack), on that track's timing: the
+    // picture is a mix, the sound is not.
+    readonly property var soundTiming: desk.soundTrack > 0 ? app.auxTiming(desk.soundTrack)
+                                     : { entry: app.shownEntry, position: projection.position, rate: projection.rate,
+                                         clockAtMs: projection.clockAtMs, offsetMs: projection.offsetMs }
     AudioFollower {
         id: sound
+        readonly property var entry: app.soundTiming.entry
         enabled: desk.soundOn
-        source: app.shownEntry && !app.shownEntry.silent ? app.shownEntry.path : ""
-        position: projection.position
-        rate: projection.rate
-        clockAtMs: projection.clockAtMs
-        offsetMs: projection.offsetMs
+        source: entry && !entry.silent ? entry.path : ""
+        position: app.soundTiming.position
+        rate: app.soundTiming.rate
+        clockAtMs: app.soundTiming.clockAtMs
+        offsetMs: app.soundTiming.offsetMs
         device: desk.soundDevice
         volume: desk.soundVolume
     }
@@ -847,6 +849,13 @@ ApplicationWindow {
         enabled: app.keysLive && timeline.canJump
         onActivated: timeline.jump()
     }
+    // ⌘ Enter (Ctrl on Windows): that track put on the air, then the jump.
+    Shortcut {
+        sequences: ["Ctrl+Return", "Ctrl+Enter"]
+        context: Qt.ApplicationShortcut
+        enabled: app.keysLive && timeline.canJump
+        onActivated: timeline.takeAndJump()
+    }
     Shortcut {
         sequences: ["-", "Num+-"]
         context: Qt.ApplicationShortcut
@@ -858,6 +867,21 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: app.keysLive
         onActivated: timeline.zoomStep(1.3)
+    }
+    // [ and ] put 画面 1 / 画面 2 on the air alone (a track's 投放 key).
+    Shortcut {
+        sequence: "["
+        context: Qt.ApplicationShortcut
+        autoRepeat: false
+        enabled: app.keysLive
+        onActivated: mixer.takeLive("track:0")
+    }
+    Shortcut {
+        sequence: "]"
+        context: Qt.ApplicationShortcut
+        autoRepeat: false
+        enabled: app.keysLive
+        onActivated: mixer.takeLive("track:1")
     }
     Shortcut {
         sequence: "\\"
@@ -944,36 +968,35 @@ ApplicationWindow {
                     spacing: Theme.gap
 
                     // —— The board: the picture as the audience sees it and
-                    // where it is made, and under it what goes over it ——
-                    Card {
+                    // where it is made; at its right the panel of what goes
+                    // over it (stickers, words and reactions, effects), out
+                    // or put away with the keys on the board's right edge ——
+                    RowLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: Theme.gap
-                            spacing: 6
-                            Composer {
-                                id: mixer
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                sources: app.sources
-                                textures: desk.textures
-                                aspect: desk.aspect
-                                entry: projection.entry
-                                output: desk
-                            }
-                            LiveBar {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 104
-                                color: "transparent"
-                                border.width: 0
-                                margin: 0
-                                composer: mixer
-                            }
+                        spacing: 0
+                        Composer {
+                            id: mixer
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            sources: app.sources
+                            textures: desk.textures
+                            aspect: desk.aspect
+                            entry: projection.entry
+                            output: desk
+                            cameraIds: app.cameraIds
+                            cover: liveBar.shown
+                            onAddCamera: id => app.addCamera(id)
+                            onRemoveCamera: key => app.removeCamera(key)
+                        }
+                        LiveBar {
+                            id: liveBar
+                            Layout.fillHeight: true
+                            composer: mixer
                         }
                     }
 
-                    // —— What the audience sees, small, over smart following ——
+                    // —— At the right: what the audience sees, small, over smart following ——
                     ColumnLayout {
                         Layout.preferredWidth: strip.implicitWidth
                         Layout.fillWidth: false
@@ -982,47 +1005,43 @@ ApplicationWindow {
 
                         // The program (PGM) as the projection draws it, the
                         // stickers and effects on the air included.
-                        Card {
+                        Rectangle {
                             Layout.fillWidth: true
-                            implicitHeight: (width - 16) / Math.max(0.2, desk.aspect) + 16
-                            Rectangle {
+                            Layout.preferredHeight: width / Math.max(0.2, desk.aspect)
+                            color: "black"
+                            radius: Theme.radius
+                            clip: true
+                            Stage {
+                                id: pgmStage
                                 anchors.fill: parent
-                                anchors.margins: 8
-                                color: "black"
-                                radius: Theme.radius
-                                clip: true
-                                Stage {
-                                    id: pgmStage
+                                lite: true
+                                entry: projection.entry
+                                Program {
                                     anchors.fill: parent
-                                    lite: true
-                                    entry: projection.entry
-                                    Program {
-                                        anchors.fill: parent
-                                        now: pgmStage.now
-                                        textures: desk.textures
-                                        operator: true
-                                    }
+                                    now: pgmStage.now
+                                    textures: desk.textures
+                                    operator: true
                                 }
-                                Rectangle {
-                                    x: 6
-                                    y: 6
-                                    width: pgmTag.implicitWidth + 10
-                                    height: 16
-                                    radius: 4
-                                    color: projection.visible ? Theme.danger : "#8c000000"
-                                    Text {
-                                        id: pgmTag
-                                        anchors.centerIn: parent
-                                        text: projection.visible ? "观众画面 · 投屏中" : "观众画面"
-                                        font.pixelSize: 9
-                                        font.weight: Font.DemiBold
-                                        color: "white"
-                                    }
+                            }
+                            Rectangle {
+                                x: 6
+                                y: 6
+                                width: pgmTag.implicitWidth + 10
+                                height: 16
+                                radius: 4
+                                color: projection.visible ? Theme.danger : "#8c000000"
+                                Text {
+                                    id: pgmTag
+                                    anchors.centerIn: parent
+                                    text: projection.visible ? "观众画面 · 投屏中" : "观众画面"
+                                    font.pixelSize: 9
+                                    font.weight: Font.DemiBold
+                                    color: "white"
                                 }
                             }
                         }
 
-                        // —— Smart following: one, on the track whose ear is lit ——
+                        // —— Smart following: one, on the track chosen in it ——
                         FollowStrip {
                             id: strip
                             Layout.fillWidth: true
@@ -1030,15 +1049,8 @@ ApplicationWindow {
                             app: app
                             surface: projection.surface
                             rowHeight: timeline.mainRowHeight
+                            tracks: [0].concat(app.shownAux)
                         }
-                    }
-
-                    // —— Effects, at the far right ——
-                    Effects {
-                        id: effects
-                        Layout.preferredWidth: implicitWidth > 0 ? implicitWidth : 300
-                        Layout.fillWidth: false
-                        Layout.fillHeight: true
                     }
                 }
             }
@@ -1077,18 +1089,20 @@ ApplicationWindow {
             // own head has it: put away, only the key stays, over the stage's
             // corner. Files dragged onto it bring the drawer out too.
             IconButton {
-                x: 8
-                y: (44 - height) / 2
+                // In the margin left of the board's picture, clear of its corner.
+                x: 2
+                y: 2
                 z: 2
+                implicitWidth: 24
+                implicitHeight: 24
+                iconSize: 14
                 visible: !app.setsOpen
                 iconName: "panel-left"
                 tip: "素材（" + (Qt.platform.os === "osx" ? "⌘B" : "Ctrl+B") + "）"
                 onClicked: app.toggleSets()
                 background: Rectangle {
                     radius: Theme.radius
-                    color: parent.hovered ? Theme.hover : Theme.raised
-                    border.width: 1
-                    border.color: Theme.line
+                    color: parent.hovered ? Theme.hover : Theme.inset
                 }
                 DropArea {
                     anchors.fill: parent
@@ -1167,38 +1181,23 @@ ApplicationWindow {
         }
 
         // —— The player's timeline, across the whole foot ——
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 1
-            color: Theme.line
-        }
         Timeline {
             id: timeline
             objectName: "timeline"
             Layout.fillWidth: true
             entries: app.mainEntries
-            // The main track, and the aux ones that have something on them.
-            // A row per track and camera, as in an editing app: each its own
-            // play bar; entries dragged from the drawer or files from the
-            // Finder onto a row go on that track.
+            // Two tracks, each its own play
+            // bar; entries dragged from the drawer or files from the Finder
+            // onto a row replace what is on that track.
             tracks: app.trackRows
             textures: desk.textures
             followTrack: app.followTrack
-            canAddTrack: app.shownAux.length < 3 && app.editable
             onPickSource: key => app.pickSource(key)
-            // The ear on a track's picture: following listens to that track (not mid-session).
-            onPickFollow: track => {
-                if (!app.running)
-                    strip.followTrack = track
-            }
-            onAddTrack: app.addTrack()
-            onAddCamera: id => app.setCameras(app.cameraIds.concat([id]))
-            onRemoveRow: key => app.removeRow(key)
+            onClearTrack: track => app.clearTrack(track)
+            onTakeLive: key => mixer.takeLive(key)
             // Done once the drop is over: the rows are made anew by it.
-            onDropEntries: (ids, track) => Qt.callLater(app.placeOn, ids, track)
-            onDropFiles: (urls, track) => Qt.callLater(app.addUrls, urls, track)
-            onInsertEntries: (ids, position) => Qt.callLater(app.insertEntries, ids, position)
-            onInsertFiles: (urls, position) => Qt.callLater(app.insertFiles, urls, position)
+            onDropEntries: (ids, track) => Qt.callLater(app.replaceOn, ids, track)
+            onDropFiles: (urls, track) => Qt.callLater(app.replaceWithFiles, urls, track)
             onRemoveEntry: id => Qt.callLater(app.takeOff, id)
             setId: app.currentSet ? app.currentSet.id : ""
             setName: app.currentSet ? app.currentSet.name : ""
@@ -1231,6 +1230,19 @@ ApplicationWindow {
         else
             entryGhost.Drag.cancel()
         app.draggingEntries = false
+    }
+    // The drawer's list is made anew whenever an entry changes, the row a
+    // drag began on with it: the pointer is followed and let go here, over
+    // the whole window (a passive watch that takes nothing from anyone).
+    Item {
+        parent: app.contentItem
+        anchors.fill: parent
+        z: 999
+        PointHandler {
+            acceptedButtons: Qt.LeftButton
+            onPointChanged: if (active && app.draggingEntries) app.entryDragMove(point.scenePosition)
+            onActiveChanged: if (!active && app.draggingEntries) app.entryDragEnd(true)
+        }
     }
     Rectangle {
         id: entryGhost
@@ -1265,6 +1277,7 @@ ApplicationWindow {
 
     // `--add <file or folder>` adds it at start, the same way the add keys do.
     Component.onCompleted: {
+        Qt.callLater(app.noteShown)
         if (advertising)
             Engine.listenBluetooth(true, receiving)
         const args = Qt.application.arguments

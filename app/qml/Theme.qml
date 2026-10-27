@@ -4,10 +4,10 @@ import QtQuick
 
 // KDJ's design tokens (src/design.css): neutral ink on quiet surfaces, dark or
 // light as the operator chooses with the key at the top right (the system's
-// until then). The window is a canvas of flat cards: the canvas (`bg`), the
-// cards and what floats over them (`raised`), the controls in them (`inset`,
-// barely off the card so nothing reads as sunk in). Space, not lines, keeps
-// groups apart. Red only for what is about to cut the projected picture.
+// until then). The window is one plain ground (`bg`, the same tone as what
+// floats over it, `raised`): no boxes of another tone, the keys drawn
+// straight on it, a hairline (`line`) or space keeping regions apart; the
+// controls' own plates (`inset`) are barely off it. Red only for what is about to cut the projected picture.
 QtObject {
     id: theme
 
@@ -30,7 +30,7 @@ QtObject {
         property alias scheme: theme.scheme
     }
 
-    readonly property color bg: dark ? "#0b0d11" : "#f2f2f4"
+    readonly property color bg: dark ? "#14171d" : "#ffffff"
     readonly property color raised: dark ? "#14171d" : "#ffffff"
     readonly property color inset: dark ? "#1a1e25" : "#f6f6f8"
     readonly property color text: dark ? "#e4e7ec" : "#1c1c1e"

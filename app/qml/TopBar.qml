@@ -97,11 +97,7 @@ Rectangle {
             ToolTip.text: "这台是 DJ 电脑：收起播放器，打开只采集 Master、经蓝牙发给投影电脑的小窗"
             onClicked: top.send()
         }
-        Rectangle {
-            implicitWidth: 1
-            implicitHeight: 16
-            color: Theme.line
-        }
+        Item { implicitWidth: 4 }
         // Version, updates and logs; a dot when a newer release is out.
         IconButton {
             id: aboutKey
@@ -136,13 +132,6 @@ Rectangle {
             tip: Theme.dark ? "切换到浅色" : "切换到深色"
             onClicked: Theme.toggle()
         }
-    }
-
-    Rectangle {
-        anchors.bottom: parent.bottom
-        width: parent.width
-        height: 1
-        color: Theme.line
     }
 
     ReportDialog {

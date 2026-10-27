@@ -10,12 +10,13 @@ import KVJ
 // The board: the one place the picture is seen and made, the projected
 // picture in the middle of a wide stage. Every picture source is a layer on
 // it; a source newly there waits on the stage at the picture's right
-// (Switcher.stack) until it is dragged in. Stickers from the gallery (LiveBar)
-// are posted here too; the effects, the words and the reactions on the air
+// (Switcher.stack) until it is dragged in; cameras are taken in with the key at
+// the foot of that stage (+ 相机) and let go from their layer's menu. Stickers
+// from the gallery (LiveBar, the panel at the board's right) are posted here too; the effects, the words and the reactions on the air
 // show on it as they do for the audience. Right under the picture: 跟随 | 投放,
 // the picture's sound, the output and 投放. In 跟随 every change here is on
 // the air at once; in 投放 the audience keeps what was last put out until 投放
-// (Switcher.apply); the PGM monitor beside 音频对位 shows it meanwhile.
+// (Switcher.apply, also Space); the PGM monitor above 音频对位 shows it meanwhile.
 //
 // A layer is chosen by pressing it, moved by dragging it (its edges snap to
 // the picture's edges and middle and to the other layers'; laid nearly over
@@ -28,7 +29,8 @@ import KVJ
 // the layer (back to the stage) away; the trash key takes the chosen line or
 // all the layer's lines. Esc lets go. (The arrow keys stay the player's.)
 //
-//   sources:  [{ id, name }] the picture sources (the timeline's rows)
+//   sources:  [{ id, name }] the picture sources (the tracks, the cameras)
+//   cameraIds the cameras taken in; addCamera(id), removeCamera(key) ask the host
 //   textures: the window's SourceTextures
 //   aspect:   the projected picture's width / height
 //   entry:    the entry the picture shows (an audio-only one shows its title)
@@ -41,6 +43,12 @@ ColumnLayout {
     property real aspect: 16 / 9
     property var entry: null
     property var output: null
+    property var cameraIds: []
+    // How much of the board's right side a panel lies over: the keys under
+    // the picture and the hint stay clear of it.
+    property real cover: 0
+    signal addCamera(string id)
+    signal removeCamera(string key)
     // How wide the picture is drawn here: the sources' light copies are made this large.
     readonly property real pictureWidth: screen.width
 
@@ -84,11 +92,18 @@ ColumnLayout {
     function ratio(id) {
         return textures ? textures.aspect(id) : 16 / 9
     }
+    // Layer `i` chosen, and brought over every other: the one pressed last
+    // is always on top.
+    function choose(i) {
+        if (i < 0 || i >= slots.length)
+            return
+        selected = i
+        if (slots.some((s, k) => k !== i && s.z >= slots[i].z))
+            Switcher.raiseSlot(i)
+    }
     // The layer that shows `id`, chosen (a track's picture pressed on the timeline).
     function selectSource(id) {
-        const i = slots.findIndex(s => s.source === id)
-        if (i >= 0)
-            selected = i
+        choose(slots.findIndex(s => s.source === id))
     }
 
     // Every source on the canvas: one newly there goes on the stack at the right.
@@ -123,6 +138,14 @@ ColumnLayout {
         }
     }
 
+    // The quick cut (a track's 投放): `id` alone, filling the picture, on the
+    // air with the dissolve set here; the rest goes off the picture.
+    function takeLive(id) {
+        Qt.callLater(stackSources)
+        selected = -1
+        Switcher.take(id, id => ratio(id), aspect)
+    }
+
     // —— Layer keys ——
     function fill(i) {
         Switcher.updateSlot(i, { x: 0, y: 0, w: 1, h: 1 })
@@ -143,6 +166,17 @@ ColumnLayout {
         else
             Switcher.removeSlot(i)
         selected = -1
+    }
+    // The chosen layer's camera let go, and the camera with it (it stops).
+    // Later: letting go destroys the menu item that asked.
+    function dropCamera() {
+        if (!slot || !slot.source.startsWith("camera:"))
+            return
+        const key = slot.source
+        Qt.callLater(() => {
+            selected = -1
+            removeCamera(key)
+        })
     }
     function addLine() {
         if (!slot)
@@ -301,10 +335,12 @@ ColumnLayout {
         }
     }
 
+    // Space puts the board on the air (投放), never while words are typed;
+    // Enter stays the timeline's.
     Shortcut {
-        sequences: ["Ctrl+Return", "Ctrl+Enter"]
+        sequence: "Space"
         context: Qt.ApplicationShortcut
-        enabled: !Switcher.follow && Switcher.pending
+        enabled: !Switcher.follow && Switcher.pending && !composer.typing
         onActivated: Switcher.apply()
     }
 
@@ -314,19 +350,20 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.fillHeight: true
         Layout.minimumHeight: 120
-        radius: Theme.radiusLg
-        color: Theme.inset
+        color: Theme.bg
         clip: true
 
-        // The picture, at the top left with a thin margin for what reaches
-        // past its edges; at its right the stage where sources wait, under it
-        // the keys that put it on the air and the layer tools.
+        // The picture, at the top left with a small margin on the left, top
+        // and foot (`room`), enough to reach a split line's point on its edge;
+        // at its right the stage where sources wait, under it the keys that
+        // put it on the air and the layer tools.
         Rectangle {
             id: screen
-            readonly property real roomTop: 10
-            readonly property real roomLeft: 18
+            readonly property real room: 16
+            readonly property real roomTop: room
+            readonly property real roomLeft: room
             // Fixed, so the picture never changes size as the tools do.
-            readonly property real roomFoot: airRow.implicitHeight + Theme.control + 22
+            readonly property real roomFoot: room + airRow.implicitHeight + 10
             // At least one column of parked sources fits at its right.
             width: Math.max(1, Math.min((box.width - roomLeft) / 1.36, (box.height - roomTop - roomFoot) * composer.aspect))
             height: width / Math.max(0.2, composer.aspect)
@@ -348,6 +385,7 @@ ColumnLayout {
         // it through the effects, with the words and reactions on the air.
         // (The stickers waiting here are drawn over it, with their handles.)
         Stage {
+            id: board
             x: screen.x
             y: screen.y
             width: screen.width
@@ -366,40 +404,36 @@ ColumnLayout {
                 textures: composer.textures
                 operator: true
             }
-        }
-        // The stage veiled, so what lies there reads as off the picture.
-        Repeater {
-            model: [Qt.rect(0, 0, box.width, screen.y),
-                    Qt.rect(0, screen.y + screen.height, box.width, box.height - screen.y - screen.height),
-                    Qt.rect(0, screen.y, screen.x, screen.height),
-                    Qt.rect(screen.x + screen.width, screen.y, box.width - screen.x - screen.width, screen.height)]
-            Rectangle {
-                required property rect modelData
-                x: modelData.x
-                y: modelData.y
-                width: modelData.width
-                height: modelData.height
-                color: Theme.inset
-                opacity: 0.5
+            // A quick cut (a track's 投放, [ / ]) dissolves here as on the
+            // air: the layout before, fading out over the new one.
+            Item {
+                id: taking
+                readonly property var t: Switcher.transition
+                readonly property bool on: !!t && !!t.take && board.now < t.born + t.ms
+                anchors.fill: parent
+                visible: on
+                opacity: on ? 1 - Math.max(0, Math.min(1, (board.now - t.born) / Math.max(1, t.ms))) : 0
+                layer.enabled: visible
+                Rectangle {
+                    anchors.fill: parent
+                    color: "black"
+                }
+                Compositor {
+                    anchors.fill: parent
+                    clip: true
+                    layout: taking.on ? taking.t.from : null
+                    textures: composer.textures
+                    operator: true
+                }
             }
-        }
-        // The picture's edge.
-        Rectangle {
-            x: screen.x - 1
-            y: screen.y - 1
-            width: screen.width + 2
-            height: screen.height + 2
-            color: "transparent"
-            border.width: 1
-            border.color: Theme.faint
         }
         // —— Right under the picture: the mode, and the keys that put it on the air ——
         RowLayout {
             id: airRow
             z: 8
             x: screen.x
-            y: screen.y + screen.height + 6
-            width: Math.max(screen.width, implicitWidth)
+            y: screen.y + screen.height + screen.room
+            width: Math.min(screen.width, box.width - x - composer.cover - 8)
             spacing: 8
             // 跟随 or 投放, a segmented key: the mode shown in ink on a plate.
             Rectangle {
@@ -445,46 +479,33 @@ ColumnLayout {
                     }
                 }
             }
-            Caption {
-                visible: Switcher.follow
-                text: "改动实时给观众"
-            }
-            // Waiting to go on the air.
-            Rectangle {
-                visible: Switcher.pending && !Switcher.follow
-                width: 7
-                height: 7
-                radius: 3.5
-                color: Theme.warn
-            }
-            Text {
-                visible: Switcher.pending && !Switcher.follow
-                text: "未投放"
-                font.pixelSize: Theme.sizeXs
-                color: Theme.warn
-            }
             IconButton {
                 iconName: "undo-2"
                 tip: "撤回：画板回到观众正在看的样子"
-                visible: !Switcher.follow
-                enabled: Switcher.pending
+                // Kept in 跟随 too (there is nothing to take back), so the row stays put.
+                enabled: !Switcher.follow && Switcher.pending
                 onClicked: Switcher.revert()
             }
             Item { Layout.fillWidth: true }
             // The dissolve: on or off, and how long, a click each.
             Toggle {
-                visible: !Switcher.follow
                 text: "渐变"
                 checked: Switcher.fadeMs > 0
                 onToggled: Switcher.fadeMs = checked ? Switcher.fadeLength : 0
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: Switcher.follow ? "轨道上的「投放」快切用这个渐变；跟随模式下画板上的改动仍是直接切"
+                                              : "投放（空格）和轨道上的「投放」快切用这个渐变"
             }
             TextButton {
                 readonly property var values: [300, 600, 1000, 2000]
                 flat: true
                 leftPadding: 6
                 rightPadding: 6
-                visible: Switcher.fadeMs > 0 && !Switcher.follow
+                // Always there (greyed while off), so nothing beside it moves.
+                enabled: Switcher.fadeMs > 0
                 text: (Switcher.fadeLength / 1000) + " 秒"
+                widest: "0.3 秒"
                 font.features: { "tnum": 1 }
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
@@ -501,13 +522,14 @@ ColumnLayout {
                 readonly property var out: composer.output
                 outlined: true
                 iconName: out && out.soundOn ? "volume-2" : "volume-x"
-                text: out && out.soundOn ? Math.round(out.soundVolume * 100) + "%" : "声音关"
+                text: out && out.soundOn ? "画面 " + (out.soundTrack + 1) + " · " + Math.round(out.soundVolume * 100) + "%" : "声音关"
+                widest: "画面 2 · 100%"
                 leftPadding: 8
                 rightPadding: 10
-                onClicked: out.soundOpen ? null : out.openSound(soundKey)
+                onClicked: out.openSound(soundKey)
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "播放画面本身的声音：开关、输出设备、音量"
+                ToolTip.text: "播放一条轨道的声音（画面 1 或画面 2）：开关、哪条轨道、输出设备、音量"
                 Rectangle {
                     visible: !!soundKey.out && soundKey.out.soundOn && !!soundKey.out.sound && soundKey.out.sound.error.length > 0
                     x: parent.width - 9
@@ -526,25 +548,40 @@ ColumnLayout {
                 outlined: true
                 iconName: "monitor"
                 text: out ? "投屏中" : "投屏"
+                widest: "投屏中"
                 leftPadding: 8
                 rightPadding: 10
-                onClicked: composer.output.outputOpen ? null : composer.output.openOutput(outputKey)
+                onClicked: composer.output.openOutput(outputKey)
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
                 ToolTip.text: "投屏：屏幕、清晰度、帧率、全屏、画面声音，打开或收起投屏"
                 icon.color: out ? Theme.danger : contentColor
                 font.weight: out ? Font.DemiBold : Font.Medium
             }
+            // Changes waiting to go on the air light a dot on the key, so
+            // nothing beside it moves.
             TextButton {
                 primary: true
                 iconName: "cast"
                 text: "投放"
-                visible: !Switcher.follow
-                enabled: Switcher.pending
+                // Kept in 跟随 too (every change is on the air already), so the keys stay put.
+                enabled: !Switcher.follow && Switcher.pending
                 onClicked: Switcher.apply()
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "把画板上的画面和贴图给观众（" + (Qt.platform.os === "osx" ? "⌘" : "Ctrl+") + "回车）"
+                ToolTip.text: (Switcher.pending ? "有未投放的改动。" : "")
+                              + "把画板上的画面和贴图给观众（空格）"
+                Rectangle {
+                    visible: !Switcher.follow && Switcher.pending
+                    x: parent.width - 6
+                    y: -2
+                    width: 8
+                    height: 8
+                    radius: 4
+                    color: Theme.warn
+                    border.width: 1.5
+                    border.color: Theme.bg
+                }
             }
         }
 
@@ -697,17 +734,16 @@ ColumnLayout {
                         lineMenu.popup()
                     } else if (h.mode === "move" || h.mode === "size") {
                         if (h.mode === "move")
-                            composer.selected = h.index
+                            composer.choose(h.index)
                         layerMenu.popup()
                     }
                     return
                 }
                 mode = h.mode
                 if (h.mode === "move") {
-                    if (composer.selected !== h.index)
-                        composer.selected = h.index
-                    else
+                    if (composer.selected === h.index)
                         composer.lineAt = -1
+                    composer.choose(h.index)
                 } else if (h.mode === "point") {
                     composer.lineAt = h.line
                     composer.point = h.point
@@ -861,6 +897,35 @@ ColumnLayout {
                             font.pixelSize: 10
                             font.weight: Font.DemiBold
                             color: edge.chosen ? "#000000" : "#ffffff"
+                        }
+                    }
+                    // Its way off, on the chosen one, at its top right inside:
+                    // a camera is let go (it stops), a layer gone from the
+                    // sources leaves, a track goes off the picture.
+                    IconButton {
+                        readonly property bool camera: edge.s.source.startsWith("camera:")
+                        visible: edge.chosen && (camera || edge.lost || Switcher.inPicture(edge.s))
+                        x: Math.max(0, edge.width - width - 6)
+                        y: 6
+                        z: 3
+                        implicitWidth: 22
+                        implicitHeight: 22
+                        iconSize: 12
+                        iconName: "x"
+                        icon.color: "#000000"
+                        background: Rectangle {
+                            radius: 11
+                            color: parent.down ? "#d0d0d0" : parent.hovered ? "#ececec" : "#ffffff"
+                        }
+                        tip: camera ? "移除这个相机（相机随即关掉）"
+                           : edge.lost ? "从合成中删除"
+                           : "移出画面（放到右边画外）" + (Switcher.follow ? "" : "，按「投放」后观众那边也移出")
+                        onClicked: {
+                            composer.selected = edge.index
+                            if (camera)
+                                composer.dropCamera()
+                            else
+                                composer.park(edge.index)
                         }
                     }
                     // Corners and edge middles size it.
@@ -1087,12 +1152,13 @@ ColumnLayout {
         Text {
             x: Math.max(screen.x + screen.width, airRow.x + airRow.width) + 14
             y: airRow.y
-            width: Math.max(0, box.width - x - 10)
+            width: Math.max(0, box.width - x - composer.cover - 10)
             height: airRow.height
             z: 7
             verticalAlignment: Text.AlignVCenter
             text: composer.chosenLine ? "拖两端或中间点改形 · 在直线上按住拉出中间点（只有一个） · Delete 删除 · 右键更多"
                 : composer.slot ? "拖动摆放 · 角点等比缩放（Shift 自由） · 双击铺满 · 右键更多"
+                : Switcher.follow ? "跟随：改动实时给观众 · 右边是画外（观众看不到），拖进画面里摆放"
                 : "右边是画外（观众看不到），拖进画面里摆放"
             font.pixelSize: Theme.sizeXs
             color: Theme.faint
@@ -1135,6 +1201,52 @@ ColumnLayout {
                 text: composer.slot && !composer.known(composer.slot.source) ? "从合成中删除" : "移到画外"
                 onTriggered: composer.park(composer.selected)
             }
+            // A camera's layer: the camera let go, its layer with it.
+            Instantiator {
+                model: composer.slot && composer.slot.source.startsWith("camera:") ? 1 : 0
+                delegate: PopAction {
+                    risky: true
+                    text: "移除相机"
+                    onTriggered: composer.dropCamera()
+                }
+                onObjectAdded: (index, object) => layerMenu.addAction(object)
+                onObjectRemoved: (index, object) => layerMenu.removeAction(object)
+            }
+        }
+
+        // + 相机, at the foot of the stage at the picture's right where
+        // sources wait: a camera taken in waits there too. Listed only while
+        // the menu is open (listing wakes the camera stack).
+        TextButton {
+            id: cameraKey
+            z: 7
+            x: screen.x + screen.width * 1.05
+            y: screen.y + screen.height - height
+            flat: true
+            iconName: "plus"
+            text: "相机"
+            leftPadding: 6
+            rightPadding: 8
+            onClicked: cameraMenu.popup(cameraKey, 0, cameraKey.height + 2)
+            ToolTip.visible: hovered && !cameraMenu.visible
+            ToolTip.delay: 600
+            ToolTip.text: "加一个相机画面，放在画外，拖进画面里用"
+        }
+        PopMenu {
+            id: cameraMenu
+            implicitWidth: 240
+            Instantiator {
+                model: cameraMenu.visible ? (Cameras.list.length ? Cameras.list : [{ id: "", name: "没有找到相机" }]) : []
+                delegate: PopAction {
+                    required property var modelData
+                    readonly property bool taken: composer.cameraIds.indexOf(modelData.id) >= 0
+                    text: modelData.id ? modelData.name + (taken ? "（已加）" : "") : modelData.name
+                    enabled: !!modelData.id && !taken
+                    onTriggered: composer.addCamera(modelData.id)
+                }
+                onObjectAdded: (index, object) => cameraMenu.insertAction(index, object)
+                onObjectRemoved: (index, object) => cameraMenu.removeAction(object)
+            }
         }
         PopMenu {
             id: lineMenu
@@ -1168,69 +1280,55 @@ ColumnLayout {
             }
         }
 
-        // The layers by name and the keys for the chosen one, in one row on a
-        // plate (the chosen layer's corner, band and feather beside them);
-        // presses on the plate stay on it.
-        Rectangle {
+        // The chosen layer's keys, on a plate that pops up under it and goes
+        // where it goes (inside the picture's foot when there is no room
+        // under it, above the keys under the picture); its corner, band and
+        // feather on a second line when it has them. Presses stay on it.
+        Item {
             id: tools
-            z: 8
-            // Under the keys under the picture, below the sources parked at its right.
-            x: screen.x - 4
-            y: airRow.y + airRow.height + 6
-            width: Math.min(parent.width - x - 4, Math.max(screen.width + 8, 660) + (maskRow.visible ? maskRow.implicitWidth + 8 : 0))
-            height: toolColumn.implicitHeight + 4
-            radius: Theme.radius
-            color: Theme.raised
-            border.width: Theme.dark ? 1 : 0
-            border.color: Theme.line
+            z: 9
+            readonly property rect at: composer.slot ? hand.rectOf(composer.slot) : Qt.rect(0, 0, 0, 0)
+            readonly property real spread: 6
+            visible: !!composer.slot
+            width: toolColumn.implicitWidth + 12
+            height: toolColumn.implicitHeight + 8
+            x: Math.max(4, Math.min(box.width - composer.cover - width - 4, at.x + at.width / 2 - width / 2))
+            y: {
+                // Over the picture, the keys under it are not to be covered.
+                const floor = at.x < screen.x + screen.width ? airRow.y - 6 : box.height - 4
+                const below = at.y + at.height + 8
+                return below + height <= floor ? below : Math.max(4, Math.min(floor, at.y + at.height - 8) - height)
+            }
+            // A soft shadow, in layers that fade outwards.
+            Repeater {
+                model: 4
+                Rectangle {
+                    required property int index
+                    x: -(index + 1) * tools.spread / 4
+                    y: x + 1
+                    width: tools.width - 2 * x
+                    height: tools.height - 2 * x
+                    radius: Theme.radiusLg - x
+                    color: Qt.rgba(0, 0, 0, Theme.shadow.a / 6)
+                }
+            }
+            Rectangle {
+                anchors.fill: parent
+                radius: Theme.radiusLg
+                color: Theme.raised
+            }
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.AllButtons
                 onWheel: wheel => wheel.accepted = true
             }
-            RowLayout {
+            ColumnLayout {
                 id: toolColumn
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: 4
-                anchors.rightMargin: 4
-                spacing: 8
-                // —— The layers, and keys for the chosen one ——
+                anchors.centerIn: parent
+                spacing: 4
+                // —— The keys for the chosen layer ——
                 RowLayout {
-                    Layout.fillWidth: true
                     spacing: 2
-                    // Every layer by name, on the picture in ink, on the stage faint.
-                    Flickable {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: Theme.control
-                        contentWidth: chips.implicitWidth
-                        clip: true
-                        boundsBehavior: Flickable.StopAtBounds
-                        Row {
-                            id: chips
-                            spacing: 2
-                            height: parent.height
-                            Repeater {
-                                model: composer.slots.length
-                                TextButton {
-                                    required property int index
-                                    readonly property var s: composer.slots[index]
-                                    readonly property bool shown: Switcher.inPicture(s)
-                                    leftPadding: 8
-                                    rightPadding: 8
-                                    flat: index !== composer.selected
-                                    text: composer.sourceName(s.source)
-                                    font.weight: index === composer.selected ? Font.DemiBold : Font.Medium
-                                    opacity: shown ? 1 : 0.55
-                                    onClicked: composer.selected = index
-                                    ToolTip.visible: hovered
-                                    ToolTip.delay: 600
-                                    ToolTip.text: shown ? "在画面里" : "在画外，观众看不到"
-                                }
-                            }
-                        }
-                    }
                     // Small keys, a word each in its tip.
                     Repeater {
                         model: [
@@ -1249,20 +1347,15 @@ ColumnLayout {
                             { sep: true },
                             { icon: "arrow-up-to-line", tip: "置顶", act: () => Switcher.raiseSlot(composer.selected) },
                             { icon: "arrow-down-to-line", tip: "置底", act: () => Switcher.lowerSlot(composer.selected) },
-                            { icon: "arrow-right-to-line", tip: "移到画外（Delete）", act: () => composer.park(composer.selected) }
+                            { icon: "arrow-right-to-line", tip: "移到画外（Delete）", act: () => composer.park(composer.selected) },
+                            { icon: "x", tip: "移除这个相机（相机随即关掉）", camera: true, act: () => composer.dropCamera() }
                         ]
                         Item {
                             id: key
                             required property var modelData
-                            implicitWidth: modelData.sep ? 7 : 26
+                            visible: !modelData.camera || (!!composer.slot && composer.slot.source.startsWith("camera:"))
+                            implicitWidth: modelData.sep ? 10 : 26
                             implicitHeight: 26
-                            Rectangle {
-                                visible: !!key.modelData.sep
-                                anchors.centerIn: parent
-                                width: 1
-                                height: 14
-                                color: Theme.line
-                            }
                             IconButton {
                                 visible: !key.modelData.sep
                                 anchors.fill: parent

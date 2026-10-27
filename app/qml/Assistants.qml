@@ -15,7 +15,7 @@ Rectangle {
     id: root
     implicitHeight: column.implicitHeight + 20
     radius: Theme.radiusLg
-    color: Theme.inset
+    color: "transparent"
 
     // Smart following is on, and which helpers have handed their part back.
     property bool active: false

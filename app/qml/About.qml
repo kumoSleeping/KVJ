@@ -100,8 +100,6 @@ Popup {
             }
         }
 
-        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
-
         // Logs.
         ColumnLayout {
             Layout.fillWidth: true

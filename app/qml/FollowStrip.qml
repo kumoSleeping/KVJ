@@ -5,9 +5,8 @@ import QtQuick.Controls.impl
 import QtQuick.Layouts
 import KVJ
 
-// 音频对位, as a narrow card under the PGM monitor, between the board and the
-// effects. Top to bottom: its name and, at the corner, a light
-// (green while listening, red while not); following's own small picture
+// 音频对位, as a narrow column under the PGM monitor, at the window's right. Top to bottom: its name and a light with its word
+// (未监听 red; 监听中 / 跟随中 green); following's own small picture
 // (FollowMonitor; the card's tone until following has found the music); what
 // it found (the title, or the phase) and how fast it hears the music; the
 // input's level; 开始监听 (the ear), 跟随 / 暂停 (the ink key), 跳至此处 (the
@@ -15,9 +14,8 @@ import KVJ
 // device with more than two lists each pair), 现场模式, the Bluetooth DJs (a
 // key that shows while receiving or while one asks to pair) and 刷新; at the
 // foot the two helpers in full (Assistants): the speed and the jump threshold,
-// each paused or resumed on its own. The followed track is chosen on the track
-// headers (their ear); here it is named in the status line until following
-// has found the music.
+// each paused or resumed on its own. With two tracks, which one it listens
+// to is chosen under its name (监听 画面 1 | 画面 2), not while it runs.
 //
 // API
 //   app            the window (Main.qml's `app`): read following, match,
@@ -33,9 +31,10 @@ import KVJ
 //                  sound to follow
 //   rowHeight      no longer used (the card fills the row it stands in);
 //                  kept so a host that still sets it does not break
-//   followTrack    0..3, the track followed (kept under "follow/track"), set
-//                  from the track headers; a track that loses its sound gives
-//                  way to the main one, never while running
+//   tracks         the tracks shown (0, or 0 and 1): the ones it may follow
+//   followTrack    the track followed (kept under "follow/track"), chosen
+//                  here; a track that loses its sound or is no longer shown
+//                  gives way to the main one, never while running
 //   device         the chosen input (devices[deviceIndex]), deviceIndex
 //   channel        the first channel of the chosen pair (0, 2, …)
 //   roomMode       现场模式: on for a microphone, either way by hand
@@ -52,6 +51,7 @@ Card {
     property var entries: app ? app.entries : []
     property real rowHeight: 120
     property int followTrack: 0
+    property var tracks: [0]
     readonly property var devices: app ? app.devices : []
     // What the input key offers: each device once, or, with more than two
     // channels, once for each pair of them: { device (its index), channel
@@ -83,7 +83,7 @@ Card {
     readonly property bool following: !!app && app.following
     readonly property var match: app ? app.match : null
     // Tracks with something to hear: 0 the main one, 1..3 画面 2..4.
-    readonly property var audioTracks: [0, 1, 2, 3].filter(t => t === 0 || (entries || []).some(e => (e.track || 0) === t && !e.silent))
+    readonly property var audioTracks: (tracks || [0]).filter(t => t === 0 || (entries || []).some(e => (e.track || 0) === t && !e.silent))
     readonly property bool canStart: !running && !Engine.importing
                                      && (entries || []).some(e => (e.track || 0) === followTrack && e.enabled !== false && !e.silent)
     readonly property bool monitorVisible: following
@@ -121,10 +121,7 @@ Card {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.topMargin: Theme.pad
-        anchors.bottomMargin: Theme.pad
-        anchors.leftMargin: 12
-        anchors.rightMargin: 12
+        anchors.topMargin: 4
         spacing: 8
 
         // Its name; listening or not, at the corner: green while it listens,
@@ -136,18 +133,80 @@ Card {
                 Layout.fillWidth: true
                 text: "音频对位"
             }
+            // The light, with its word: green while listening, red while not.
             Rectangle {
-                Layout.alignment: Qt.AlignTop | Qt.AlignRight
-                Layout.topMargin: 2
-                implicitWidth: 8
-                implicitHeight: 8
-                radius: 4
-                color: root.following ? "#30a46c" : Theme.danger
-                Behavior on color { ColorAnimation { duration: Theme.quick } }
-                HoverHandler { id: lightHover }
-                ToolTip.visible: lightHover.hovered
-                ToolTip.delay: 400
-                ToolTip.text: root.following ? (root.app && root.app.followPaused ? "监听中（只监听）" : "监听中") : "未监听"
+                id: light
+                readonly property string word: !root.following ? "未监听"
+                                               : root.app && root.app.aiLeads ? "跟随中" : "监听中"
+                implicitWidth: lightRow.implicitWidth + 16
+                implicitHeight: 22
+                radius: 11
+                color: Theme.inset
+                Row {
+                    id: lightRow
+                    anchors.centerIn: parent
+                    spacing: 6
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 6
+                        height: 6
+                        radius: 3
+                        color: root.following ? "#30a46c" : Theme.danger
+                        Behavior on color { ColorAnimation { duration: Theme.quick } }
+                    }
+                    Text {
+                        text: light.word
+                        font.pixelSize: Theme.sizeXs
+                        font.weight: Font.Medium
+                        color: root.following ? Theme.text : Theme.muted
+                    }
+                }
+            }
+        }
+
+        // Which track it listens to, while there are two.
+        // Which track it listens to: a segmented plate, the one chosen raised.
+        RowLayout {
+            visible: (root.tracks || []).length > 1
+            Layout.fillWidth: true
+            spacing: 8
+            Caption { text: "监听" }
+            Rectangle {
+                Layout.fillWidth: true
+                implicitHeight: 28
+                radius: Theme.radius
+                color: Theme.inset
+                Row {
+                    id: trackKeys
+                    anchors.fill: parent
+                    anchors.margins: 2
+                    spacing: 2
+                    Repeater {
+                        model: root.tracks
+                        TextButton {
+                            required property int modelData
+                            readonly property bool on: root.followTrack === modelData
+                            readonly property bool heard: root.audioTracks.indexOf(modelData) >= 0
+                            width: (trackKeys.width - trackKeys.spacing * ((root.tracks || []).length - 1)) / Math.max(1, (root.tracks || []).length)
+                            height: 24
+                            leftPadding: 6
+                            rightPadding: 6
+                            background: Rectangle {
+                                radius: Theme.radius - 1
+                                color: parent.on ? Theme.raised : parent.hovered && parent.enabled ? Theme.hover : "transparent"
+                            }
+                            font.weight: on ? Font.DemiBold : Font.Medium
+                            text: root.trackName(modelData)
+                            enabled: on || (!root.running && heard)
+                            onClicked: root.followTrack = modelData
+                            ToolTip.visible: hovered
+                            ToolTip.delay: 600
+                            ToolTip.text: root.running && !on ? "先停止监听再换"
+                                          : !heard ? root.trackName(modelData) + " 上还没有带声音的素材"
+                                          : "音频对位听" + root.trackName(modelData) + "的声音"
+                        }
+                    }
+                }
             }
         }
 
@@ -179,12 +238,22 @@ Card {
                 height: parent.height - 3
                 radius: Theme.radius
                 color: Theme.inset
-                ColorImage {
+                Column {
                     anchors.centerIn: parent
                     visible: !root.following
-                    source: "icons/ear.svg"
-                    sourceSize: Qt.size(22, 22)
-                    color: Theme.faint
+                    spacing: 8
+                    ColorImage {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        source: "icons/ear.svg"
+                        sourceSize: Qt.size(20, 20)
+                        color: Theme.faint
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "监听后，这里显示对上的画面"
+                        font.pixelSize: Theme.sizeXs
+                        color: Theme.faint
+                    }
                 }
                 Text {
                     anchors.centerIn: parent
@@ -237,7 +306,7 @@ Card {
                                   : root.match ? (root.app.followPaused ? "只监听" : "跟随中") + " · " + root.match.entry.title + " · "
                                                  + root.app.clock(root.match.position, true) + " · " + root.trackName(root.followTrack)
                                   : (root.following ? root.app.phaseText(root.app.phase) + " · " : "") + "跟随" + root.trackName(root.followTrack)
-                                    + "（在轨道头上点耳朵换）"
+
                 }
                 Text {
                     visible: !!root.match
@@ -248,11 +317,13 @@ Card {
                 }
             }
             // The input's level, of the chosen channels.
+            // The input's level, while listening (its room kept, so nothing moves).
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 3
                 radius: 1.5
-                color: Theme.line
+                color: Theme.inset
+                opacity: root.following ? 1 : 0
                 Rectangle {
                     readonly property real db: root.following && root.view.input && root.view.input.rms_dbfs !== null ? root.view.input.rms_dbfs : -70
                     width: parent.width * Math.max(0, Math.min(1, (db + 70) / 70))
@@ -268,24 +339,28 @@ Card {
         RowLayout {
             Layout.fillWidth: true
             spacing: 2
-            IconButton {
-                implicitWidth: 28
+            TextButton {
                 implicitHeight: 28
+                leftPadding: 8
+                rightPadding: 10
                 iconName: root.following ? "square" : "ear"
-                active: root.following
-                tip: root.following ? "停止监听" : "开始监听：听音乐、判断位置，画面仍归播放器"
+                text: root.following ? "停止" : "监听"
+                widest: "监听"
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: root.following ? "停止监听" : "开始监听：听音乐、判断位置，画面仍归播放器"
                 enabled: root.following || root.canStart
                 onClicked: root.following ? Engine.stop() : root.app.listen()
             }
             // The one ink key: follow, or pause following.
             TextButton {
-                implicitWidth: 28
                 implicitHeight: 28
-                leftPadding: 0
-                rightPadding: 0
+                leftPadding: 8
+                rightPadding: 10
                 primary: true
-                display: AbstractButton.IconOnly
                 iconName: root.app && root.app.aiLeads ? "pause" : "play"
+                text: root.app && root.app.aiLeads ? "暂停" : "跟随"
+                widest: "跟随"
                 enabled: root.following || root.canStart
                 onClicked: {
                     if (root.app.aiLeads)
@@ -446,9 +521,7 @@ Card {
         background: Rectangle {
             radius: Theme.radius - 2
             color: chip.on ? (chip.enabled ? Theme.text : Theme.faint)
-                           : chip.down ? Theme.selected : chip.hovered && chip.enabled ? Theme.hover : "transparent"
-            border.width: chip.on ? 0 : 1
-            border.color: Theme.line
+                           : chip.down ? Theme.selected : chip.hovered && chip.enabled ? Theme.hover : Theme.inset
             Behavior on color { ColorAnimation { duration: 90 } }
             Rectangle {
                 visible: chip.warn

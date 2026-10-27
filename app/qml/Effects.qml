@@ -8,9 +8,12 @@ import KVJ
 // The effects' card, one column from top to bottom, as a mixer's EQ: each
 // effect a row with its number key, its name (a press turns it on at the
 // strength it looks best at, or off) and a round knob that fine-tunes it. The
-// rows' order, top to bottom, is the order they apply.
+// rows' order, top to bottom, is the order they apply. `bare`: a page of the
+// board's panel, without room of its own round it.
 Card {
     id: card
+
+    property bool bare: false
 
     // Editing shows each row's grip to change the order, and the key that
     // forgets kept strengths.
@@ -22,9 +25,9 @@ Card {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: Theme.pad
-        anchors.leftMargin: 10
-        anchors.rightMargin: 10
+        anchors.margins: card.bare ? 0 : Theme.pad
+        anchors.leftMargin: card.bare ? 0 : 10
+        anchors.rightMargin: card.bare ? 0 : 10
         spacing: 6
 
         RowLayout {

@@ -27,8 +27,9 @@ Item {
         running: !stage.lite && stage.moving
         onTriggered: stage.now = Date.now()
     }
+    // Smoother while a dissolve lasts, so it reads as one.
     Timer {
-        interval: 83
+        interval: Switcher.fading ? 33 : 83
         repeat: true
         running: stage.lite && stage.moving
         onTriggered: stage.now = Date.now()

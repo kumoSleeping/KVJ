@@ -10,7 +10,18 @@ Button {
     property string iconName
     property bool primary: false
     property bool outlined: false
+    // The widest text this key ever shows: it keeps that width whatever it
+    // says now, so the keys beside it never move.
+    property string widest: ""
     readonly property color contentColor: !enabled ? Theme.faint : primary ? Theme.bg : Theme.text
+    implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
+                            Math.max(implicitContentWidth, widest ? (iconName ? icon.width + spacing : 0) + Math.ceil(wideText.advanceWidth) + 1 : 0)
+                            + leftPadding + rightPadding)
+    TextMetrics {
+        id: wideText
+        font: control.font
+        text: control.widest
+    }
     implicitHeight: Theme.control
     leftPadding: iconName ? 10 : 12
     rightPadding: 12
