@@ -32,6 +32,17 @@ Window {
     property var auxTimings: [null, null, null]
     // Cameras taken in as sources, by device id.
     property var cameraIds: []
+    // What each camera says is wrong, by device id ("" while it shows).
+    readonly property var cameraErrors: {
+        root.sourceRevision
+        const out = {}
+        for (let i = 0; i < cameraBank.count; ++i) {
+            const c = cameraBank.itemAt(i)
+            if (c)
+                out[c.deviceId] = c.error
+        }
+        return out
+    }
     // Sources the operator's window shows besides those on the air: decoded
     // too while it is up.
     property var wantedIds: []
@@ -187,11 +198,14 @@ Window {
             model: cameraList.model
             onItemAdded: root.sourceRevision += 1
             onItemRemoved: root.sourceRevision += 1
+            // A camera taken in runs until it is let go, here or not, on the
+            // air or not: starting and stopping one holds up the picture.
+            // It only converts its frames while something shows them.
             CameraSurface {
                 required property string key
                 anchors.fill: parent
                 deviceId: key
-                active: (root.visible || root.previewing) && root.wants("camera:" + key)
+                active: true
             }
         }
         Rectangle {
