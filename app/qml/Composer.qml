@@ -138,11 +138,10 @@ ColumnLayout {
         }
     }
 
-    // The quick cut (a track's 投放): `id` alone, filling the picture, on the
-    // air with the dissolve set here; the rest goes off the picture.
+    // The quick cut (a track's 投放): `id`'s layer floated to the top as it is
+    // sized, on the air with the dissolve set here.
     function takeLive(id) {
         Qt.callLater(stackSources)
-        selected = -1
         Switcher.take(id, id => ratio(id), aspect)
     }
 

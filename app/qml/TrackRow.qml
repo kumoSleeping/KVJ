@@ -84,7 +84,8 @@ Item {
     readonly property int overviewHeight: 20
     readonly property int rulerHeight: 16
     // The audience sees this track and nothing else.
-    readonly property bool onAirAlone: onAir && view.onAir.length === 1
+    // Its layer is the top one the audience sees (what its 投放 does).
+    readonly property bool onTop: view.onTop === key
 
     // —— The row's view: pixels a second (0 = all of it fits) and the second at the left edge ——
     property real zoom: 0
@@ -512,22 +513,21 @@ Item {
                                        : "播完即停：放完这条轨道的最后一个素材后停在最后一帧；点一下改为循环播放"
             }
             Item { Layout.preferredWidth: 4 }
-            // 快切: this track alone, filling the picture, to the audience
-            // with the board's dissolve; whatever else was on the picture
-            // goes off it (to the stage at its right).
+            // 快切: this track's layer floated to the top, to the audience with
+            // the board's dissolve, as it is sized; the others stay under it.
             TextButton {
                 implicitHeight: 22
                 leftPadding: 8
                 rightPadding: 10
-                outlined: !row.onAirAlone
-                primary: row.onAirAlone
+                outlined: !row.onTop
+                primary: row.onTop
                 font.pixelSize: Theme.sizeXs
                 iconName: "cast"
                 text: "投放" + row.name
                 onClicked: row.view.takeLive(row.key)
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "快切（" + (row.track === 0 ? "[" : "]") + "）：清掉画面上的其它画面，" + row.name + " 铺满整个画面投给观众（用画板的渐变设置）"
+                ToolTip.text: "快切（" + (row.track === 0 ? "[" : "]") + "）：" + row.name + " 浮到最上层投给观众，保留它在画板上的大小和位置（在画外时铺满画面）；其它画面留在下面。用画板的渐变设置"
             }
         }
         // In the middle of the keys line: play, the cursor and the keys that
@@ -586,9 +586,9 @@ Item {
                 ToolTip.delay: 600
                 ToolTip.text: "从光标处播放" + row.name + "（快捷键开着时，选中的轨道也可按回车）"
             }
-            // The track on the air alone, and played from its cursor: from 画面 2
-            // on the air straight to 画面 1 where its cursor was just put.
-            // Dim while the track is the picture already (跳至 does it).
+            // The track floated to the top on the air, and played from its
+            // cursor: from 画面 2 on top straight to 画面 1 where its cursor
+            // was just put.
             TextButton {
                 anchors.verticalCenter: parent.verticalCenter
                 implicitHeight: 20
@@ -597,7 +597,7 @@ Item {
                 outlined: true
                 font.pixelSize: 11
                 text: "投放并跳至"
-                enabled: row.canJump && !row.onAirAlone
+                enabled: row.canJump
                 onClicked: {
                     row.view.activate(row.key)
                     row.view.takeLive(row.key)
@@ -605,7 +605,7 @@ Item {
                 }
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "把" + row.name + "投给观众（快切）并从光标处播放（选中的轨道也可按 " + (Qt.platform.os === "osx" ? "⌘" : "Ctrl+") + "回车）"
+                ToolTip.text: "把" + row.name + "浮到最上层投给观众（快切）并从光标处播放（选中的轨道也可按 " + (Qt.platform.os === "osx" ? "⌘" : "Ctrl+") + "回车）"
             }
         }
 

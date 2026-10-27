@@ -74,6 +74,11 @@ Rectangle {
     readonly property var mainSpec: rows.find(r => r.kind !== "camera" && (r.track || 0) === 0) || null
     readonly property var mainEntries: mainSpec ? (mainSpec.entries || []).filter(e => (e.track || 0) === 0) : []
     readonly property var onAir: Switcher.shownSourcesOf(Switcher.program)
+    // The source whose layer is topmost on the air.
+    readonly property string onTop: {
+        const shown = Switcher.program.slots.filter(s => Switcher.inPicture(s))
+        return shown.length ? shown.reduce((a, b) => b.z >= a.z ? b : a).source : ""
+    }
     readonly property var inPreview: Switcher.shownSourcesOf(Switcher.preview)
 
     readonly property bool manual: !!player && player.manual

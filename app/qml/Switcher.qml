@@ -310,23 +310,21 @@ QtObject {
         preview = next
     }
 
-    // The quick cut: source `id` alone on the picture, filling it plainly
-    // (whole, no round corners or split lines), every other layer that
-    // reached into the picture parked at its right, and that on the air at
-    // once with the dissolve (`fadeMs`; 0 cuts), in either mode. The stickers
-    // are left as they are.
+    // The quick cut: source `id`'s layer floated over every other, as it was
+    // placed and sized (one waiting off the picture comes in filling it), and
+    // that on the air at once with the dissolve (`fadeMs`; 0 cuts), in
+    // either mode. The other layers stay where they are, under it; the
+    // stickers are left as they are.
     property bool taking: false
     function take(id, ratio, aspect) {
         const next = copy(preview)
         const at = next.slots.findIndex(s => s.source === id)
         if (at < 0)
             return
-        const top = next.slots.reduce((z, s) => Math.max(z, s.z + 1), 0)
-        const mine = slot({ source: id, x: 0, y: 0, w: 1, h: 1, z: top, fit: "contain" }, top)
-        const rest = next.slots.filter((s, i) => i !== at)
-        next.slots = rest.filter(s => !inPicture(s)).concat([mine])
-        for (const s of rest.filter(s => inPicture(s)))
-            next.slots.push(slot(Object.assign({}, s, parking(next, ratio(s.source), aspect)), s.z))
+        const top = next.slots.reduce((z, s, i) => i === at ? z : Math.max(z, s.z + 1), 0)
+        const s = next.slots[at]
+        next.slots[at] = inPicture(s) ? slot(Object.assign({}, s, { z: top }), top)
+                                      : slot({ source: id, x: 0, y: 0, w: 1, h: 1, z: top, fit: "contain" }, top)
         const ms = fadeMs > 0 ? fadeMs : 0
         taking = true
         preview = next
