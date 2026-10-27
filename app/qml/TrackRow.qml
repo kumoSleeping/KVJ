@@ -401,27 +401,9 @@ Item {
                     ToolTip.text: row.name + (row.onAir ? "（观众正看到）" : "") + " · 点一下在画板上选中 · 右键：清空轨道"
                 }
             }
-            Item { Layout.preferredWidth: 2 }
-
-            // Play / pause: a round key, ink while it plays.
-            IconButton {
-                id: playKey
-                implicitWidth: 28
-                implicitHeight: 28
-                iconSize: 15
-                iconName: row.playing ? "pause" : "play"
-                enabled: row.canPlay
-                icon.color: !enabled ? Theme.faint : row.playing ? Theme.bg : Theme.text
-                background: Rectangle {
-                    radius: 14
-                    color: row.playing ? (playKey.hovered ? Theme.body : Theme.text)
-                         : playKey.down ? Theme.selected : playKey.hovered && playKey.enabled ? Theme.hover : Theme.inset
-                    Behavior on color { ColorAnimation { duration: 90 } }
-                }
-                tip: (row.playing ? "暂停" : "播放") + row.name
-                onClicked: row.togglePlay()
-            }
+            Item { Layout.preferredWidth: 6 }
             Text {
+                id: timeText
                 Layout.preferredWidth: 104
                 text: row.playClip ? (row.clips.length > 1 ? row.playClip.n + " · " : "")
                                      + row.view.clock(row.position, true) + " / " + row.view.clock(row.playClip.entry.duration, false)
@@ -431,54 +413,10 @@ Item {
                 color: row.canSeek ? Theme.body : Theme.muted
                 elide: Text.ElideRight
             }
-            // The cursor and the key that plays from it (Enter, on the active row).
-            Text {
-                Layout.preferredWidth: 86
-                text: row.markClip ? "光标 " + (row.clips.length > 1 ? row.markClip.n + " · " : "") + row.view.clock(row.markAt, true) : "光标 —"
-                font.pixelSize: Theme.sizeXs
-                font.features: { "tnum": 1 }
-                color: row.markClip ? (row.active ? Theme.text : Theme.muted) : Theme.faint
-                elide: Text.ElideRight
-            }
-            TextButton {
-                implicitHeight: 20
-                leftPadding: 6
-                rightPadding: 6
-                outlined: true
-                font.pixelSize: 11
-                text: "跳至"
-                enabled: row.canJump
-                onClicked: {
-                    row.view.activate(row.key)
-                    row.jump()
-                }
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "从光标处播放" + row.name + "（快捷键开着时，选中的轨道也可按回车）"
-            }
-            // The track on the air alone, and played from its cursor: from 画面 2
-            // on the air straight to 画面 1 where its cursor was just put.
-            // Dim while the track is the picture already (跳至 does it).
-            TextButton {
-                implicitHeight: 20
-                leftPadding: 6
-                rightPadding: 6
-                outlined: true
-                font.pixelSize: 11
-                text: "投放并跳至"
-                enabled: row.canJump && !row.onAirAlone
-                onClicked: {
-                    row.view.activate(row.key)
-                    row.view.takeLive(row.key)
-                    row.jump()
-                }
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "把" + row.name + "投给观众（快切）并从光标处播放（选中的轨道也可按 " + (Qt.platform.os === "osx" ? "⌘" : "Ctrl+") + "回车）"
-            }
             Item { Layout.fillWidth: true }
             // The speed: a percent a key, the bar, 复原 (or a double-click on the readout).
             IconButton {
+                id: speedDown
                 implicitWidth: 22
                 implicitHeight: 22
                 iconSize: 12
@@ -592,6 +530,85 @@ Item {
                 ToolTip.text: "快切（" + (row.track === 0 ? "[" : "]") + "）：清掉画面上的其它画面，" + row.name + " 铺满整个画面投给观众（用画板的渐变设置）"
             }
         }
+        // In the middle of the keys line: play, the cursor and the keys that
+        // play from it. Centred on the row, kept clear of the keys at either side.
+        Row {
+            id: middle
+            visible: !row.camera
+            readonly property real leftEnd: timeText.x + timeText.width + 12
+            readonly property real rightStart: speedDown.x - 12
+            x: Math.max(leftEnd, Math.min((bar.width - width) / 2, rightStart - width))
+            height: row.barHeight
+            spacing: 6
+            // Play / pause: a round key, ink while it plays.
+            IconButton {
+                anchors.verticalCenter: parent.verticalCenter
+                id: playKey
+                implicitWidth: 28
+                implicitHeight: 28
+                iconSize: 15
+                iconName: row.playing ? "pause" : "play"
+                enabled: row.canPlay
+                icon.color: !enabled ? Theme.faint : row.playing ? Theme.bg : Theme.text
+                background: Rectangle {
+                    radius: 14
+                    color: row.playing ? (playKey.hovered ? Theme.body : Theme.text)
+                         : playKey.down ? Theme.selected : playKey.hovered && playKey.enabled ? Theme.hover : Theme.inset
+                    Behavior on color { ColorAnimation { duration: 90 } }
+                }
+                tip: (row.playing ? "暂停" : "播放") + row.name
+                onClicked: row.togglePlay()
+            }
+            // The cursor and the key that plays from it (Enter, on the active row).
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 86
+                text: row.markClip ? "光标 " + (row.clips.length > 1 ? row.markClip.n + " · " : "") + row.view.clock(row.markAt, true) : "光标 —"
+                font.pixelSize: Theme.sizeXs
+                font.features: { "tnum": 1 }
+                color: row.markClip ? (row.active ? Theme.text : Theme.muted) : Theme.faint
+                elide: Text.ElideRight
+            }
+            TextButton {
+                anchors.verticalCenter: parent.verticalCenter
+                implicitHeight: 20
+                leftPadding: 6
+                rightPadding: 6
+                outlined: true
+                font.pixelSize: 11
+                text: "跳至"
+                enabled: row.canJump
+                onClicked: {
+                    row.view.activate(row.key)
+                    row.jump()
+                }
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: "从光标处播放" + row.name + "（快捷键开着时，选中的轨道也可按回车）"
+            }
+            // The track on the air alone, and played from its cursor: from 画面 2
+            // on the air straight to 画面 1 where its cursor was just put.
+            // Dim while the track is the picture already (跳至 does it).
+            TextButton {
+                anchors.verticalCenter: parent.verticalCenter
+                implicitHeight: 20
+                leftPadding: 6
+                rightPadding: 6
+                outlined: true
+                font.pixelSize: 11
+                text: "投放并跳至"
+                enabled: row.canJump && !row.onAirAlone
+                onClicked: {
+                    row.view.activate(row.key)
+                    row.view.takeLive(row.key)
+                    row.jump()
+                }
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: "把" + row.name + "投给观众（快切）并从光标处播放（选中的轨道也可按 " + (Qt.platform.os === "osx" ? "⌘" : "Ctrl+") + "回车）"
+            }
+        }
+
 
         // The row's whole length at a glance: where its picture is, a
         // notch where one entry meets the next, its cursor as a hollow

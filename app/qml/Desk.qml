@@ -71,14 +71,19 @@ Item {
     function heightText(h) {
         return h > 0 ? h + "p" : "原始"
     }
-    // The picture's own sound (AudioFollower): whether it plays, on which output
-    // (an id from its devices, empty for the system's default) and how loud.
+    // The tracks' own sound (an AudioFollower each): whether each plays and
+    // how loud, on one output (an id from their devices, empty for the
+    // system's default). Both on, the same videos make a cue mix.
     property var sound: null
+    property var sound2: null
     property bool soundOn: false
+    property bool soundOn2: false
+    readonly property bool anySound: soundOn || soundOn2
     property string soundDevice: ""
     property real soundVolume: 0.8
-    // Whose sound: 画面 1 (0) or 画面 2 (1).
-    property int soundTrack: 0
+    property real soundVolume2: 0.8
+    readonly property string soundError: soundOn && sound && sound.error ? sound.error
+                                       : soundOn2 && sound2 && sound2.error ? sound2.error : ""
 
     // The picture's shape, the projection's (Projection.aspect): the monitors,
     // the stickers and the danmaku lanes all take it.
@@ -92,7 +97,8 @@ Item {
         property alias sound: desk.soundOn
         property alias soundDevice: desk.soundDevice
         property alias soundVolume: desk.soundVolume
-        property alias soundTrack: desk.soundTrack
+        property alias sound2: desk.soundOn2
+        property alias soundVolume2: desk.soundVolume2
     }
     // The shape the projection will have before it opens: the chosen screen's
     // when it fills it, else its 16:9 window.
@@ -255,45 +261,37 @@ Item {
         }
         contentItem: ColumnLayout {
             spacing: 8
-            // The picture's sound, off by default (the room hears the DJ), on an
-            // output of its own: headphones to listen in, or the speakers. Where
-            // and how loud can be set before it is turned on.
-            Toggle {
-                text: "播放声音"
-                checked: desk.soundOn
-                onToggled: desk.soundOn = checked
-            }
-            // Which track is heard: one track's sound, never the mix.
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-                Caption { text: "播放" }
-                Rectangle {
+            // Each track's sound, off by default (the room hears the DJ), on
+            // an output of its own: headphones to listen in, or the speakers.
+            // Both on, they mix there (a cue mix of the same videos). How loud
+            // and where can be set before it is turned on.
+            Repeater {
+                model: [{ name: "画面 1", on: desk.soundOn, volume: desk.soundVolume },
+                        { name: "画面 2", on: desk.soundOn2, volume: desk.soundVolume2 }]
+                RowLayout {
+                    required property var modelData
+                    required property int index
                     Layout.fillWidth: true
-                    implicitHeight: 28
-                    radius: Theme.radius
-                    color: Theme.inset
-                    Row {
-                        id: soundTracks
-                        anchors.fill: parent
-                        anchors.margins: 2
-                        spacing: 2
-                        Repeater {
-                            model: [0, 1]
-                            TextButton {
-                                required property int modelData
-                                readonly property bool on: desk.soundTrack === modelData
-                                width: (soundTracks.width - soundTracks.spacing) / 2
-                                height: 24
-                                text: "画面 " + (modelData + 1) + " 的声音"
-                                font.weight: on ? Font.DemiBold : Font.Medium
-                                background: Rectangle {
-                                    radius: Theme.radius - 1
-                                    color: parent.on ? Theme.raised : parent.hovered ? Theme.hover : "transparent"
-                                }
-                                onClicked: desk.soundTrack = modelData
-                            }
-                        }
+                    spacing: 8
+                    Toggle {
+                        text: parent.modelData.name
+                        checked: parent.modelData.on
+                        onToggled: parent.index === 0 ? desk.soundOn = checked : desk.soundOn2 = checked
+                    }
+                    Seek {
+                        Layout.fillWidth: true
+                        from: 0
+                        to: 1
+                        value: parent.modelData.volume
+                        onMoved: parent.index === 0 ? desk.soundVolume = value : desk.soundVolume2 = value
+                    }
+                    Text {
+                        Layout.preferredWidth: 34
+                        horizontalAlignment: Text.AlignRight
+                        text: Math.round(parent.modelData.volume * 100) + "%"
+                        font.pixelSize: Theme.sizeSm
+                        font.features: { "tnum": 1 }
+                        color: parent.modelData.on ? Theme.body : Theme.faint
                     }
                 }
             }
@@ -305,30 +303,10 @@ Item {
                 currentIndex: outputs.findIndex(d => d.id === desk.soundDevice) + 1
                 onActivated: index => desk.soundDevice = index > 0 ? outputs[index - 1].id : ""
             }
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-                Caption { text: "音量" }
-                Seek {
-                    Layout.fillWidth: true
-                    from: 0
-                    to: 1
-                    value: desk.soundVolume
-                    onMoved: desk.soundVolume = value
-                }
-                Text {
-                    Layout.preferredWidth: 34
-                    horizontalAlignment: Text.AlignRight
-                    text: Math.round(desk.soundVolume * 100) + "%"
-                    font.pixelSize: Theme.sizeSm
-                    font.features: { "tnum": 1 }
-                    color: Theme.body
-                }
-            }
             Text {
                 Layout.fillWidth: true
-                visible: desk.soundOn && !!desk.sound && desk.sound.error.length > 0
-                text: desk.sound ? desk.sound.error : ""
+                visible: desk.soundError.length > 0
+                text: desk.soundError
                 font.pixelSize: Theme.sizeXs
                 color: Theme.warn
                 elide: Text.ElideRight

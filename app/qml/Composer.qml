@@ -147,6 +147,16 @@ ColumnLayout {
     }
 
     // —— Layer keys ——
+    // Larger or smaller by `factor`, about its middle.
+    function scaleLayer(i, factor) {
+        if (i < 0 || i >= slots.length)
+            return
+        const s = slots[i]
+        // Its shape kept, never below a fiftieth of the picture.
+        const k = Math.max(factor, 0.02 / Math.min(s.w, s.h))
+        const w = s.w * k, h = s.h * k
+        Switcher.updateSlot(i, { x: s.x + (s.w - w) / 2, y: s.y + (s.h - h) / 2, w: w, h: h })
+    }
     function fill(i) {
         Switcher.updateSlot(i, { x: 0, y: 0, w: 1, h: 1 })
     }
@@ -371,15 +381,23 @@ ColumnLayout {
             y: roomTop
             color: "black"
         }
-        Compositor {
-            id: layers
-            x: screen.x
-            y: screen.y
-            width: screen.width
-            height: screen.height
-            layout: Switcher.preview
-            textures: composer.textures
-            operator: true
+        // What lies off the picture, on the stage at its right and in the
+        // margins round it, never below the picture's foot: a layer made
+        // larger than the picture does not cover the keys under it.
+        Item {
+            width: box.width
+            height: screen.y + screen.height
+            clip: true
+            Compositor {
+                id: layers
+                x: screen.x
+                y: screen.y
+                width: screen.width
+                height: screen.height
+                layout: Switcher.preview
+                textures: composer.textures
+                operator: true
+            }
         }
         // The picture itself as the audience will see it: the layers inside
         // it through the effects, with the words and reactions on the air.
@@ -426,6 +444,17 @@ ColumnLayout {
                     operator: true
                 }
             }
+        }
+        // The keys under the picture on the board's own ground: a layer
+        // reaching down past the picture never makes them hard to read.
+        Rectangle {
+            z: 7
+            x: airRow.x - 6
+            y: airRow.y - 4
+            width: airRow.width + 12
+            height: airRow.height + 8
+            radius: Theme.radius
+            color: Theme.bg
         }
         // —— Right under the picture: the mode, and the keys that put it on the air ——
         RowLayout {
@@ -521,17 +550,20 @@ ColumnLayout {
                 id: soundKey
                 readonly property var out: composer.output
                 outlined: true
-                iconName: out && out.soundOn ? "volume-2" : "volume-x"
-                text: out && out.soundOn ? "画面 " + (out.soundTrack + 1) + " · " + Math.round(out.soundVolume * 100) + "%" : "声音关"
+                iconName: out && out.anySound ? "volume-2" : "volume-x"
+                text: !out || !out.anySound ? "声音关"
+                      : out.soundOn && out.soundOn2 ? "画面 1+2"
+                      : out.soundOn ? "画面 1 · " + Math.round(out.soundVolume * 100) + "%"
+                      : "画面 2 · " + Math.round(out.soundVolume2 * 100) + "%"
                 widest: "画面 2 · 100%"
                 leftPadding: 8
                 rightPadding: 10
                 onClicked: out.openSound(soundKey)
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "播放一条轨道的声音（画面 1 或画面 2）：开关、哪条轨道、输出设备、音量"
+                ToolTip.text: "轨道的声音：画面 1、画面 2 各自开关和音量，可同时开（cue mix），输出设备"
                 Rectangle {
-                    visible: !!soundKey.out && soundKey.out.soundOn && !!soundKey.out.sound && soundKey.out.sound.error.length > 0
+                    visible: !!soundKey.out && soundKey.out.soundError.length > 0
                     x: parent.width - 9
                     y: 3
                     width: 7
@@ -860,7 +892,10 @@ ColumnLayout {
         // —— Over the layers: their edges, the chosen one's handles and lines ——
         Item {
             id: ink
-            anchors.fill: parent
+            width: parent.width
+            // As the layers: nothing over the keys under the picture.
+            height: screen.y + screen.height + 6
+            clip: true
 
             Repeater {
                 model: composer.slots.length
@@ -1222,7 +1257,7 @@ ColumnLayout {
             z: 7
             x: screen.x + screen.width * 1.05
             y: screen.y + screen.height - height
-            flat: true
+            // On a plate: a layer reaching over here does not hide it.
             iconName: "plus"
             text: "相机"
             leftPadding: 6
@@ -1334,6 +1369,8 @@ ColumnLayout {
                         model: [
                             { icon: "maximize", tip: "铺满画面（双击画面也可）", act: () => composer.fill(composer.selected) },
                             { icon: "proportions", tip: "恢复画面本身的比例", act: () => composer.trueShape(composer.selected) },
+                            { icon: "minus", tip: "缩小（以中心，按住连续）", repeat: true, act: () => composer.scaleLayer(composer.selected, 1 / 1.08) },
+                            { icon: "plus", tip: "放大（以中心，按住连续）", repeat: true, act: () => composer.scaleLayer(composer.selected, 1.08) },
                             { icon: "fit-contain", tip: "完整显示（留边）", fit: "contain", act: () => Switcher.updateSlot(composer.selected, { fit: "contain" }) },
                             { icon: "crop", tip: "裁切填满", fit: "cover", act: () => Switcher.updateSlot(composer.selected, { fit: "cover" }) },
                             { sep: true },
@@ -1367,6 +1404,7 @@ ColumnLayout {
                                 active: !!composer.slot && (key.modelData.fit ? composer.slot.fit === key.modelData.fit
                                                             : key.modelData.shape ? composer.slot.mask.shape === key.modelData.shape : false)
                                         || (!!key.modelData.toggle && composer.straight)
+                                autoRepeat: !!key.modelData.repeat
                                 onClicked: key.modelData.act()
                             }
                         }

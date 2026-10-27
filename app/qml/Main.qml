@@ -528,23 +528,35 @@ ApplicationWindow {
     // is placed on a track (it is then on, and followed if the track is).
     function placeOn(ids, track) {
         for (const set of app.sets) {
-            let mine = ids.filter(id => set.entries.some(e => e.id === id))
-            const moved = mine.filter(id => set.entries.some(e => e.id === id && (e.track || 0) !== track))
-            // Moving between tracks is an edit, refused while following runs;
-            // turning on works during the show.
-            if (moved.length && app.editable)
-                Engine.setTrack(set.id, moved, track)
-            else if (moved.length)
-                mine = mine.filter(id => moved.indexOf(id) < 0)
-            const off = mine.filter(id => set.entries.some(e => e.id === id && e.enabled === false))
+            const mine = ids.filter(id => set.entries.some(e => e.id === id))
+            if (!mine.length)
+                continue
+            // An edit, after what is on the track, in the order dropped (one
+            // placed on the other track gets a copy here: the same video may
+            // play on both).
+            if (app.editable) {
+                Engine.placeEntries(set.id, mine, track)
+                continue
+            }
+            // While following runs only turning on works: those of this track.
+            const off = mine.filter(id => set.entries.some(e => e.id === id && (e.track || 0) === track && e.enabled === false))
             if (off.length)
                 Engine.enableEntries(set.id, off, true)
-            // Placed after what is on the track already, in the order dropped:
-            // dropped again on its own track, an entry goes to its end.
-            if (app.editable)
-                for (const id of mine)
-                    Engine.moveEntry(set.id, id)
         }
+    }
+    // Entries off their track, back to the library: a copy (the same file
+    // also elsewhere in the library) goes, once editing is allowed.
+    function takeOffTrack(set, ids) {
+        const twin = id => {
+            const e = set.entries.find(e => e.id === id)
+            return !!e && set.entries.some(o => o.id !== id && o.path === e.path)
+        }
+        const copies = app.editable ? ids.filter(twin) : []
+        for (const id of copies)
+            Engine.removeEntry(set.id, id)
+        const rest = ids.filter(id => copies.indexOf(id) < 0)
+        if (rest.length)
+            Engine.enableEntries(set.id, rest, false)
     }
     // Dropped from the drawer (or the Finder) onto a track: what was on it
     // goes back to the library and the drop takes its place, as a record put
@@ -555,7 +567,7 @@ ApplicationWindow {
             return app.placeOn(ids, track)
         const gone = app.placedOn(track).map(e => e.id).filter(id => ids.indexOf(id) < 0)
         if (gone.length && app.currentSet)
-            Engine.enableEntries(app.currentSet.id, gone, false)
+            app.takeOffTrack(app.currentSet, gone)
         app.placeOn(ids, track)
     }
     function replaceWithFiles(urls, track) {
@@ -563,14 +575,14 @@ ApplicationWindow {
             return
         const gone = app.placedOn(track).map(e => e.id)
         if (gone.length && app.currentSet)
-            Engine.enableEntries(app.currentSet.id, gone, false)
+            app.takeOffTrack(app.currentSet, gone)
         app.addUrls(urls, track)
     }
     // Back to the library only.
     function takeOff(id) {
         for (const set of app.sets)
             if (set.entries.some(e => e.id === id))
-                Engine.enableEntries(set.id, [id], false)
+                app.takeOffTrack(set, [id])
     }
     // A track's entries on the timeline (placed).
     function placedOn(track) {
@@ -753,24 +765,32 @@ ApplicationWindow {
             return
         const placed = app.placedOn(t).map(e => e.id)
         if (placed.length)
-            Engine.enableEntries(app.currentSet.id, placed, false)
+            app.takeOffTrack(app.currentSet, placed)
     }
-    // The sound of one track (desk.soundTrack), on that track's timing: the
-    // picture is a mix, the sound is not.
-    readonly property var soundTiming: desk.soundTrack > 0 ? app.auxTiming(desk.soundTrack)
-                                     : { entry: app.shownEntry, position: projection.position, rate: projection.rate,
-                                         clockAtMs: projection.clockAtMs, offsetMs: projection.offsetMs }
+    // Each track's sound on its own timing (desk.soundOn / soundOn2): the
+    // picture is a mix, the sound is chosen per track; both on, one mix.
     AudioFollower {
         id: sound
-        readonly property var entry: app.soundTiming.entry
         enabled: desk.soundOn
-        source: entry && !entry.silent ? entry.path : ""
-        position: app.soundTiming.position
-        rate: app.soundTiming.rate
-        clockAtMs: app.soundTiming.clockAtMs
-        offsetMs: app.soundTiming.offsetMs
+        source: app.shownEntry && !app.shownEntry.silent ? app.shownEntry.path : ""
+        position: projection.position
+        rate: projection.rate
+        clockAtMs: projection.clockAtMs
+        offsetMs: projection.offsetMs
         device: desk.soundDevice
         volume: desk.soundVolume
+    }
+    AudioFollower {
+        id: sound2
+        readonly property var timing: app.auxTiming(1)
+        enabled: desk.soundOn2
+        source: timing.entry && !timing.entry.silent ? timing.entry.path : ""
+        position: timing.position
+        rate: timing.rate
+        clockAtMs: timing.clockAtMs
+        offsetMs: timing.offsetMs
+        device: desk.soundDevice
+        volume: desk.soundVolume2
     }
     SendWindow {
         id: sender
@@ -1062,6 +1082,7 @@ ApplicationWindow {
                 entry: projection.entry
                 projection: projection
                 sound: sound
+                sound2: sound2
                 sourceIds: app.sources.map(s => s.id)
                 monitorWidth: mixer.pictureWidth
             }

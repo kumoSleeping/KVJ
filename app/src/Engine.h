@@ -88,6 +88,9 @@ public:
     // Every Set into the first: KVJ keeps one library of videos.
     Q_INVOKABLE void mergeSets();
     Q_INVOKABLE void setTrack(const QString &setId, const QStringList &entryIds, int track);
+    // Onto `track`, after what is on it, in this order; one placed on another
+    // track gets a copy there (the same video on both).
+    Q_INVOKABLE void placeEntries(const QString &setId, const QStringList &entryIds, int track);
     // `room`: 现场模式, the input hears a reverberant room through a microphone.
     // `track`: only that track's entries are followed; `view.track` says which.
     Q_INVOKABLE void start(const QString &setId, const QString &device, int channelStart, bool room, int track = 0);

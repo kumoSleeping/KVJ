@@ -277,6 +277,16 @@ pub enum Edit {
         entry_ids: Vec<String>,
         track: u8,
     },
+    /// Places entries of one Set on a track, after what is on it already, in
+    /// this order. An entry placed on another track stays there and a copy
+    /// of it (a new id, the same file) goes on this one: the same video may
+    /// play on two tracks at once. The same file already on this track is
+    /// the one placed.
+    Place {
+        set_id: String,
+        entry_ids: Vec<String>,
+        track: u8,
+    },
     /// Makes every Set one: the first keeps its id and name and gains the
     /// others' entries (a file already in it is not added twice; a copy that
     /// was placed on the timeline places the kept one, on its track).
@@ -396,6 +406,43 @@ impl Document {
                         .track = track;
                 }
             }
+            Edit::Place {
+                set_id,
+                entry_ids,
+                track,
+            } => {
+                anyhow::ensure!(track <= LAST_TRACK, "轨道不存在");
+                let set = self.set_mut(&set_id)?;
+                for entry_id in &entry_ids {
+                    let at = set
+                        .entries
+                        .iter()
+                        .position(|e| &e.id == entry_id)
+                        .context("素材不存在")?;
+                    let entry = &set.entries[at];
+                    let chosen = if entry.track == track {
+                        at
+                    } else if let Some(same) = set
+                        .entries
+                        .iter()
+                        .position(|e| e.path == entry.path && e.track == track)
+                    {
+                        same
+                    } else if entry.enabled {
+                        let mut copy = entry.clone();
+                        copy.id = id();
+                        copy.track = track;
+                        set.entries.push(copy);
+                        set.entries.len() - 1
+                    } else {
+                        set.entries[at].track = track;
+                        at
+                    };
+                    let mut placed = set.entries.remove(chosen);
+                    placed.enabled = true;
+                    set.entries.push(placed);
+                }
+            }
             Edit::Merge => {
                 let mut sets = std::mem::take(&mut self.sets).into_iter();
                 let Some(mut library) = sets.next() else {
@@ -507,6 +554,16 @@ mod tests {
         assert!(doc.sets[0].entries.iter().all(|e| e.track == 3));
         assert!(doc.edit(Edit::Track { set_id: "s".into(), entry_ids: vec!["a".into()], track: 4 }).is_err());
         assert!(doc.edit(Edit::Track { set_id: "s".into(), entry_ids: vec!["missing".into()], track: 1 }).is_err());
+        // On two tracks at once: a copy goes on the second, the first stays.
+        doc.edit(Edit::Place { set_id: "s".into(), entry_ids: vec!["a".into()], track: 1 }).unwrap();
+        let on: Vec<_> = doc.sets[0].entries.iter().filter(|e| e.path == doc.sets[0].entries.iter().find(|e| e.id == "a").unwrap().path).map(|e| (e.track, e.enabled)).collect();
+        assert_eq!(on.len(), 2);
+        assert!(on.contains(&(1, true)));
+        // Placed there again: no third copy.
+        let copy = doc.sets[0].entries.iter().find(|e| e.track == 1 && e.id != "a" && e.id != "b").map(|e| e.id.clone()).unwrap();
+        doc.edit(Edit::Place { set_id: "s".into(), entry_ids: vec!["a".into()], track: 1 }).unwrap();
+        assert_eq!(doc.sets[0].entries.last().unwrap().id, copy);
+        assert_eq!(doc.sets[0].entries.len(), 3);
         // A document from a newer build with a fifth track is not taken.
         doc.sets[0].entries[0].track = 4;
         assert!(doc.validate().is_err());

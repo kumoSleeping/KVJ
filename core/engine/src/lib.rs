@@ -301,8 +301,19 @@ impl Engine {
         let document = self.with_store(|s| {
             let mut next = s.doc.clone();
             let set = next.set_mut(set_id)?;
-            set.entries
-                .retain(|e| !entries.iter().any(|n| n.path == e.path));
+            // A file already there: into the library only, it stays as it
+            // is; onto a track, it is made anew there, except where it is
+            // placed on another track, which keeps it (one video may play on
+            // two tracks).
+            let entries: Vec<_> = entries
+                .into_iter()
+                .filter(|n| placed || !set.entries.iter().any(|e| e.path == n.path))
+                .collect();
+            set.entries.retain(|e| {
+                !entries
+                    .iter()
+                    .any(|n| n.path == e.path && (e.track == track || !e.enabled))
+            });
             set.entries.extend(entries);
             s.commit(next)
         })?;

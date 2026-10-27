@@ -137,7 +137,11 @@ Rectangle {
         settle(root)
         return root
     }
-    readonly property var root: tree(bar.entries)
+    // Each video once, though it may be on both tracks (a copy on each).
+    // The video on the screen, whichever track's copy plays it.
+    readonly property string playingPath: (bar.entries.find(e => e.id === bar.playingId) || { path: "" }).path
+    readonly property var library: bar.entries.filter((e, i, all) => all.findIndex(o => o.path === e.path) === i)
+    readonly property var root: tree(bar.library)
     readonly property var order: root.ids
     // The rows on show, top to bottom: { kind: "dir" or "entry", key, depth,
     // ids: the entries it stands for, and its folder or entry }.
@@ -352,7 +356,7 @@ Rectangle {
                         required property var modelData
                         readonly property bool dir: modelData.kind === "dir"
                         readonly property bool chosen: bar.chosen(modelData.ids)
-                        readonly property bool playing: !dir && bar.playingId === modelData.entry.id
+                        readonly property bool playing: !dir && bar.playingPath !== "" && bar.playingPath === modelData.entry.path
                         width: column.width
                         height: dir ? 30 : Theme.row
 
@@ -463,14 +467,14 @@ Rectangle {
                 Layout.fillWidth: true
                 text: {
                     const chosen = bar.selectedIds
-                    const of = chosen.length > 1 ? bar.entries.filter(e => !!bar.selected[e.id]) : bar.entries
+                    const of = chosen.length > 1 ? bar.library.filter(e => !!bar.selected[e.id]) : bar.library
                     let total = 0
                     for (const e of of)
                         total += e.duration
                     if (chosen.length > 1)
                         return "已选 " + chosen.length + " 个 · " + bar.clock(total)
                     const placed = bar.entries.filter(e => e.enabled !== false).length
-                    return bar.entries.length + " 个视频 · " + placed + " 个在轨道上 · " + bar.clock(total)
+                    return bar.library.length + " 个视频 · " + placed + " 个在轨道上 · " + bar.clock(total)
                 }
                 font.pixelSize: Theme.sizeXs
                 font.features: { "tnum": 1 }

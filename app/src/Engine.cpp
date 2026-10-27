@@ -297,6 +297,13 @@ void Engine::setTrack(const QString &setId, const QStringList &entryIds, int tra
     edit({{"kind", "track"}, {"set_id", setId}, {"entry_ids", QJsonArray::fromStringList(entryIds)}, {"track", track}});
 }
 
+void Engine::placeEntries(const QString &setId, const QStringList &entryIds, int track)
+{
+    if (entryIds.isEmpty())
+        return;
+    edit({{"kind", "place"}, {"set_id", setId}, {"entry_ids", QJsonArray::fromStringList(entryIds)}, {"track", track}});
+}
+
 void Engine::importUrls(const QString &setId, const QList<QUrl> &urls, int track, bool placed)
 {
     QJsonArray paths;

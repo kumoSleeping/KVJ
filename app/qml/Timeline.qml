@@ -174,7 +174,7 @@ Rectangle {
         if (activeItem)
             activeItem.fit()
     }
-    // 锁定缩放: every track row shows the same seconds at the same scale as the
+    // 两轨缩放同步: every track row shows the same seconds at the same scale as the
     // one moved last (the same two videos line up, each with its own
     // playhead). Only the active row brings the view along with its playhead.
     property bool viewsLocked: false
@@ -348,12 +348,12 @@ Rectangle {
                 }
             }
             Toggle {
-                text: "锁定缩放"
+                text: "两轨缩放同步"
                 checked: line.viewsLocked
                 onToggled: line.viewsLocked = checked
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "画面 1、画面 2 的缩放和显示的区间保持一致（以刚调过的那条为准）；各自的播放进度照旧"
+                ToolTip.text: "画面 1 和画面 2 用同样的缩放、显示同一段时间，调一条另一条跟着变；各自播到哪里互不影响。\n同一段视频放在两条轨道上时，上下完全对齐"
             }
             Item { implicitWidth: 6 }
             Toggle {
