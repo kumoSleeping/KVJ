@@ -1,6 +1,7 @@
 import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Controls.impl
 import QtQuick.Layouts
 import QtQuick.Shapes
 import QtQuick.Window
@@ -356,7 +357,11 @@ ColumnLayout {
         property string gallery: "[]"
         property alias size: composer.placeSize
         property alias zoom: composer.zoom
+        property alias toolsAt: composer.toolsAt
     }
+    // Where the chosen layer's keys sit on the board: their middle, as shares
+    // of the board's width and height ("" until moved: over the picture's foot).
+    property string toolsAt: ""
     readonly property Item focusItem: Window.activeFocusItem
     readonly property bool typing: !!focusItem && typeof focusItem.selectedText === "string"
     // The chosen sticker comes down with Delete, unless words are being typed.
@@ -407,21 +412,18 @@ ColumnLayout {
         clip: true
 
         // The picture, in the middle of the board with a small margin round
-        // it (`room`), enough to reach a split line's point on its edge, and
-        // right under it the strip where the chosen layer's keys show. The keys that put it on the air are on the timeline's top
-        // line (keysHost). Zoomed out, it shrinks about the middle of the
-        // room it fills at full size.
+        // it (`room`), enough to reach a split line's point on its edge. The
+        // keys that put it on the air are on the timeline's top line
+        // (keysHost). Zoomed out, it shrinks about its middle.
         Rectangle {
             id: screen
             readonly property real room: 16
-            // Under it, a strip kept for the chosen layer's keys (tools).
-            readonly property real toolsRoom: 72
-            readonly property real fitWidth: Math.max(1, Math.min(box.width - 2 * room, (box.height - room - toolsRoom) * composer.aspect))
+            readonly property real fitWidth: Math.max(1, Math.min(box.width - 2 * room, (box.height - 2 * room) * composer.aspect))
             readonly property real fitHeight: fitWidth / Math.max(0.2, composer.aspect)
             // Where it is at full size: in the middle of the board above the
             // keys' strip, both ways.
             readonly property real fitX: (box.width - fitWidth) / 2
-            readonly property real fitY: room + (box.height - room - toolsRoom - fitHeight) / 2
+            readonly property real fitY: (box.height - fitHeight) / 2
             width: fitWidth * composer.zoom
             height: width / Math.max(0.2, composer.aspect)
             x: (box.width - width) / 2
@@ -1453,20 +1455,26 @@ ColumnLayout {
             }
         }
 
-        // The chosen layer's keys, on a plate in the strip under the picture
-        // (it stays there whatever the layer or the view's size do), shown
-        // while a layer is chosen; its corner, band and feather on a second
-        // line. Presses stay on it.
+        // The chosen layer's keys, on a plate over the foot of the picture
+        // until it is moved by the grip at its left: it stays where it was
+        // put (kept as shares of the board, between runs), whatever the
+        // layer or the view's size do; shown while a layer is chosen; its
+        // corner, band and feather on a second line. Presses stay on it.
         Item {
             id: tools
             z: 9
             readonly property real spread: 6
+            readonly property var at: {
+                const p = composer.toolsAt.split(",").map(Number)
+                return p.length === 2 && !isNaN(p[0]) && !isNaN(p[1]) ? p : null
+            }
             visible: !!composer.slot
             width: toolColumn.implicitWidth + 12
             height: toolColumn.implicitHeight + 8
-            x: Math.max(4, Math.min(box.width - width - 4, screen.fitX + screen.fitWidth / 2 - width / 2))
-            // Right under the picture as it is at full size.
-            y: screen.fitY + screen.fitHeight + 8
+            x: Math.max(4, Math.min(box.width - width - 4, at ? at[0] * box.width - width / 2
+                                                              : screen.fitX + screen.fitWidth / 2 - width / 2))
+            y: Math.max(4, Math.min(box.height - height - 4, at ? at[1] * box.height - height / 2
+                                                                : screen.fitY + screen.fitHeight - height - 12))
             // A soft shadow, in layers that fade outwards.
             Repeater {
                 model: 4
@@ -1497,6 +1505,42 @@ ColumnLayout {
                 // —— The keys for the chosen layer ——
                 RowLayout {
                     spacing: 2
+                    // The grip: the plate dragged anywhere on the board;
+                    // double-clicked, back over the picture's foot.
+                    Item {
+                        implicitWidth: 18
+                        implicitHeight: 26
+                        ColorImage {
+                            anchors.centerIn: parent
+                            source: "icons/grip-vertical.svg"
+                            sourceSize: Qt.size(14, 14)
+                            color: grip.containsMouse || grip.pressed ? Theme.text : Theme.faint
+                        }
+                        MouseArea {
+                            id: grip
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            preventStealing: true
+                            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                            property point offset
+                            onPressed: mouse => {
+                                const p = mapToItem(box, mouse.x, mouse.y)
+                                offset = Qt.point(p.x - (tools.x + tools.width / 2), p.y - (tools.y + tools.height / 2))
+                            }
+                            onPositionChanged: mouse => {
+                                if (!pressed)
+                                    return
+                                const p = mapToItem(box, mouse.x, mouse.y)
+                                const cx = Math.max(tools.width / 2 + 4, Math.min(box.width - tools.width / 2 - 4, p.x - offset.x))
+                                const cy = Math.max(tools.height / 2 + 4, Math.min(box.height - tools.height / 2 - 4, p.y - offset.y))
+                                composer.toolsAt = (cx / Math.max(1, box.width)).toFixed(4) + "," + (cy / Math.max(1, box.height)).toFixed(4)
+                            }
+                            onDoubleClicked: composer.toolsAt = ""
+                            ToolTip.visible: containsMouse && !pressed
+                            ToolTip.delay: 600
+                            ToolTip.text: "拖动可放到画板上任意位置（记住位置）· 双击回到画面底部"
+                        }
+                    }
                     // Small keys, a word each in its tip.
                     Repeater {
                         model: [
