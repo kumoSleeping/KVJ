@@ -136,14 +136,18 @@ impl Capture {
         let source = resolve(id)?; source.validate()?;
         let selected = channel_range(channel_start, source.channels())?;
         let api = api().context("输出设备捕获需要 macOS 14.2 或更新版本")?;
-        let ring = Arc::new(Mutex::new(Ring::new(format!("输出设备 · Core Audio Tap · {} · {}", source.label, channel_label(&selected)), source.format.mSampleRate as u32)));
+        // KVJ's own sound (the picture's, AudioFollower) plays on this output too:
+        // heard back, following would follow its own picture, a loop.
+        let own = own_process();
+        let ring = Arc::new(Mutex::new(Ring::new(format!("输出设备 · Core Audio Tap · {} · {}{}", source.label, channel_label(&selected),
+            if own.is_some() { " · 不含 KVJ 自己的声音" } else { "" }), source.format.mSampleRate as u32)));
         let mut capture = Self { tap: 0, aggregate: 0, io: None, state: None, stop: Arc::new(AtomicBool::new(false)), watch: None };
         unsafe {
             let class = AnyClass::get(c"CATapDescription").context("Core Audio Tap 不可用")?;
             let allocated: Allocated<AnyObject> = msg_send![class, alloc];
-            let processes = NSArray::<NSNumber>::new();
+            let processes = match own { Some(own) => NSArray::from_retained_slice(&[NSNumber::new_u32(own)]), None => NSArray::<NSNumber>::new() };
             let description: Retained<AnyObject> = msg_send![allocated, initWithProcesses: &*processes, andDeviceUID: &*NSString::from_str(&source.uid), withStream: source.stream_index as isize];
-            let _: () = msg_send![&*description, setExclusive: Bool::YES]; // empty exclusion list = all processes on this stream
+            let _: () = msg_send![&*description, setExclusive: Bool::YES]; // every process on this stream but those listed
             let _: () = msg_send![&*description, setPrivate: Bool::YES];
             let _: () = msg_send![&*description, setMixdown: Bool::NO];
             let _: () = msg_send![&*description, setMono: Bool::NO];
@@ -187,6 +191,18 @@ impl Capture {
         }).context("启动输出设备状态监测失败")?);
         Ok((capture, ring))
     }
+}
+/// This process's Core Audio object, to leave out of the tap; None where the
+/// system does not know it (it has never used audio).
+fn own_process() -> Option<u32> {
+    let pid: libc::pid_t = unsafe { libc::getpid() };
+    let mut addr = address(kAudioHardwarePropertyTranslatePIDToProcessObject, kAudioObjectPropertyScopeGlobal);
+    let mut object: u32 = 0; let mut size = size_of::<u32>() as u32;
+    let code = unsafe {
+        AudioObjectGetPropertyData(kAudioObjectSystemObject as u32, NonNull::from(&mut addr), size_of::<libc::pid_t>() as u32,
+            (&pid as *const libc::pid_t).cast(), NonNull::from(&mut size), NonNull::from(&mut object).cast())
+    };
+    (code == 0 && object != 0).then_some(object)
 }
 fn dict(entries: &[(&str, &AnyObject)]) -> Retained<NSDictionary<NSString, AnyObject>> {
     let keys: Vec<_> = entries.iter().map(|(k, _)| NSString::from_str(k)).collect();

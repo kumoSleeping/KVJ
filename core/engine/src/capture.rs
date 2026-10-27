@@ -223,8 +223,9 @@ impl Capture {
             config.setCapturesAudio(true);
             config.setSampleRate(48000);
             config.setChannelCount(2);
-            // KVJ itself is silent; a music player in this process would be the DJ source.
-            config.setExcludesCurrentProcessAudio(false);
+            // KVJ's own sound is the picture's (AudioFollower), never the DJ's:
+            // heard back, following would follow its own picture, a loop.
+            config.setExcludesCurrentProcessAudio(true);
             let stream = SCStream::initWithFilter_configuration_delegate(
                 SCStream::alloc(),
                 &filter,
