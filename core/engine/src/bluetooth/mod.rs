@@ -227,8 +227,13 @@ impl Engine {
         let found = transport::receivers()?;
         let known: Vec<Known> = self.connections.pairing.lock().unwrap().known.iter()
             .filter(|k| k.role == "receiver").cloned().collect();
+        let listed = |id: &str| found.iter().any(|d| device_key(&d.id) == device_key(id));
         for device in &found {
-            let remembered = known.iter().any(|k| device_key(&k.id) == device_key(&device.id) || k.name == device.name);
+            // By id; by name only for a remembered receiver not seen under its
+            // own id (a Mac back under a new address), and never by the name
+            // every host without one has. Its HELLO's token decides anyway.
+            let remembered = known.iter().any(|k| device_key(&k.id) == device_key(&device.id))
+                || (!["", "KVJ"].contains(&device.name.as_str()) && known.iter().any(|k| k.name == device.name && !listed(&k.id)));
             let stranger = self.connections.strangers.lock().unwrap().contains(&device_key(&device.id));
             if remembered && !stranger && !self.connections.senders.lock().unwrap().contains_key(&device_key(&device.id)) {
                 if let Err(error) = self.connect_to(device.clone(), true) {
@@ -285,6 +290,19 @@ impl Engine {
         }
         if senders.contains_key(&key) {
             return Ok(());
+        }
+        // Another computer found by name keeps no slot (it is not listed
+        // either); the strangers set keeps it from being tried by itself.
+        let strangers: Vec<String> = senders
+            .iter()
+            .filter(|(_, s)| s.shared.lock().unwrap().ended.as_deref() == Some("stranger"))
+            .map(|(id, _)| id.clone())
+            .collect();
+        if !strangers.is_empty() {
+            let ended: Vec<_> = strangers.iter().filter_map(|id| senders.remove(id)).collect();
+            drop(senders);
+            drop(ended);
+            senders = self.connections.senders.lock().unwrap();
         }
         anyhow::ensure!(senders.len() < 8, "最多准备 8 台设备连接");
         senders.insert(key, sender::Sender::connect(Arc::downgrade(self), device, remembered_only)?);
