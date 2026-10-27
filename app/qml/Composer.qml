@@ -1109,22 +1109,22 @@ ColumnLayout {
                                 border.width: 1
                                 border.color: Theme.dark ? "#c3c8d0" : "#55555c"
                             }
-                            // Its name, on a plate at its top left.
+                            // Its name, on a plate at its top left, while chosen.
                             Rectangle {
                                 x: 4
                                 y: 4
                                 width: label.implicitWidth + 10
                                 height: 16
                                 radius: 4
-                                visible: edge.width > 40 && edge.height > 24
-                                color: edge.chosen ? "#ffffff" : "#99000000"
+                                visible: edge.chosen && edge.width > 40 && edge.height > 24
+                                color: "#ffffff"
                                 Text {
                                     id: label
                                     anchors.centerIn: parent
                                     text: composer.sourceName(edge.s.source) + (edge.lost ? " · 已移除" : "")
                                     font.pixelSize: 10
                                     font.weight: Font.DemiBold
-                                    color: edge.chosen ? "#000000" : "#ffffff"
+                                    color: "#000000"
                                 }
                             }
                             // Corners and edge middles size it.
