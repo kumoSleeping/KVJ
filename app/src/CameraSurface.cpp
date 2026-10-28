@@ -9,13 +9,20 @@
 #include <QMediaCaptureSession>
 #include <QMediaDevices>
 #include <QQuickWindow>
+#include <QThread>
 #include <QVideoFrame>
 #include <QVideoSink>
 #if QT_CONFIG(permissions)
 #include <QPermissions>
 #endif
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <mfapi.h>
+#include <objbase.h>
+#endif
 
 #include <algorithm>
+#include <mutex>
 #include <tuple>
 #include <utility>
 
@@ -27,6 +34,25 @@ constexpr double kDrawWaitMs = 500;
 // again, this long after; each further time in a row twice as long, up to the most.
 constexpr double kRetryMs = 3000;
 constexpr double kRetryMostMs = 30000;
+// A start or a stop that has not come back in this long has hung in the
+// system's camera stack; it is given up. Starting a camera takes well under
+// a second, even a slow USB one.
+constexpr double kHangMs = 5000;
+// Cameras given up so in this run: past this many no camera is started
+// again (each leaves a thread stuck in the system for good).
+constexpr int kMostHung = 3;
+int g_hung = 0;
+
+// Whether a camera gets a thread of its own: on Windows (see the header),
+// elsewhere only when KVJ_CAMERA_THREAD=1 asks for it.
+bool ownThread()
+{
+#ifdef Q_OS_WIN
+    return qEnvironmentVariable("KVJ_CAMERA_THREAD") != QLatin1String("0");
+#else
+    return qEnvironmentVariable("KVJ_CAMERA_THREAD") == QLatin1String("1");
+#endif
+}
 
 // The camera's own format closest to a projected picture: at most 1080 lines,
 // a fluent rate, at least 720 lines, not compressed (decoding JPEG costs more
@@ -52,6 +78,127 @@ QCameraFormat pickFormat(const QCameraDevice &device)
 }
 } // namespace
 
+// What a camera's own side shares with its item, which may go first.
+struct CameraLink
+{
+    std::mutex mutex;
+    // Null once the item is gone (or has given this camera up).
+    CameraSurface *surface = nullptr;
+    // When the worker went into the camera stack (a start or a stop), 0 while
+    // it is out of it.
+    std::atomic<double> busySince{0};
+    double busyMs() const
+    {
+        const double at = busySince;
+        return at > 0 ? kvj_clock_ms() - at : 0;
+    }
+};
+
+// A camera's capture objects, used only on the worker's thread (or this
+// item's, without a thread of its own). Frames go straight to the item's
+// offer(); what it has to say goes to the item as a queued call.
+class CameraWorker : public QObject
+{
+public:
+    explicit CameraWorker(std::shared_ptr<CameraLink> link)
+        : m_link(std::move(link))
+    {
+    }
+    ~CameraWorker() override
+    {
+        stop();
+        m_session.reset();
+        m_sink.reset();
+#ifdef Q_OS_WIN
+        if (m_mf)
+            MFShutdown();
+        if (m_com)
+            CoUninitialize();
+#endif
+    }
+
+    // First thing on its own thread: Media Foundation is used from it.
+    void setUp()
+    {
+#ifdef Q_OS_WIN
+        m_com = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
+        m_mf = SUCCEEDED(MFStartup(MF_VERSION, MFSTARTUP_LITE));
+#endif
+    }
+
+    void start(const QCameraDevice &device, const QCameraFormat &format, int generation)
+    {
+        stop();
+        Busy busy(*m_link);
+        if (!m_session) {
+            m_sink = std::make_unique<QVideoSink>();
+            // Frames may come on the camera's own thread: taken there,
+            // converted on the item's conversion thread, shown on its thread.
+            connect(m_sink.get(), &QVideoSink::videoFrameChanged, this, [link = m_link](const QVideoFrame &frame) {
+                std::lock_guard lock(link->mutex);
+                if (link->surface)
+                    link->surface->offer(frame);
+            }, Qt::DirectConnection);
+            m_session = std::make_unique<QMediaCaptureSession>();
+            m_session->setVideoSink(m_sink.get());
+        }
+        m_camera = std::make_unique<QCamera>(device);
+        if (!format.isNull())
+            m_camera->setCameraFormat(format);
+        // Queued: the camera may report while it starts.
+        connect(m_camera.get(), &QCamera::errorOccurred, this, [this, generation](QCamera::Error error, const QString &text) {
+            if (error != QCamera::NoError)
+                report(generation, text);
+        }, Qt::QueuedConnection);
+        m_session->setCamera(m_camera.get());
+        m_camera->start();
+#ifdef Q_OS_WIN
+        // Qt's Windows camera is active at once or not at all, and one the
+        // system would not hand over says nothing else: it would only send
+        // no frames, and be started again and again.
+        if (!m_camera->isActive())
+            report(generation, QStringLiteral("系统没有交出这台相机（可能在系统设置里关掉了相机，或被别的程序占用）"));
+#endif
+    }
+
+    void stop()
+    {
+        if (!m_camera)
+            return;
+        Busy busy(*m_link);
+        m_camera->stop();
+        m_session->setCamera(nullptr);
+        m_camera.reset();
+    }
+
+private:
+    struct Busy
+    {
+        explicit Busy(CameraLink &link)
+            : link(link)
+        {
+            link.busySince = kvj_clock_ms();
+        }
+        ~Busy() { link.busySince = 0; }
+        CameraLink &link;
+    };
+
+    void report(int generation, const QString &text)
+    {
+        std::lock_guard lock(m_link->mutex);
+        if (CameraSurface *surface = m_link->surface)
+            QMetaObject::invokeMethod(surface, [surface, generation, text] { surface->failed(generation, text); },
+                                      Qt::QueuedConnection);
+    }
+
+    std::shared_ptr<CameraLink> m_link;
+    std::unique_ptr<QVideoSink> m_sink;
+    std::unique_ptr<QMediaCaptureSession> m_session;
+    std::unique_ptr<QCamera> m_camera;
+    bool m_com = false;
+    bool m_mf = false;
+};
+
 CameraSurface::CameraSurface(QQuickItem *parent)
     : PictureSource(parent)
 {
@@ -70,10 +217,32 @@ CameraSurface::CameraSurface(QQuickItem *parent)
 CameraSurface::~CameraSurface()
 {
     ++m_generation;
-    m_camera.reset();
-    m_session.reset();
-    m_sink.reset();
+    giveUp();
     m_convert.waitForDone();
+}
+
+// The camera's side goes: told to stop and go when it can, never waited for.
+// One stuck in the system is left where it is.
+void CameraSurface::giveUp()
+{
+    if (!m_link)
+        return;
+    {
+        std::lock_guard lock(m_link->mutex);
+        m_link->surface = nullptr;
+    }
+    CameraWorker *worker = std::exchange(m_worker, nullptr);
+    QThread *thread = worker->thread();
+    const bool stuck = m_link->busyMs() > kHangMs;
+    m_link.reset();
+    m_running = false;
+    if (thread == QThread::currentThread()) {
+        delete worker;
+    } else if (!stuck) {
+        // Stops the camera (in its destructor) on its thread, then the thread ends.
+        connect(worker, &QObject::destroyed, thread, &QThread::quit, Qt::DirectConnection);
+        worker->deleteLater();
+    }
 }
 
 void CameraSurface::setDeviceId(const QString &id)
@@ -85,6 +254,7 @@ void CameraSurface::setDeviceId(const QString &id)
     stop();
     m_failed = false;
     m_lost = false;
+    m_hung = false;
     m_retries = 0;
     setError(QString());
     schedule();
@@ -98,6 +268,7 @@ void CameraSurface::setActive(bool active)
     m_active = active;
     m_failed = false;
     m_lost = false;
+    m_hung = false;
     m_retries = 0;
     if (active) {
         m_poll.start();
@@ -178,7 +349,27 @@ void CameraSurface::evaluate()
         stop();
         return;
     }
-    if (m_camera) {
+    // The system's camera stack has not come back from a start or a stop:
+    // the camera is given up rather than wait for it.
+    if (m_link && m_link->busyMs() > kHangMs) {
+        ++g_hung;
+        Engine::note(QStringLiteral("camera: 系统的相机接口 %1 秒没有回应，放弃这台相机").arg(qRound(m_link->busyMs() / 1000)));
+        ++m_generation;
+        giveUp();
+        m_hung = true;
+        m_newFrame = false;
+        m_pending = QImage();
+        m_busy = false;
+        m_clear = true;
+        setHasFrame(false);
+        clearPreviews();
+        update();
+        setError(QStringLiteral("相机没有回应（系统的相机接口卡住了）：先移除这台相机，或重启 KVJ"));
+        return;
+    }
+    if (m_hung)
+        return;
+    if (m_running) {
         // Frames since it started: it works, whatever was wrong before.
         const double frameAt = m_frameAt;
         if (frameAt > m_startedAt) {
@@ -226,6 +417,10 @@ void CameraSurface::evaluate()
         m_devices = new QMediaDevices(this);
         connect(m_devices, &QMediaDevices::videoInputsChanged, this, &CameraSurface::devicesChanged);
     }
+    if (g_hung >= kMostHung) {
+        setError(QStringLiteral("系统的相机接口多次卡住：重启 KVJ 后再用相机"));
+        return;
+    }
     const QCameraDevice device = findDevice();
     if (device.isNull()) {
         setError(m_lost ? QStringLiteral("相机已断开")
@@ -238,42 +433,30 @@ void CameraSurface::evaluate()
 
 void CameraSurface::start(const QCameraDevice &device)
 {
-    if (!m_session) {
-        m_sink = std::make_unique<QVideoSink>();
-        // Frames may come on the camera's own thread: taken there, converted
-        // on the conversion thread, shown on this one.
-        connect(m_sink.get(), &QVideoSink::videoFrameChanged, this, [this](const QVideoFrame &frame) { offer(frame); },
-                Qt::DirectConnection);
-        m_session = std::make_unique<QMediaCaptureSession>();
-        m_session->setVideoSink(m_sink.get());
+    if (!m_worker) {
+        m_link = std::make_shared<CameraLink>();
+        m_link->surface = this;
+        m_worker = new CameraWorker(m_link);
+        if (ownThread()) {
+            auto *thread = new QThread;
+            thread->setObjectName(QStringLiteral("kvj-camera"));
+            m_worker->moveToThread(thread);
+            connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+            thread->start();
+            QMetaObject::invokeMethod(m_worker, [worker = m_worker] { worker->setUp(); });
+        }
     }
     const int generation = ++m_generation;
-    m_camera = std::make_unique<QCamera>(device);
     const QCameraFormat format = pickFormat(device);
-    if (!format.isNull())
-        m_camera->setCameraFormat(format);
-    // Queued: the camera may report while it starts, and is dropped on error.
-    // A report from a camera already let go changes nothing.
-    connect(m_camera.get(), &QCamera::errorOccurred, this, [this, generation](QCamera::Error error, const QString &text) {
-        if (error == QCamera::NoError || !m_camera || generation != m_generation)
-            return;
-        Engine::note(QStringLiteral("camera: %1").arg(text));
-        stop();
-        m_failed = true;
-        m_failedAt = kvj_clock_ms();
-#ifdef Q_OS_WIN
-        // Media Foundation's own words (with its HRESULT) say more than ours.
-        setError(text.isEmpty() ? QStringLiteral("相机打不开") : QStringLiteral("相机打不开：%1").arg(text));
-#else
-        setError(QStringLiteral("相机打不开"));
-#endif
-    }, Qt::QueuedConnection);
-    m_session->setCamera(m_camera.get());
+    m_running = true;
     m_startedId = device.id();
     m_first = true;
     m_lost = false;
-    // What was wrong is said until the first frame (evaluate).
-    m_camera->start();
+    // What was wrong is said until the first frame (evaluate). The start is
+    // counted from now: one that does not come back is caught by evaluate.
+    QMetaObject::invokeMethod(m_worker, [worker = m_worker, device, format, generation] {
+        worker->start(device, format, generation);
+    });
     m_startedAt = kvj_clock_ms();
     Engine::note(QStringLiteral("camera: %1 · %2×%3 at %4 fps")
              .arg(device.description())
@@ -282,14 +465,31 @@ void CameraSurface::start(const QCameraDevice &device)
              .arg(double(format.maxFrameRate())));
 }
 
+// What the camera said went wrong, from its side. A report from a camera
+// already let go changes nothing.
+void CameraSurface::failed(int generation, const QString &text)
+{
+    if (!m_running || generation != m_generation)
+        return;
+    Engine::note(QStringLiteral("camera: %1").arg(text));
+    stop();
+    m_failed = true;
+    m_failedAt = kvj_clock_ms();
+#ifdef Q_OS_WIN
+    // Media Foundation's own words (with its HRESULT) say more than ours.
+    setError(text.isEmpty() ? QStringLiteral("相机打不开") : QStringLiteral("相机打不开：%1").arg(text));
+#else
+    setError(QStringLiteral("相机打不开"));
+#endif
+}
+
 void CameraSurface::stop()
 {
-    if (!m_camera)
+    if (!m_running)
         return;
     ++m_generation;
-    m_camera->stop();
-    m_session->setCamera(nullptr);
-    m_camera.reset();
+    m_running = false;
+    QMetaObject::invokeMethod(m_worker, [worker = m_worker] { worker->stop(); });
     // A conversion under way lets go when it lands; a frame waiting to be
     // drawn is dropped here.
     if (m_newFrame)
@@ -306,7 +506,7 @@ void CameraSurface::stop()
 // said so until it, or another, can start.
 void CameraSurface::devicesChanged()
 {
-    if (m_camera || m_failed) {
+    if (m_running || m_failed) {
         const QList<QCameraDevice> devices = QMediaDevices::videoInputs();
         const bool present = std::any_of(devices.begin(), devices.end(),
                                          [this](const QCameraDevice &d) { return d.id() == m_startedId; });
@@ -318,6 +518,8 @@ void CameraSurface::devicesChanged()
         }
     }
     m_failed = false;
+    // Plugged in again or another one: a camera given up is tried again.
+    m_hung = false;
     schedule();
 }
 

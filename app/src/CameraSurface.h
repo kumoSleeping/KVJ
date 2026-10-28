@@ -2,10 +2,14 @@
 
 // A live camera as a picture source. Once `active` (taken in) the camera runs
 // until it is let go: the item goes, `active` turns false or another camera is
-// chosen. Starting and stopping a camera holds this thread for a moment (the
-// system's capture stack answers before it returns), so neither happens for a
-// window put away or a preview scrolled off: while nobody looks, the frames are
-// only counted, not converted. Each frame looked at is turned into an RGB image
+// chosen. Starting and stopping a camera waits for the system's capture stack,
+// so neither happens for a window put away or a preview scrolled off: while
+// nobody looks, the frames are only counted, not converted. On Windows that
+// wait can be for ever (Qt's camera there flushes the system's reader and
+// waits for it to say so, with no limit, and a camera turned off in the system
+// may never say it), so there the camera is started and stopped on a thread of
+// its own (CameraWorker): the window never waits for it, and a camera whose
+// start or stop has not come back in a few seconds is given up and said so. Each frame looked at is turned into an RGB image
 // on a thread of its own and shown as it comes; frames arriving while the last
 // one is still being converted or has not reached the screen yet are dropped,
 // so a slow conversion lowers the frame rate rather than piling up. Previews
@@ -28,11 +32,10 @@
 #include <atomic>
 #include <memory>
 
-class QCamera;
-class QMediaCaptureSession;
 class QMediaDevices;
 class QVideoFrame;
-class QVideoSink;
+struct CameraLink;
+class CameraWorker;
 
 class CameraSurface : public PictureSource
 {
@@ -72,10 +75,13 @@ private:
     QCameraDevice findDevice() const;
     void start(const QCameraDevice &device);
     void stop();
+    void giveUp();
     void devicesChanged();
     double retryMs() const;
     void offer(const QVideoFrame &frame);
     void take(const QImage &image, int generation);
+    void failed(int generation, const QString &text);
+    friend class CameraWorker;
 
     QString m_deviceId;
     bool m_active = false;
@@ -84,9 +90,15 @@ private:
     QTimer m_poll;
     QMetaObject::Connection m_windowShown;
     QMediaDevices *m_devices = nullptr;
-    std::unique_ptr<QVideoSink> m_sink;
-    std::unique_ptr<QMediaCaptureSession> m_session;
-    std::unique_ptr<QCamera> m_camera;
+    // The camera's own side (CameraWorker, on its own thread on Windows) and
+    // what it shares with this item; null until a camera is started.
+    std::shared_ptr<CameraLink> m_link;
+    CameraWorker *m_worker = nullptr;
+    // A camera is running (asked to start, not stopped since).
+    bool m_running = false;
+    // The system's camera stack did not come back: no camera is started
+    // again until another one is chosen, taken in again or plugged in.
+    bool m_hung = false;
     // The camera started last, and when.
     QByteArray m_startedId;
     double m_startedAt = 0;
