@@ -45,7 +45,15 @@ struct Stats {
     taken: u64,
     arrival_timed: u64,
     latency_ms: Option<(f64, f64)>,
+    /// Packet stamp minus the sample-count timeline, signed.
+    offset_ms: Option<(f64, f64)>,
 }
+/// A stamp further from the sample-count timeline than this is a real break. It must
+/// stay above the most a render-engine pass can bundle (several 10 ms packets).
+const JUMP: Duration = Duration::from_millis(50);
+/// Share of a stamp's offset taken per packet: about a third of a second to follow
+/// a clock that drifts, while each pass's bundling averages out.
+const NUDGE: f64 = 1. / 32.;
 impl Ring {
     pub fn new(source: String, sample_rate: u32) -> Self {
         // Approximately the same 1.3ms low-pass window at every device rate.
@@ -90,8 +98,9 @@ impl Ring {
         let s = std::mem::take(&mut self.stats);
         self.stats = Stats { since: Some(Instant::now()), reported: s.reported + 1, ..Stats::default() };
         let latency = s.latency_ms.map_or("—".into(), |(lo, hi)| format!("{lo:.1}–{hi:.1} ms"));
+        let offset = s.offset_ms.map_or("—".into(), |(lo, hi)| format!("{lo:+.1}–{hi:+.1} ms"));
         Some(format!(
-            "采集时间线 · {:.0} 秒内 {} 包 · 每包 {} 帧 · 延迟 {latency} · 按到达计时 {} · 跳变重来 {} · 溢出重来 {} · 驱动中断 {} · 过期未取 {} · 已取 {}",
+            "采集时间线 · {:.0} 秒内 {} 包 · 每包 {} 帧 · 延迟 {latency} · 包时间偏差 {offset} · 按到达计时 {} · 跳变重来 {} · 溢出重来 {} · 驱动中断 {} · 过期未取 {} · 已取 {}",
             since.elapsed().as_secs_f64(), s.packets, if s.packets > 0 { s.frames / s.packets } else { 0 },
             s.arrival_timed, s.jumps, s.overflows, s.interrupts, s.stale, s.taken))
     }
@@ -146,12 +155,25 @@ impl Ring {
         self.stats.since.get_or_insert_with(Instant::now);
         self.stats.packets += 1;
         self.stats.frames += values.len() as u64;
-        // A packet's own clock may wander by part of its length (WASAPI loopback
-        // stamps packets by the render engine's pass), never by a whole packet.
-        let tolerance = Duration::from_millis(5).max(Duration::from_secs_f64(values.len() as f64 / rate / 2.));
-        let jumped = self.expected.is_some_and(|expected| {
-            first.saturating_duration_since(expected).max(expected.saturating_duration_since(first)) > tolerance
+        // The sample count is the timeline; a packet's stamp only nudges it. WASAPI
+        // loopback stamps the packets of one render-engine pass alike, so with a 20 ms
+        // pass of two 10 ms packets every second stamp is a packet early and the next
+        // one a packet late: re-anchoring on each stamp restarted the window on every
+        // packet and nothing was ever recognised (Windows, 跳变重来 = every packet).
+        let offset = self.expected.map(|expected| {
+            let late = first.saturating_duration_since(expected).as_secs_f64();
+            if late > 0. { late } else { -expected.saturating_duration_since(first).as_secs_f64() }
         });
+        if let Some(offset) = offset {
+            let ms = offset * 1000.;
+            self.stats.offset_ms = Some(self.stats.offset_ms.map_or((ms, ms), |(lo, hi)| (lo.min(ms), hi.max(ms))));
+        }
+        let jumped = offset.is_some_and(|offset| offset.abs() > JUMP.as_secs_f64());
+        let first = match (self.expected, offset) {
+            (Some(expected), Some(offset)) if !jumped => if offset >= 0. { expected + Duration::from_secs_f64(offset * NUDGE) }
+                else { expected - Duration::from_secs_f64(-offset * NUDGE) },
+            _ => first,
+        };
         let overflow = self.samples.len() + (self.phase as usize + values.len() * 8000) / self.sample_rate as usize > 48000;
         if jumped || overflow {
             self.stats.jumps += u64::from(jumped);
@@ -551,18 +573,56 @@ mod tests {
     }
 
     #[test]
-    fn packet_clock_jitter_within_half_a_packet_keeps_the_window() {
+    fn packet_clock_jitter_keeps_the_window() {
         let mut ring = Ring::new("test".into(), 48000);
         let packet = vec![0.25f32; 480]; // 10 ms
         let start = Instant::now();
         ring.push(&packet, vec![], start, start).unwrap();
         // 4 ms late, then 4 ms early: loopback stamps wander, the timeline goes on.
         ring.push(&packet, vec![], start + Duration::from_millis(14), start).unwrap();
-        ring.push(&packet, vec![], start + Duration::from_millis(20), start).unwrap();
+        ring.push(&packet, vec![], start + Duration::from_millis(16), start).unwrap();
         assert_eq!((ring.generation, ring.stats.jumps), (0, 0));
-        // A whole packet off is a break.
-        ring.push(&packet, vec![], start + Duration::from_millis(50), start).unwrap();
+        // Far more than an engine pass off is a break.
+        ring.push(&packet, vec![], start + Duration::from_millis(130), start).unwrap();
         assert_eq!((ring.generation, ring.stats.jumps), (1, 1));
+    }
+
+    #[test]
+    fn packets_stamped_by_their_render_pass_keep_the_window() {
+        // Two 10 ms packets per 20 ms render pass, both stamped with the pass's start
+        // (± 0.5 ms): the stamp pattern of the Windows loopback that never matched.
+        let (mut ring, mut exact) = (Ring::new("test".into(), 48000), Ring::new("test".into(), 48000));
+        let packet = vec![0.25f32; 480];
+        let start = Instant::now();
+        for i in 0..300u64 {
+            let wobble = Duration::from_micros(i * 7919 % 1000);
+            ring.push(&packet, vec![], start + Duration::from_millis(i / 2 * 20) + wobble, start).unwrap();
+            exact.push(&packet, vec![], start + Duration::from_millis(i * 10), start).unwrap();
+            if i % 50 == 49 { ring.take(); exact.take(); }
+        }
+        assert_eq!((ring.generation, ring.stats.jumps), (0, 0));
+        // The window ends where the audio does, within half a packet (which half of
+        // the pass a stamp means is unknown).
+        let off = ring.end.saturating_duration_since(exact.end).max(exact.end.saturating_duration_since(ring.end));
+        assert!(off <= Duration::from_millis(5), "{off:?}");
+    }
+
+    #[test]
+    fn a_drifting_packet_clock_is_followed() {
+        // Stamps run 0.2 % slow against the sample count: no break, and the timeline
+        // follows the stamps instead of the sample count.
+        let mut ring = Ring::new("test".into(), 48000);
+        let packet = vec![0.25f32; 480];
+        let start = Instant::now();
+        for i in 0..6000u64 {
+            ring.push(&packet, vec![], start + Duration::from_micros(i * 10_020), start).unwrap();
+            if i % 50 == 49 { ring.take(); }
+        }
+        assert_eq!(ring.stats.jumps, 0);
+        // The last packet starts at its stamp and lasts 10 ms.
+        let truth = start + Duration::from_micros(5999 * 10_020 + 10_000);
+        let off = ring.end.saturating_duration_since(truth).max(truth.saturating_duration_since(ring.end));
+        assert!(off < Duration::from_millis(5), "{off:?}");
     }
 
     #[test]
