@@ -29,8 +29,8 @@ This is a preview (pre-release) build; every version is listed under [Releases](
 
 <!-- release-package-size-badges:start -->
 <p>
-  <a href="https://github.com/kumoSleeping/KVJ/releases/download/v0.2.0/KVJ-macos-arm64.dmg"><img src="https://img.shields.io/badge/macOS_Apple_Silicon-26.7_MB-black?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon 26.7 MB"></a>
-  <a href="https://github.com/kumoSleeping/KVJ/releases/download/v0.2.0/KVJ-windows-x64.zip"><img src="https://img.shields.io/badge/Windows_x64-75.1_MB-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows x64 75.1 MB"></a>
+  <a href="https://github.com/kumoSleeping/KVJ/releases/latest/download/KVJ-macos-arm64.dmg"><img src="https://img.shields.io/badge/macOS-Apple_Silicon-black?style=for-the-badge&logo=apple&logoColor=white" alt="macOS Apple Silicon"></a>
+  <a href="https://github.com/kumoSleeping/KVJ/releases/latest/download/KVJ-windows-x64.zip"><img src="https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows x64"></a>
   <a href="https://github.com/kumoSleeping/KVJ/releases"><img src="https://img.shields.io/badge/More-Releases-555555?style=for-the-badge&logo=github&logoColor=white" alt="More releases"></a>
 </p>
 <!-- release-package-size-badges:end -->
