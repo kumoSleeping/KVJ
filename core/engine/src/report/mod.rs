@@ -281,6 +281,14 @@ pub struct Update {
     pub url: String,
     pub name: String,
     pub published_at: String,
+    /// The package this platform downloads from the newer release (`update`),
+    /// its size in bytes, 0 when there is none.
+    pub size: u64,
+    /// The newer release can be installed from within KVJ; when not, `blocked`
+    /// says why (a developer's build, a place KVJ may not write to, …) and the
+    /// download page is the way.
+    pub installable: bool,
+    pub blocked: String,
 }
 /// The newest published KVJ release. Every KVJ release so far is a
 /// pre-release, which GitHub's `releases/latest` skips, so the list is read
@@ -309,16 +317,41 @@ pub fn check_update() -> Result<Update> {
             if is_newer(&a.0, &b.0) { std::cmp::Ordering::Less } else if is_newer(&b.0, &a.0) { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Equal }
         });
     let Some((latest, release)) = best else {
-        return Ok(Update { current: VERSION.into(), latest: VERSION.into(), newer: false, url: String::new(), name: String::new(), published_at: String::new() });
+        crate::update::offer(VERSION, None);
+        return Ok(Update {
+            current: VERSION.into(),
+            latest: VERSION.into(),
+            newer: false,
+            url: String::new(),
+            name: String::new(),
+            published_at: String::new(),
+            size: 0,
+            installable: false,
+            blocked: String::new(),
+        });
     };
     let text = |key: &str| release[key].as_str().unwrap_or_default().to_owned();
+    let newer = is_newer(&current, &latest);
+    let asset = newer.then(|| crate::update::Asset::find(release)).flatten();
+    let blocked = match (&asset, newer) {
+        (_, false) => String::new(),
+        (None, _) if crate::update::asset_name().is_none() => "这个平台不能在应用内更新".into(),
+        (None, _) => "这个版本没有本平台的安装包".into(),
+        (Some(_), _) => crate::update::installed().err().map(|e| format!("{e:#}")).unwrap_or_default(),
+    };
+    let size = asset.as_ref().map_or(0, |a| a.size);
+    let installable = asset.is_some() && blocked.is_empty();
+    crate::update::offer(&latest.to_string(), asset.filter(|_| installable));
     Ok(Update {
         current: VERSION.into(),
-        newer: is_newer(&current, &latest),
+        newer,
         latest: latest.to_string(),
         url: text("html_url"),
         name: text("name"),
         published_at: text("published_at"),
+        size,
+        installable,
+        blocked,
     })
 }
 /// KDJ's comparison (`src-tauri/src/release_version.rs`): `rcN` counts as

@@ -19,6 +19,7 @@ pub mod report;
 pub mod rhythm;
 mod runtime;
 pub mod sound;
+pub mod update;
 pub mod waveform;
 
 pub use audio_input::{InputDevice, Selection};
@@ -155,6 +156,16 @@ impl Engine {
     }
     pub fn report_submit(&self, id: &str) -> Result<String> {
         self.reports.submit(id)
+    }
+    /// The in-app update (`update`), which keeps its files in `<data>/updates`.
+    pub fn update_download(&self) -> Result<()> {
+        update::download(&self.data_dir)
+    }
+    pub fn update_install(&self) -> Result<()> {
+        update::install(&self.data_dir)
+    }
+    pub fn update_settle(&self) -> String {
+        update::settle(&self.data_dir)
     }
     fn with_store<T>(&self, f: impl FnOnce(&mut Store) -> Result<T>) -> Result<T> {
         let mut store = self.store.lock().unwrap();
