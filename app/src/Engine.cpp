@@ -58,6 +58,8 @@ Engine::Engine(QObject *parent)
     m_poll.setInterval(250);
     connect(&m_poll, &QTimer::timeout, this, &Engine::poll);
     m_poll.start();
+    m_updatePoll.setInterval(250);
+    connect(&m_updatePoll, &QTimer::timeout, this, &Engine::pollUpdate);
     if (!alone)
         setError(QStringLiteral("另一个 KVJ 正在使用同一份 Set 数据：请只开一个，两个会互相干扰蓝牙和改动"));
 }
@@ -189,6 +191,77 @@ void Engine::checkUpdate(bool quiet)
         }
         emit updateChanged();
     });
+}
+
+void Engine::downloadUpdate()
+{
+    ask({{"cmd", "update_download"}}, [this](const QJsonObject &reply) {
+        if (reply.contains("error")) {
+            const QString error = reply.value("error").toString();
+            writeLog({QStringLiteral("[error] 更新：") + error});
+            m_updateJob = {{"phase", "failed"}, {"error", error}};
+            emit updateJobChanged();
+            return;
+        }
+        pollUpdate();
+        m_updatePoll.start();
+    });
+}
+
+void Engine::cancelUpdate()
+{
+    ask({{"cmd", "update_cancel"}}, [this](const QJsonObject &) { pollUpdate(); });
+}
+
+void Engine::pollUpdate()
+{
+    call({{"cmd", "update_status"}}, [this](const QJsonValue &ok) {
+        QVariantMap job = ok.toObject().toVariantMap();
+        const QStringList lines = job.take("lines").toStringList();
+        if (!lines.isEmpty())
+            writeLog(lines);
+        const QString phase = job.value("phase").toString();
+        if (phase != "downloading" && phase != "verifying" && phase != "unpacking")
+            m_updatePoll.stop();
+        if (job != m_updateJob) {
+            m_updateJob = job;
+            emit updateJobChanged();
+        }
+    }, false);
+}
+
+void Engine::installUpdate()
+{
+    ask({{"cmd", "update_install"}}, [this](const QJsonObject &reply) {
+        pollUpdate();
+        if (reply.contains("error")) {
+            // Nothing changed on disk; KVJ goes on as it was.
+            m_updateJob.insert("error", reply.value("error").toString());
+            emit updateJobChanged();
+            return;
+        }
+        // The updater waits for this process to end before it touches anything.
+        QCoreApplication::quit();
+    });
+}
+
+void Engine::settleUpdate()
+{
+    ask({{"cmd", "update_settle"}}, [this](const QJsonObject &reply) {
+        const QString notice = reply.value("ok").toObject().value("notice").toString();
+        if (notice.isEmpty())
+            return;
+        m_updateNotice = notice;
+        emit updateJobChanged();
+    });
+}
+
+void Engine::dismissUpdateNotice()
+{
+    if (m_updateNotice.isEmpty())
+        return;
+    m_updateNotice.clear();
+    emit updateJobChanged();
 }
 
 void Engine::prepareReport(const QString &note)

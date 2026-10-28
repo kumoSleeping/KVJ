@@ -41,6 +41,11 @@ class Engine : public QObject
     Q_PROPERTY(QVariantMap update READ update NOTIFY updateChanged)
     Q_PROPERTY(bool checkingUpdate READ checkingUpdate NOTIFY updateChanged)
     Q_PROPERTY(QString updateError READ updateError NOTIFY updateChanged)
+    // The in-app update under way: {phase, version, received, total, error};
+    // phase "" (none), downloading, verifying, unpacking, ready, installing, failed.
+    Q_PROPERTY(QVariantMap updateJob READ updateJob NOTIFY updateJobChanged)
+    // What the last update did, said once after the restart ("" when nothing).
+    Q_PROPERTY(QString updateNotice READ updateNotice NOTIFY updateJobChanged)
     // The computer and its screens kept awake (Awake.h): set while projecting,
     // following or sending.
     Q_PROPERTY(bool keepAwake READ keepAwake WRITE setKeepAwake NOTIFY keepAwakeChanged)
@@ -63,9 +68,24 @@ public:
     QVariantMap update() const { return m_update; }
     bool checkingUpdate() const { return m_checkingUpdate; }
     QString updateError() const { return m_updateError; }
+    QVariantMap updateJob() const { return m_updateJob; }
+    QString updateNotice() const { return m_updateNotice; }
 
     // The newest published release (GitHub). `quiet`: a failure is not shown.
     Q_INVOKABLE void checkUpdate(bool quiet);
+    // Fetches, checks and unpacks the release the last check found
+    // (update.installable); updateJob follows it. Cancel stops it or drops
+    // what is ready.
+    Q_INVOKABLE void downloadUpdate();
+    Q_INVOKABLE void cancelUpdate();
+    // Once ready: starts the updater, which swaps the new version in after
+    // KVJ quits and starts it, and quits. Whoever calls it has made sure no
+    // show is interrupted unasked.
+    Q_INVOKABLE void installUpdate();
+    Q_INVOKABLE void dismissUpdateNotice();
+    // Called once the window is up: an updater waiting for this version to
+    // start is told it did, and updateNotice says what the last update did.
+    void settleUpdate();
     // A scrubbed report from the logs on disk, previewed in full
     // (reportReady), then sent exactly as shown (reportSent); reportFailed says why not.
     Q_INVOKABLE void prepareReport(const QString &note);
@@ -130,6 +150,7 @@ signals:
     void importingChanged();
     void keepAwakeChanged();
     void updateChanged();
+    void updateJobChanged();
     void reportReady(const QVariantMap &preview);
     void reportSent(const QString &id);
     void reportFailed(const QString &error);
@@ -147,6 +168,7 @@ private:
     void setError(const QString &error);
     void applyPresented(const QJsonObject &view);
     void poll();
+    void pollUpdate();
     // The session's log lines also go to <dataDir>/logs, a file a day, so a
     // show can be looked into afterwards.
     void writeLog(const QStringList &lines);
@@ -158,6 +180,9 @@ private:
     QVariantMap m_update;
     bool m_checkingUpdate = false;
     QString m_updateError;
+    QVariantMap m_updateJob;
+    QString m_updateNotice;
+    QTimer m_updatePoll;
     QVariantMap m_document;
     QVariantMap m_view;
     QVariantMap m_matched;

@@ -302,6 +302,12 @@ int main(int argc, char *argv[])
     app.installEventFilter(new QuietSpace(&app));
     if (!engine.rootObjects().isEmpty())
         app.installEventFilter(new NudgeRelease(engine.rootObjects().first(), &app));
+    // Up and running a little while: an updater waiting for this version to
+    // start (it otherwise puts the old one back) is told so.
+    if (!engine.rootObjects().isEmpty()) {
+        if (auto *kvj = engine.singletonInstance<Engine *>("KVJ", "Engine"))
+            QTimer::singleShot(3000, kvj, &Engine::settleUpdate);
+    }
 
     // Development aid: KVJ_SNAPSHOT=<file.png> saves the window on screen (the
     // player's, or the sender's with --send) and quits.

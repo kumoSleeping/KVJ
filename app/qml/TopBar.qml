@@ -129,17 +129,20 @@ Rectangle {
             onClicked: top.send()
         }
         Item { implicitWidth: 4 }
-        // Version, updates and logs; a dot when a newer release is out.
+        // Version, updates and logs; a dot when a newer release is out or one
+        // is downloaded and waits for the restart.
         IconButton {
             id: aboutKey
             implicitWidth: 28
             implicitHeight: 26
-            iconName: about.newer ? "circle-arrow-up" : "info"
-            tip: about.newer ? "有新版本 v" + Engine.update.latest + " 待下载" : "关于 · 更新 · 日志"
+            iconName: about.newer || about.ready ? "circle-arrow-up" : "info"
+            tip: about.ready ? "新版本 v" + about.job.version + " 已就绪，重启即可更新"
+                : about.fetching ? "正在下载新版本 v" + about.job.version
+                : about.newer ? "有新版本 v" + Engine.update.latest + " 待下载" : "关于 · 更新 · 日志"
             active: about.visible
             onClicked: about.visible ? about.close() : about.open()
             Rectangle {
-                visible: about.newer
+                visible: about.newer || about.ready
                 x: parent.width - 9
                 y: 3
                 width: 7
