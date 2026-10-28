@@ -85,8 +85,10 @@ jobs:
           if [ "$RUNNER_OS" = "macOS" ]; then
             codesign --force --deep --sign - dist/KVJ.app
             hdiutil create -volname KVJ -srcfolder dist/KVJ.app -ov -format UDZO KVJ-${{ matrix.name }}.dmg
+            shasum -a 256 KVJ-${{ matrix.name }}.dmg > KVJ-${{ matrix.name }}.dmg.sha256
           else
             7z a KVJ-${{ matrix.name }}.zip ./dist/*
+            sha256sum KVJ-${{ matrix.name }}.zip > KVJ-${{ matrix.name }}.zip.sha256
           fi
 
       - uses: actions/upload-artifact@v4
@@ -95,6 +97,7 @@ jobs:
           path: |
             KVJ-${{ matrix.name }}.dmg
             KVJ-${{ matrix.name }}.zip
+            KVJ-${{ matrix.name }}.*.sha256
             screenshot-${{ matrix.name }}.png
           if-no-files-found: warn
 
@@ -119,5 +122,8 @@ jobs:
         run: |
           test -s "docs/releases/$TAG.md" || { echo "missing docs/releases/$TAG.md"; exit 1; }
           case "$TAG" in *-*) kind=--prerelease ;; *) kind=--latest ;; esac
+          # The .sha256 files are what the in-app update checks a download
+          # against when GitHub gives no digest of its own.
           gh release create "$TAG" KVJ-macos-arm64.dmg KVJ-windows-x64.zip \
+            KVJ-macos-arm64.dmg.sha256 KVJ-windows-x64.zip.sha256 \
             --title "KVJ $TAG" --notes-file "docs/releases/$TAG.md" --verify-tag $kind
