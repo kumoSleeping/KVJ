@@ -1,10 +1,12 @@
 #include "VideoSurface.h"
 
+#include "Engine.h"
 #include "FrameNode.h"
 #include "VideoPlayer.h"
 #include "kvj.h"
 
 #include <QDebug>
+#include <QFileInfo>
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
 #include <QThreadPool>
@@ -20,14 +22,26 @@ namespace {
 constexpr double kJump = 0.75;
 // The old picture plays on at most this long waiting for the new one's frame.
 constexpr double kHoldMs = 3000;
+// A decoder call (open, seek, decode) this long has hung: a seek through a long
+// run of frames to a keyframe takes a second or two at most. Each new player
+// that hangs again is given twice as long, up to the most.
+constexpr double kStallSeconds = 6;
+constexpr double kStallMostSeconds = 60;
 
 // A player stops its decoder thread when it goes, which can take a while (a
 // slow drive, a long run of frames to a keyframe); the GUI thread draws the
-// projection and never waits for that.
+// projection and never waits for that. One whose decoder hangs is abandoned:
+// waiting for it would take a pool thread for good, and the app's exit waits
+// for those.
 void retire(std::unique_ptr<VideoPlayer> player)
 {
-    if (player)
-        QThreadPool::globalInstance()->start([gone = player.release()] { delete gone; });
+    if (!player)
+        return;
+    if (player->busySeconds() > kStallSeconds) {
+        VideoPlayer::abandon(std::move(player));
+        return;
+    }
+    QThreadPool::globalInstance()->start([gone = player.release()] { delete gone; });
 }
 
 // A dissolve was cut for the decoder budget and not logged since.
@@ -43,7 +57,7 @@ VideoSurface::VideoSurface(QQuickItem *parent)
     connect(&m_timer, &QTimer::timeout, this, &VideoSurface::tick);
     // A new match (a jump or a rate change) is followed at once, not at the next wake.
     connect(this, &VideoSurface::timingChanged, this, [this] {
-        if (m_player)
+        if (m_player && !m_idle)
             m_timer.start(0);
     });
 }
@@ -52,6 +66,22 @@ VideoSurface::~VideoSurface()
 {
     retire(std::move(m_player));
     retire(std::move(m_outgoing));
+}
+
+void VideoSurface::setIdle(bool idle)
+{
+    if (m_idle == idle)
+        return;
+    m_idle = idle;
+    if (idle) {
+        m_timer.stop();
+        dropOutgoing();
+    } else if (m_player) {
+        // Time went on meanwhile: not a jump to dissolve, the player only seeks.
+        m_lastTickAt = -1;
+        m_timer.start(0);
+    }
+    emit idleChanged();
 }
 
 bool VideoSurface::fadeable() const
@@ -172,16 +202,47 @@ void VideoSurface::restart()
         setHasFrame(false);
         clearPreviews();
         update();
-    } else {
+    } else if (!m_idle) {
         m_timer.start(0);
     }
+    m_stallSeconds = kStallSeconds;
     setError(QString());
+}
+
+// The player has been inside one decoder call too long (a hardware decoder
+// hung by the driver, which happens on Windows): every jump would only ask it
+// again, and the picture would stay as it is for good. A new player takes over;
+// the hung one is left to stop on its own.
+void VideoSurface::replaceStalled()
+{
+    Engine::note(QStringLiteral("picture: %1 · 解码 %2 秒没有回应，换一个新的解码器")
+                     .arg(QFileInfo(m_source).fileName())
+                     .arg(qRound(m_player->busySeconds())));
+    retire(std::exchange(m_player, std::make_unique<VideoPlayer>(m_source, m_options)));
+    m_lastPts = -1;
+    m_lastTickAt = -1;
+    m_stallSeconds = std::min(m_stallSeconds * 2, kStallMostSeconds);
+}
+
+// The picture's errors go to the session's log too, and so does the way back.
+void VideoSurface::noteError(const QString &error)
+{
+    if (error == this->error())
+        return;
+    const QString name = QFileInfo(m_source).fileName();
+    if (!error.isEmpty())
+        Engine::note(QStringLiteral("picture: %1 · %2").arg(name, error));
+    else if (!this->error().isEmpty())
+        Engine::note(QStringLiteral("picture: %1 · 已恢复").arg(name));
+    setError(error);
 }
 
 void VideoSurface::tick()
 {
-    if (!m_player)
+    if (!m_player || m_idle)
         return;
+    if (m_player->busySeconds() > m_stallSeconds)
+        replaceStalled();
     const double now = kvj_clock_ms();
     const double target = m_position + (now - m_clockAtMs + m_offsetMs) / 1000.0 * m_rate;
     if (m_lastTickAt >= 0 && std::abs(target - (m_lastTarget + (now - m_lastTickAt) / 1000.0 * m_rate)) > kJump) {
@@ -216,6 +277,7 @@ void VideoSurface::tick()
             }
             feedPreviews(m_pending, m_fadeNext ? Layer::Jump : Layer::Shown, m_fadeMs);
             setHasFrame(true);
+            m_stallSeconds = kStallSeconds;
             update();
         }
     }
@@ -225,7 +287,7 @@ void VideoSurface::tick()
         m_sourceFps = m_player->sourceFps();
         emit sourceInfoChanged();
     }
-    setError(m_player->error());
+    noteError(m_player->error());
     // Sleep until the next decoded frame is due (in wall time), polling briefly
     // while the decoder catches up.
     const double ahead = m_player->untilNext(target);

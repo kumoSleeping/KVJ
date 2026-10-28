@@ -53,6 +53,13 @@ Window {
     function wants(id) {
         return programIds.indexOf(id) >= 0 || (root.previewing && wantedIds.indexOf(id) >= 0)
     }
+    // Someone sees the picture: the output, or the operator's window. While
+    // neither is up the videos keep their files open but decode nothing
+    // (VideoSurface.idle), and go on from there when one is up again.
+    readonly property bool awake: root.visible || root.previewing
+    function keeps(id) {
+        return root.awake ? root.wants(id) : programIds.indexOf(id) >= 0 || wantedIds.indexOf(id) >= 0
+    }
     // The item that shows a source here, or null; `sourceRevision` moves when
     // the answer may have changed.
     property int sourceRevision: 0
@@ -160,7 +167,8 @@ Window {
             id: surface
             anchors.fill: parent
             // Nothing is decoded while neither the output nor the preview is up.
-            source: (root.visible || root.previewing) && root.entry && root.entry.video ? root.entry.path : ""
+            source: root.entry && root.entry.video ? root.entry.path : ""
+            idle: !root.awake
             maxHeight: root.maxHeight
             maxFps: root.maxFps
             position: root.position
@@ -179,7 +187,8 @@ Window {
                 readonly property var timing: root.auxTimings[index] || null
                 readonly property var entry: timing ? timing.entry : null
                 anchors.fill: parent
-                source: (root.visible || root.previewing) && !!entry && entry.video && root.wants("track:" + (index + 1)) ? entry.path : ""
+                source: !!entry && entry.video && root.keeps("track:" + (index + 1)) ? entry.path : ""
+                idle: !root.awake
                 maxHeight: root.maxHeight
                 maxFps: root.maxFps
                 position: timing ? timing.position : 0

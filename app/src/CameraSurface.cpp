@@ -6,10 +6,6 @@
 
 #include <QCamera>
 #include <QCoreApplication>
-#include <QDateTime>
-#include <QDebug>
-#include <QDir>
-#include <QFile>
 #include <QMediaCaptureSession>
 #include <QMediaDevices>
 #include <QQuickWindow>
@@ -31,20 +27,6 @@ constexpr double kDrawWaitMs = 500;
 // again, this long after; each further time in a row twice as long, up to the most.
 constexpr double kRetryMs = 3000;
 constexpr double kRetryMostMs = 30000;
-
-// A line for the session's log on disk (Engine::writeLog's file, which a
-// Windows build, having no console, also needs) and the console.
-void note(const QString &line)
-{
-    qInfo().noquote() << line;
-    const QDir dir(QDir(Engine::defaultDataDir()).filePath(QStringLiteral("logs")));
-    if (!dir.exists() && !QDir().mkpath(dir.path()))
-        return;
-    const QDateTime now = QDateTime::currentDateTime();
-    QFile file(dir.filePath(QStringLiteral("kvj-%1.log").arg(now.toString(QStringLiteral("yyyy-MM-dd")))));
-    if (file.open(QIODevice::Append | QIODevice::Text))
-        file.write((now.toString(QStringLiteral("HH:mm:ss.zzz ")) + QStringLiteral("[info] ") + line + QLatin1Char('\n')).toUtf8());
-}
 
 // The camera's own format closest to a projected picture: at most 1080 lines,
 // a fluent rate, at least 720 lines, not compressed (decoding JPEG costs more
@@ -208,7 +190,7 @@ void CameraSurface::evaluate()
         const double quiet = now - std::max(frameAt, m_startedAt);
         if (quiet < retryMs())
             return;
-        note(QStringLiteral("camera: 重启（%1 秒无画面）").arg(qRound(quiet / 1000)));
+        Engine::note(QStringLiteral("camera: 重启（%1 秒无画面）").arg(qRound(quiet / 1000)));
         stop();
         ++m_retries;
         m_lost = true;
@@ -275,7 +257,7 @@ void CameraSurface::start(const QCameraDevice &device)
     connect(m_camera.get(), &QCamera::errorOccurred, this, [this, generation](QCamera::Error error, const QString &text) {
         if (error == QCamera::NoError || !m_camera || generation != m_generation)
             return;
-        note(QStringLiteral("camera: %1").arg(text));
+        Engine::note(QStringLiteral("camera: %1").arg(text));
         stop();
         m_failed = true;
         m_failedAt = kvj_clock_ms();
@@ -293,7 +275,7 @@ void CameraSurface::start(const QCameraDevice &device)
     // What was wrong is said until the first frame (evaluate).
     m_camera->start();
     m_startedAt = kvj_clock_ms();
-    note(QStringLiteral("camera: %1 · %2×%3 at %4 fps")
+    Engine::note(QStringLiteral("camera: %1 · %2×%3 at %4 fps")
              .arg(device.description())
              .arg(format.resolution().width())
              .arg(format.resolution().height())
@@ -329,7 +311,7 @@ void CameraSurface::devicesChanged()
         const bool present = std::any_of(devices.begin(), devices.end(),
                                          [this](const QCameraDevice &d) { return d.id() == m_startedId; });
         if (!present) {
-            note(QStringLiteral("camera: disconnected"));
+            Engine::note(QStringLiteral("camera: disconnected"));
             stop();
             m_lost = true;
             setError(QStringLiteral("相机已断开"));

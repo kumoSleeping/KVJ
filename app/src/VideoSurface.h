@@ -40,6 +40,12 @@ class VideoSurface : public PictureSource
     // The video as stored (sourceSize, and its frames a second), kept from the
     // last one opened; for recommending the output's quality.
     Q_PROPERTY(double sourceFps READ sourceFps NOTIFY sourceInfoChanged)
+    // Nobody can see the picture for now (the operator's window minimized, no
+    // output up): the open file stays open but nothing is decoded, and the
+    // picture goes on from where it is due once this turns off again. Closing
+    // the file instead and opening it anew on the way back left the picture
+    // black for good when the system would not give a decoder back.
+    Q_PROPERTY(bool idle READ idle WRITE setIdle NOTIFY idleChanged)
 
 public:
     explicit VideoSurface(QQuickItem *parent = nullptr);
@@ -49,6 +55,8 @@ public:
     void setSource(const QString &source);
     int maxHeight() const { return m_options.maxHeight; }
     void setMaxHeight(int height);
+    bool idle() const { return m_idle; }
+    void setIdle(bool idle);
     double sourceFps() const { return m_sourceFps; }
     int fadeMs() const { return m_fadeMs; }
 
@@ -57,6 +65,7 @@ signals:
     void timingChanged();
     void qualityChanged();
     void fadeChanged();
+    void idleChanged();
 
 protected:
     QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override;
@@ -69,6 +78,8 @@ private:
     bool keepPlaying(double nowMs);
     void dropOutgoing();
     void tickOutgoing(double nowMs, int *wait);
+    void replaceStalled();
+    void noteError(const QString &error);
 
     QString m_source;
     DecodeOptions m_options;
@@ -86,6 +97,10 @@ private:
     // A jump happened; the first frame after it dissolves in.
     bool m_jumped = false;
     bool m_fadeNext = false;
+    bool m_idle = false;
+    // How long the player may stay inside one decoder call before it is
+    // given up for a new one; longer after each one given up, until a frame comes.
+    double m_stallSeconds = 6;
     std::unique_ptr<VideoPlayer> m_player;
     QTimer m_timer;
     QImage m_pending;

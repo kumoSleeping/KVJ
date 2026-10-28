@@ -113,6 +113,10 @@ public:
     Q_INVOKABLE static double clockMs();
     // Where the Set document and caches live: $KVJ_DATA_DIR, else the app's data folder.
     static QString defaultDataDir();
+    // A line for the session's log on disk (writeLog's file, which a Windows
+    // build, having no console, also needs) and the console, from the app's
+    // own parts (the pictures, the cameras) on the GUI thread.
+    static void note(const QString &line);
 
 signals:
     void documentChanged();

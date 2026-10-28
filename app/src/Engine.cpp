@@ -5,6 +5,7 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -90,6 +91,18 @@ QString Engine::defaultDataDir()
 {
     const QString dir = qEnvironmentVariable("KVJ_DATA_DIR");
     return dir.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) : dir;
+}
+
+void Engine::note(const QString &line)
+{
+    qInfo().noquote() << line;
+    const QDir dir(QDir(defaultDataDir()).filePath(QStringLiteral("logs")));
+    if (!dir.exists() && !QDir().mkpath(dir.path()))
+        return;
+    const QDateTime now = QDateTime::currentDateTime();
+    QFile file(dir.filePath(QStringLiteral("kvj-%1.log").arg(now.toString(QStringLiteral("yyyy-MM-dd")))));
+    if (file.open(QIODevice::Append | QIODevice::Text))
+        file.write((now.toString(QStringLiteral("HH:mm:ss.zzz ")) + QStringLiteral("[info] ") + line + QLatin1Char('\n')).toUtf8());
 }
 
 double Engine::clockMs()

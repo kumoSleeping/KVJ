@@ -21,6 +21,20 @@ int VideoPlayer::live()
     return g_live.load();
 }
 
+void VideoPlayer::abandon(std::unique_ptr<VideoPlayer> player)
+{
+    if (!player)
+        return;
+    VideoPlayer *gone = player.release();
+    {
+        std::lock_guard lock(gone->m_mutex);
+        gone->m_stop = true;
+    }
+    gone->m_wake.notify_all();
+    gone->m_thread.detach();
+    --g_live;
+}
+
 VideoPlayer::VideoPlayer(const QString &path, const DecodeOptions &options)
     : m_path(path)
     , m_options(options)
@@ -92,6 +106,12 @@ bool VideoPlayer::frameFor(double target, VideoFrame *frame, double rate)
     return fresh;
 }
 
+double VideoPlayer::busySeconds() const
+{
+    std::lock_guard lock(m_mutex);
+    return m_busy ? std::chrono::duration<double>(std::chrono::steady_clock::now() - m_busyAt).count() : 0.0;
+}
+
 double VideoPlayer::untilNext(double target) const
 {
     std::lock_guard lock(m_mutex);
@@ -104,12 +124,32 @@ double VideoPlayer::untilNext(double target) const
 
 void VideoPlayer::run()
 {
-    std::unique_ptr<Decoder> decoder = createDecoder();
-    QString openError;
-    if (!decoder || !decoder->open(m_path, m_options, &openError)) {
-        std::lock_guard lock(m_mutex);
+    // A file that will not open is tried again, less often each time, rather
+    // than leave the picture black until another file is chosen: the system
+    // may refuse a decoder for a moment (the GPU busy with a camera or another
+    // decoder still closing) and give one later.
+    std::unique_ptr<Decoder> decoder;
+    for (int tries = 0;; ++tries) {
+        {
+            std::lock_guard lock(m_mutex);
+            m_busy = true;
+            m_busyAt = std::chrono::steady_clock::now();
+        }
+        decoder = createDecoder();
+        QString openError;
+        const bool opened = decoder && decoder->open(m_path, m_options, &openError);
+        if (!opened)
+            decoder.reset();
+        std::unique_lock lock(m_mutex);
+        m_busy = false;
+        if (opened) {
+            m_error.clear();
+            break;
+        }
         m_error = openError.isEmpty() ? QStringLiteral("无法打开视频") : openError;
-        return;
+        m_wake.wait_for(lock, std::chrono::milliseconds(std::min(500 << std::min(tries, 4), 5000)), [this] { return m_stop; });
+        if (m_stop)
+            return;
     }
     const double duration = decoder->duration();
     // The last frame's time, once the end of the file has been decoded.
@@ -170,9 +210,12 @@ void VideoPlayer::run()
                 recycle(std::move(m_queue.front()));
                 m_queue.pop_front();
             }
+            m_busy = true;
+            m_busyAt = std::chrono::steady_clock::now();
             lock.unlock();
             decoder->seek(to);
             lock.lock();
+            m_busy = false;
             cursor = to;
             last = -1;
             positioned = true;
@@ -198,9 +241,12 @@ void VideoPlayer::run()
         }
         // Frames already past their display interval are never converted.
         const double discardBefore = bounded(m_target) - step;
+        m_busy = true;
+        m_busyAt = std::chrono::steady_clock::now();
         lock.unlock();
         const bool ok = decoder->next(&frame, discardBefore);
         lock.lock();
+        m_busy = false;
         if (!ok) {
             recycle(std::move(frame));
             const QString error = decoder->error();
@@ -217,6 +263,8 @@ void VideoPlayer::run()
             m_wake.wait_for(lock, std::chrono::milliseconds(500));
             if (m_stop)
                 break;
+            m_busy = true;
+            m_busyAt = std::chrono::steady_clock::now();
             lock.unlock();
             std::unique_ptr<Decoder> fresh = createDecoder();
             QString reopenError;
@@ -225,6 +273,7 @@ void VideoPlayer::run()
                 decoder = std::move(fresh);
             fresh.reset();
             lock.lock();
+            m_busy = false;
             if (reopened) {
                 m_error.clear();
                 positioned = false;
