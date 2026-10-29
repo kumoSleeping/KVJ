@@ -468,6 +468,7 @@ Item {
             Item { Layout.fillWidth: true }
             // 同步变速, on 画面 2's row: it plays at 画面 1's speed.
             IconButton {
+                id: tempoLink
                 visible: !row.main && row.view.dual
                 implicitWidth: 24
                 implicitHeight: 24
@@ -615,12 +616,12 @@ Item {
             }
         }
         // Play and the keys that play from somewhere, right before the speed
-        // keys, kept clear of the time at the left.
+        // keys (and 同步变速's link), kept clear of the time at the left.
         Row {
             id: middle
             visible: !row.camera
             readonly property real leftEnd: timeText.x + timeText.width + 12
-            readonly property real rightStart: speedDown.x - 10
+            readonly property real rightStart: (tempoLink.visible ? tempoLink.x : speedDown.x) - 10
             x: Math.max(leftEnd, rightStart - width)
             height: row.barHeight
             spacing: 4
