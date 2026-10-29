@@ -630,8 +630,8 @@ ColumnLayout {
                 onToggled: Switcher.fadeMs = checked ? Switcher.fadeLength : 0
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: Switcher.follow ? "轨道上的快切用这个渐变；实时模式下画板上的改动仍是直接切"
-                                              : "上屏（空格）和轨道上的快切用这个渐变"
+                ToolTip.text: Switcher.follow ? "[ / ] 直接上屏一条轨道时用这个渐变；实时模式下画板上的改动仍是直接切"
+                                              : "上屏（空格）和 [ / ] 直接上屏一条轨道时用这个渐变"
             }
             TextButton {
                 readonly property var values: [300, 600, 1000, 2000]

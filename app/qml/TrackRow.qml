@@ -580,39 +580,21 @@ Item {
                                        : "单次（播完即停）：放完这条轨道的最后一个素材后停在最后一帧；点一下改为循环播放"
             }
             Item { Layout.preferredWidth: 4 }
-            // This track's layer floated to the top on the board only, and
-            // chosen there to be sized; the audience sees it on 投放.
+            // This track's layer floated to the top on the board, and chosen
+            // there to be sized; ink while it is on top on the air.
             TextButton {
                 implicitHeight: 22
                 leftPadding: 8
                 rightPadding: 10
-                outlined: true
+                outlined: !row.onTop
+                primary: row.onTop
                 font.pixelSize: Theme.sizeXs
                 iconName: "arrow-up-to-line"
                 text: "置顶"
                 onClicked: row.view.bringUp(row.key)
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: row.name + " 在画板上浮到最上层并选中，好调整大小和位置（在画外时铺满画面）；实时模式下观众立刻看到，确认后上屏时按 ✓ 才上屏"
-            }
-            Item { Layout.preferredWidth: 4 }
-            // 快切: this track's layer floated to the top, to the audience with
-            // the board's dissolve, as it is sized; the others stay under it.
-            TextButton {
-                implicitHeight: 22
-                implicitWidth: 30
-                leftPadding: 0
-                rightPadding: 0
-                outlined: !row.onTop
-                primary: row.onTop
-                iconName: "zap"
-                display: AbstractButton.IconOnly
-                icon.width: 13
-                icon.height: 13
-                onClicked: row.view.takeLive(row.key)
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "快切（" + (row.track === 0 ? "[" : "]") + "）：" + row.name + " 浮到最上层投给观众，保留它在画板上的大小和位置（在画外时铺满画面）；其它画面留在下面。用画板的渐变设置"
+                ToolTip.text: row.name + " 在画板上浮到最上层并选中，好调整大小和位置（在画外时铺满画面）；实时模式下观众立刻看到，确认后上屏时按 ✓ 才上屏（直接上屏也可按 " + (row.track === 0 ? "[" : "]") + "）"
             }
         }
         // Play and the keys that play from somewhere, right before the speed
