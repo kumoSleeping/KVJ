@@ -53,9 +53,9 @@ KVJ listens to the music the DJ is playing, recognizes which video in the librar
 - Pressing a track only places its **cursor** and never moves the picture; **跳至** (jump) or Enter plays from it. Every jump can dissolve.
 - Speed goes from −50 % to +50 %; ← / → **nudge** the picture like a pitch bend (0.7× / 1.5× while held), ↑ / ↓ change it by 1 %.
 - Each track's own sound can be on with its own volume (a cue mix), stretched by Rubber Band with its pitch kept; or only the topmost track's is heard.
-- The computer and its screens stay awake, and closing the window while listening or projecting asks first; decoder failures, a sound output that will not start, a lost projector screen, a lost file and a broken sound input all recover by themselves; video is decoded by the system hardware and decoded and drawn only when needed, so the load stays low. The choices behind this are in the [design principles](docs/principles.md) (Chinese).
+- The computer and its screens stay awake, and closing the window while listening or projecting asks first; decoder failures, a sound output that will not start, a lost projector screen, a lost file and a broken sound input all recover by themselves; video is decoded by the system hardware and decoded and drawn only when needed, so the load stays low.
 
-Every key and shortcut is in the [detailed guide](docs/guide.md).
+[Design principles →](docs/principles.md) (Chinese) · [Detailed guide →](docs/guide.md)
 
 ### Board and 投放
 
@@ -63,7 +63,7 @@ Every key and shortcut is in the [detailed guide](docs/guide.md).
 - The board has two modes, **实时** (live) and **投放** (staged). In 实时 every change is on the air at once; in 投放 the audience keeps the picture last put out until **投放** (or Space) puts the new one out, with a dissolve if wanted, and ⌘Z **undoes** the board back to what is on the air. **输出预览** at the top right always shows what the audience sees.
 - A track's **投放画面 N** cuts that track to the top in one press; with **跳转置顶** on, a jump first puts its track on top and then plays.
 
-What the board, layers, 预备 and 投放 mean exactly is in the [glossary](docs/glossary.md) (Chinese).
+[Glossary →](docs/glossary.md) (Chinese)
 
 ### Overlay and effects
 
