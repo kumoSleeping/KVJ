@@ -654,33 +654,55 @@ ColumnLayout {
                     Switcher.fadeMs = next
                 }
             }
-            // The picture's own sound: on or off, where and how loud, in a popover.
-            TextButton {
-                id: soundKey
-                readonly property var out: composer.output
-                outlined: true
-                iconName: out && out.anySound ? "volume-2" : "volume-x"
-                text: !out || !out.anySound ? "声音关"
-                      : out.topOnly ? "顶层声音"
-                      : out.solo >= 0 ? "画面 " + (out.solo + 1) + " · " + Math.round((out.solo === 1 ? out.soundVolume2 : out.soundVolume) * 100) + "%"
-                      : out.hears1 && out.hears2 ? "画面 1+2"
-                      : out.hears1 ? "画面 1 · " + Math.round(out.soundVolume * 100) + "%"
-                      : "画面 2 · " + Math.round(out.soundVolume2 * 100) + "%"
-                widest: "画面 2 · 100%"
-                leftPadding: 8
-                rightPadding: 10
-                onClicked: out.openSound(soundKey)
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "轨道的声音：画面 1、画面 2 各自开关和音量，可同时开（cue mix），输出设备"
-                Rectangle {
-                    visible: !!soundKey.out && soundKey.out.soundError.length > 0
-                    x: parent.width - 9
-                    y: 3
-                    width: 7
-                    height: 7
-                    radius: 3.5
-                    color: Theme.warn
+            // The picture's own sound: the key turns it on or off and says
+            // what plays; the small key beside it opens what on plays (顶层
+            // 声音, 画面 1, 画面 2, how loud, where) in a popover.
+            RowLayout {
+                spacing: -1
+                TextButton {
+                    id: soundKey
+                    readonly property var out: composer.output
+                    outlined: true
+                    iconName: out && out.anySound ? "volume-2" : "volume-x"
+                    text: !out || !out.soundLive ? "声音关"
+                          : out.topOnly ? "顶层声音"
+                          // On, but 单轨 shows a track not chosen: nothing plays.
+                          : !out.anySound ? "声音开"
+                          : out.solo >= 0 ? "画面 " + (out.solo + 1) + " · " + Math.round((out.solo === 1 ? out.soundVolume2 : out.soundVolume) * 100) + "%"
+                          : out.hears1 && out.hears2 ? "画面 1+2"
+                          : out.hears1 ? "画面 1 · " + Math.round(out.soundVolume * 100) + "%"
+                          : "画面 2 · " + Math.round(out.soundVolume2 * 100) + "%"
+                    widest: "画面 2 · 100%"
+                    leftPadding: 8
+                    rightPadding: 10
+                    onClicked: out.soundLive = !out.soundLive
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: out && out.soundLive ? "关声音" : "开声音（播放什么在右边的小键里选）"
+                    Rectangle {
+                        visible: !!soundKey.out && soundKey.out.soundError.length > 0
+                        x: parent.width - 9
+                        y: 3
+                        width: 7
+                        height: 7
+                        radius: 3.5
+                        color: Theme.warn
+                    }
+                }
+                TextButton {
+                    id: soundMore
+                    outlined: true
+                    iconName: "chevron-down"
+                    display: AbstractButton.IconOnly
+                    icon.width: 12
+                    icon.height: 12
+                    implicitWidth: 22
+                    leftPadding: 0
+                    rightPadding: 0
+                    onClicked: soundKey.out.openSound(soundKey)
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: "开声音时播放什么：顶层声音，或画面 1、画面 2（可同时开）、各自音量，输出设备"
                 }
             }
             // The output: where it goes and the key that projects, in a popover;

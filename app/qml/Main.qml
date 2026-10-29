@@ -963,8 +963,9 @@ ApplicationWindow {
         if (placed.length)
             app.takeOffTrack(app.currentSet, placed)
     }
-    // Each track's sound on its own timing (desk.soundOn / soundOn2): the
-    // picture is a mix, the sound is chosen per track; both on, one mix.
+    // Each track's sound on its own timing (desk.hears1 / hears2: the sound
+    // key on, and what it plays): the picture is a mix, the sound is chosen
+    // per track; both on, one mix.
     AudioFollower {
         id: sound
         enabled: desk.hears1

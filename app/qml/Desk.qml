@@ -71,25 +71,30 @@ Item {
     function heightText(h) {
         return h > 0 ? h + "p" : "原始"
     }
-    // The tracks' own sound (an AudioFollower each): whether each plays and
-    // how loud, on one output (an id from their devices, empty for the
-    // system's default). Both on, the same videos make a cue mix.
+    // The tracks' own sound (an AudioFollower each). `soundLive` is the
+    // sound key: on or off. What on plays is set in the popover: the top
+    // layer's track (顶层声音, the default), or 画面 1 and 画面 2 by their own
+    // switches (both on, the same videos make a cue mix), each at its own
+    // volume, on one output (an id from their devices, empty for the
+    // system's default).
     property var sound: null
     property var sound2: null
+    property bool soundLive: false
     property bool soundOn: false
     property bool soundOn2: false
-    // 只播放顶层声音: only the track whose layer is on top on the air is
-    // heard (each its own volume); the switches above wait meanwhile.
-    property bool soundTopOnly: false
+    // 顶层声音: only the track whose layer is on top on the air is heard
+    // (each its own volume); the switches of the tracks wait meanwhile.
+    property bool soundTopOnly: true
     // The one track shown in 单轨 (-1 with both): only its sound is heard,
     // by its own switch and volume, so switching keeps the sound as it was.
     property int solo: -1
-    readonly property bool topOnly: soundTopOnly
+    // With nothing chosen, on still plays something: the top layer's.
+    readonly property bool topOnly: soundTopOnly || (!soundOn && !soundOn2)
     // The source on top on the air (Timeline.onTop), set by the host.
     property string topSource: ""
-    readonly property bool hears1: solo !== 1 && (topOnly ? topSource === "track:0" : soundOn)
-    readonly property bool hears2: solo !== 0 && (topOnly ? topSource === "track:1" : soundOn2)
-    readonly property bool anySound: topOnly || hears1 || hears2
+    readonly property bool hears1: soundLive && solo !== 1 && (topOnly ? topSource === "track:0" : soundOn)
+    readonly property bool hears2: soundLive && solo !== 0 && (topOnly ? topSource === "track:1" : soundOn2)
+    readonly property bool anySound: soundLive && (topOnly || hears1 || hears2)
     property string soundDevice: ""
     property real soundVolume: 0.8
     property real soundVolume2: 0.8
@@ -110,7 +115,19 @@ Item {
         property alias soundVolume: desk.soundVolume
         property alias sound2: desk.soundOn2
         property alias soundVolume2: desk.soundVolume2
-        property alias soundTopOnly: desk.soundTopOnly
+        // New keys: what on plays starts at 顶层声音 once on every computer,
+        // whatever was kept before; the key itself starts as the sound was.
+        property alias topSound: desk.soundTopOnly
+        property alias soundLive: desk.soundLive
+        property bool soundLiveKept: false
+        // The old ones, read once to carry the sound on as it was.
+        property bool soundTopOnly: false
+        Component.onCompleted: {
+            if (!soundLiveKept) {
+                desk.soundLive = desk.soundOn || desk.soundOn2 || soundTopOnly
+                soundLiveKept = true
+            }
+        }
     }
     // The shape the projection will have before it opens: the chosen screen's
     // when it fills it, else its 16:9 window.
@@ -244,8 +261,8 @@ Item {
         }
     }
 
-    // Under its key, the on/off switch first, right under the pointer
-    // that opened it; a second press on the key puts it away.
+    // Under the sound key (opened by the small key beside it); a second
+    // press puts it away.
     function openSound(item) {
         if (soundPop.visible && soundPop.parent === item) {
             soundPop.close()
@@ -258,7 +275,8 @@ Item {
     }
     readonly property bool soundOpen: soundPop.visible
 
-    // The picture's own sound: on or off, where and how loud.
+    // What the sound key plays when on: the top layer's track or the tracks
+    // chosen, how loud and where.
     Popup {
         id: soundPop
         width: 340
@@ -273,6 +291,18 @@ Item {
         }
         contentItem: ColumnLayout {
             spacing: 8
+            Caption {
+                Layout.fillWidth: true
+                text: "开声音时播放"
+            }
+            Toggle {
+                text: "顶层声音"
+                checked: desk.soundTopOnly
+                onToggled: desk.soundTopOnly = checked
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: "只听观众画面最上层那条轨道的声音，换到另一条在最上层时声音跟着换（各自的音量照旧）。关掉它再选画面 1、画面 2"
+            }
             // Each track's sound, off by default (the room hears the DJ), on
             // an output of its own: headphones to listen in, or the speakers.
             // Both on, they mix there (a cue mix of the same videos). How loud
@@ -299,7 +329,7 @@ Item {
                     spacing: 4
                     Toggle {
                         Layout.rightMargin: 4
-                        enabled: !desk.topOnly
+                        enabled: !desk.soundTopOnly
                         text: "画面 " + (soundRow.track + 1)
                         checked: soundRow.on
                         onToggled: soundRow.track === 0 ? desk.soundOn = checked : desk.soundOn2 = checked
@@ -342,14 +372,6 @@ Item {
                         color: (desk.topOnly ? (soundRow.track === 0 ? desk.hears1 : desk.hears2) : soundRow.on) ? Theme.body : Theme.faint
                     }
                 }
-            }
-            Toggle {
-                text: "只播放顶层声音"
-                checked: desk.soundTopOnly
-                onToggled: desk.soundTopOnly = checked
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "只听观众画面最上层那条轨道的声音，换到另一条在最上层时声音跟着换（各自的音量照旧）"
             }
             Select {
                 id: outputBox
