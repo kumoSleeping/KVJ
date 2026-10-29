@@ -44,7 +44,7 @@ This is a preview (pre-release) build; every version is listed under [Releases](
 
 KVJ listens to the music the DJ is playing, recognizes which video in the library it belongs to and where it is, and plays that video from that point at the same speed. When the DJ speeds up or slows down, the picture's speed changes with it; when the DJ jumps to another part of the song or to another song, the picture jumps there too, after checking once more so that it does not cut by mistake. Repeated choruses and other similar passages are told apart. Acoustic tracking works from the sound alone: no connection to the DJ software, no MIDI and no cue points set in the videos beforehand; it can listen to the Master, the system's sound or a microphone, and room mode helps with a microphone in a noisy room. The VJ no longer has to watch the DJ and line the picture up by hand, and speed and jumps can each be paused to take control back at any time.
 
-How to use acoustic tracking and how it works is in [the acoustic tracking page](docs/acoustic-tracking.md) (Chinese).
+[About acoustic tracking →](docs/acoustic-tracking.md) (Chinese)
 
 ### Player
 
