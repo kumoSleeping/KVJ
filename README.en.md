@@ -38,21 +38,11 @@ This is a preview (pre-release) build; every version is listed under [Releases](
 - **macOS**: open the DMG and drag KVJ into Applications. The app is not notarized; if macOS blocks the first launch, allow it under System Settings → Privacy & Security. Capturing system sound needs macOS 14.2 or later (screen-recording capture from 12.3); allow the microphone or system audio recording when KVJ first listens.
 - **Windows**: unzip and run `bin\KVJ.exe`. If Windows reports a missing runtime, run `vc_redist.x64.exe` from the same folder first.
 
-> [!NOTE]
-> Video is decoded by the system (VideoToolbox on macOS, Media Foundation on Windows), so no FFmpeg is needed. Entries can be mp4, m4v, mkv, mov and webm.
-
 ## Features
 
 ### Acoustic tracking: pictures matched to the music, by ear
 
-**Whatever the DJ plays, the picture plays.** KVJ listens to the DJ's music, finds the video that goes with it, lines it up to the second and plays it at the same speed. No watching the DJ's hands, no cue points set beforehand.
-
-- **Hears the song, finds the picture**: from half a second of sound it knows which video of the whole library it is, and where.
-- **Same speed, same beat**: the DJ speeds up or slows down, keylock on or off, and the picture keeps pace.
-- **Jumps with the DJ**: a jump within a song or to another song, and the picture is there too; it makes sure first, so it never cuts away and back.
-- **Never fooled**: repeated choruses and look-alike passages are told apart; it would rather listen a moment longer than land in the wrong place.
-- **Plug in and go**: no link to the DJ software, no MIDI, no cue points, just the sound — from the Master, the system's sound or a microphone; **room mode** hears it in a noisy room too.
-- **Take over any time**: speed and jumps each pause on their own and hand back to you; stopped, the picture carries on from the same frame.
+KVJ listens to the music the DJ is playing, recognizes which video in the library it belongs to and where it is, and plays that video from that point at the same speed. When the DJ speeds up or slows down, the picture's speed changes with it; when the DJ jumps to another part of the song or to another song, the picture jumps there too, after checking once more so that it does not cut by mistake. Repeated choruses and other similar passages are told apart. It works from the sound alone: no connection to the DJ software, no MIDI and no cue points set in the videos beforehand; it can listen to the Master, the system's sound or a microphone, and room mode helps with a microphone in a noisy room. The VJ no longer has to watch the DJ and line the picture up by hand, and speed and jumps can each be paused to take control back at any time.
 
 [More about acoustic tracking →](docs/acoustic-tracking.md) (Chinese)
 
