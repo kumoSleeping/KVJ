@@ -10,11 +10,12 @@ import KVJ
 // (FollowMonitor, its 16:9 room always kept, black until it finds); what
 // it found (the title, or the phase) and how fast it hears the music; the
 // input's level; 监听, 跟随 / 暂停, 跳至此处 (the
-// crosshair) and 画面偏移 (dragged or wheeled); the input with its channels (a
-// device with more than two lists each pair), 现场模式 and 刷新; at the
-// foot the two helpers in full (Assistants): the speed and the jump threshold,
-// each paused or resumed on its own. With two tracks, which one it listens
-// to is chosen under its name (监听 画面 1 | 画面 2), not while it runs.
+// crosshair) and 画面偏移 (dragged or wheeled); with two tracks, which one
+// it listens to (监听 画面 1 | 画面 2, not while it runs); the input with its
+// channels (a device with more than two lists each pair), 现场模式 and 刷新,
+// these two shown folded or not; at the foot the two helpers in full
+// (Assistants): the speed and the jump threshold, each paused or resumed on
+// its own.
 //
 // API
 //   app            the window (Main.qml's `app`): read following, match,
@@ -111,7 +112,7 @@ Card {
     // How tall it is unfolded, folded or not (from its parts, so that
     // folding does not change it).
     readonly property real fullHeight: headRow.implicitHeight + monitorBox.full + keysRow.implicitHeight
-                                       + details.implicitHeight + 3 * column.spacing
+                                       + choice.implicitHeight + details.implicitHeight + 4 * column.spacing
 
     Settings {
         category: "follow"
@@ -302,7 +303,7 @@ Card {
                 implicitHeight: 28
                 iconName: "ellipsis"
                 active: more.visible
-                tip: "监听哪条、声音输入、对速和跳转监测"
+                tip: "画面偏移、对速和跳转监测"
                 onClicked: more.visible ? more.close() : more.open()
             }
             OffsetKey {
@@ -311,6 +312,93 @@ Card {
             }
         }
 
+
+        // Which track it listens to and the input: right under the keys,
+        // folded or not, so both are chosen without ⋯.
+        ColumnLayout {
+            id: choice
+            Layout.fillWidth: true
+            spacing: 5
+            // Which track it listens to, while there are two: a segmented
+            // plate, the one chosen raised.
+            RowLayout {
+                visible: (root.tracks || []).length > 1
+                Layout.fillWidth: true
+                spacing: 8
+                Caption { text: "监听" }
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 28
+                    radius: Theme.radius
+                    color: Theme.inset
+                    Row {
+                        id: trackKeys
+                        anchors.fill: parent
+                        anchors.margins: 2
+                        spacing: 2
+                        Repeater {
+                            model: root.tracks
+                            TextButton {
+                                required property int modelData
+                                readonly property bool on: root.followTrack === modelData
+                                readonly property bool heard: root.audioTracks.indexOf(modelData) >= 0
+                                width: (trackKeys.width - trackKeys.spacing * ((root.tracks || []).length - 1)) / Math.max(1, (root.tracks || []).length)
+                                height: 24
+                                leftPadding: 6
+                                rightPadding: 6
+                                background: Rectangle {
+                                    radius: Theme.radius - 1
+                                    color: parent.on ? Theme.raised : parent.hovered && parent.enabled ? Theme.hover : "transparent"
+                                }
+                                font.weight: on ? Font.DemiBold : Font.Medium
+                                text: root.trackName(modelData)
+                                enabled: on || (!root.running && heard)
+                                onClicked: root.followTrack = modelData
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 600
+                                ToolTip.text: root.running && !on ? "先停止监听再换"
+                                              : !heard ? root.trackName(modelData) + " 上还没有带声音的素材"
+                                              : "声学追踪听" + root.trackName(modelData) + "的声音"
+                            }
+                        }
+                    }
+                }
+            }
+
+            // The input, its channels with it; 现场模式; 刷新.
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 2
+                Select {
+                    id: deviceBox
+                    Layout.fillWidth: true
+                    Layout.rightMargin: 2
+                    implicitHeight: 26
+                    font.pixelSize: Theme.sizeXs
+                    enabled: !root.running
+                    model: root.inputs.map(o => o.label)
+                    ToolTip.visible: hovered && !down
+                    ToolTip.delay: 600
+                    ToolTip.text: "声音输入" + (root.input ? "：" + root.input.label : "") + "\n多于两个声道的设备，每对声道单列一项"
+                }
+                Chip {
+                    text: "现场"
+                    on: root.roomMode
+                    enabled: !root.running
+                    tip: "现场模式：麦克风听现场，在混响里也能跟上。选麦克风时自动打开；电脑内录时关闭"
+                    onClicked: root.roomMode = !root.roomMode
+                }
+                IconButton {
+                    implicitWidth: 26
+                    implicitHeight: 26
+                    iconName: "refresh"
+                    iconSize: 14
+                    tip: "刷新设备"
+                    enabled: !root.running && !Engine.busy
+                    onClicked: Engine.refreshDevices()
+                }
+            }
+        }
 
         // Under it, the rest (details), unless folded into the popover.
         Item {
@@ -321,8 +409,8 @@ Card {
         }
     }
 
-    // Which track it listens to, the input, the two helpers: under the
-    // keys, or in a popover from ⋯ when the column is short of room.
+    // The two helpers (and, folded, 画面偏移): under the choice of track
+    // and input, or in a popover from ⋯ when the column is short of room.
     ColumnLayout {
         id: details
         parent: root.compact ? moreBody : detailsHome
@@ -339,87 +427,7 @@ Card {
             }
             OffsetKey { owner: root }
         }
-        // Which track it listens to, while there are two: a segmented
-        // plate, the one chosen raised.
-        RowLayout {
-            visible: (root.tracks || []).length > 1
-            Layout.fillWidth: true
-            spacing: 8
-            Caption { text: "监听" }
-            Rectangle {
-                Layout.fillWidth: true
-                implicitHeight: 28
-                radius: Theme.radius
-                color: Theme.inset
-                Row {
-                    id: trackKeys
-                    anchors.fill: parent
-                    anchors.margins: 2
-                    spacing: 2
-                    Repeater {
-                        model: root.tracks
-                        TextButton {
-                            required property int modelData
-                            readonly property bool on: root.followTrack === modelData
-                            readonly property bool heard: root.audioTracks.indexOf(modelData) >= 0
-                            width: (trackKeys.width - trackKeys.spacing * ((root.tracks || []).length - 1)) / Math.max(1, (root.tracks || []).length)
-                            height: 24
-                            leftPadding: 6
-                            rightPadding: 6
-                            background: Rectangle {
-                                radius: Theme.radius - 1
-                                color: parent.on ? Theme.raised : parent.hovered && parent.enabled ? Theme.hover : "transparent"
-                            }
-                            font.weight: on ? Font.DemiBold : Font.Medium
-                            text: root.trackName(modelData)
-                            enabled: on || (!root.running && heard)
-                            onClicked: root.followTrack = modelData
-                            ToolTip.visible: hovered
-                            ToolTip.delay: 600
-                            ToolTip.text: root.running && !on ? "先停止监听再换"
-                                          : !heard ? root.trackName(modelData) + " 上还没有带声音的素材"
-                                          : "声学追踪听" + root.trackName(modelData) + "的声音"
-                        }
-                    }
-                }
-            }
-        }
-
-        // The input, its channels with it; 现场模式; 刷新.
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 2
-            Select {
-                id: deviceBox
-                Layout.fillWidth: true
-                Layout.rightMargin: 2
-                implicitHeight: 26
-                font.pixelSize: Theme.sizeXs
-                enabled: !root.running
-                model: root.inputs.map(o => o.label)
-                ToolTip.visible: hovered && !down
-                ToolTip.delay: 600
-                ToolTip.text: "声音输入" + (root.input ? "：" + root.input.label : "") + "\n多于两个声道的设备，每对声道单列一项"
-            }
-            Chip {
-                text: "现场"
-                on: root.roomMode
-                enabled: !root.running
-                tip: "现场模式：麦克风听现场，在混响里也能跟上。选麦克风时自动打开；电脑内录时关闭"
-                onClicked: root.roomMode = !root.roomMode
-            }
-            IconButton {
-                implicitWidth: 26
-                implicitHeight: 26
-                iconName: "refresh"
-                iconSize: 14
-                tip: "刷新设备"
-                enabled: !root.running && !Engine.busy
-                onClicked: Engine.refreshDevices()
-            }
-        }
-
-        // The two helpers in full, right under it: the speed, and the jump
+        // The two helpers in full: the speed, and the jump
         // threshold; each paused or resumed by its key.
         Assistants {
             Layout.fillWidth: true
@@ -439,7 +447,8 @@ Card {
         id: more
         parent: moreKey
         x: moreKey.width - width
-        y: moreKey.height + 6
+        // Under the choice of track and input, which stays in sight.
+        y: moreKey.height + column.spacing + choice.height + 6
         width: root.width + 24
         padding: 12
         margins: 8
