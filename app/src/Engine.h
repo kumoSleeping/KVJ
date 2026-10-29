@@ -113,6 +113,9 @@ public:
     // `track`: only that track's entries are followed; `view.track` says which.
     Q_INVOKABLE void start(const QString &setId, const QString &device, int channelStart, bool room, int track = 0);
     Q_INVOKABLE void stop();
+    // While following: listen to another track; what the other one found is
+    // let go first (its picture back to its own player), then view.track says it.
+    Q_INVOKABLE void followTrack(int track);
     Q_INVOKABLE void clearError();
     Q_INVOKABLE static QUrl fileUrl(const QString &path) { return QUrl::fromLocalFile(path); }
     // The engine's monotonic clock; matched.clock_at_ms is on it.

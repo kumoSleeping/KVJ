@@ -24,7 +24,7 @@ void kvj_engine_free(KvjEngine *engine);
  * {"cmd":"import","set_id":"..","revision":n,"paths":[..]} {"cmd":"devices"}
  * {"cmd":"enable","set_id":"..","entry_ids":[..],"on":true} (also while following)
  * {"cmd":"start","set_id":"..","device":"auto","channel_start":0,"prepare_only":false}
- * {"cmd":"stop"} {"cmd":"status","after_log_id":null}
+ * {"cmd":"stop"} {"cmd":"follow_track","track":1} (while following) {"cmd":"status","after_log_id":null}
  * Reports and updates: {"cmd":"version"} {"cmd":"report_prepare","note":".."} → {id,body,bytes,destination}
  * {"cmd":"report_submit","id":".."} {"cmd":"update_check"} → {current,latest,newer,url,name,published_at}.
  * Free the reply with kvj_string_free. */

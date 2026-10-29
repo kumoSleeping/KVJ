@@ -57,6 +57,8 @@ enum Request {
         track: u8,
     },
     Stop,
+    /// While following, listen to another track.
+    FollowTrack { track: u8 },
     Status { after_log_id: Option<u64> },
     Version,
     ReportPrepare { note: String },
@@ -86,6 +88,7 @@ impl KvjEngine {
                 json!(e.start(&set_id, Selection { device, channel_start, room }, prepare_only, track)?)
             }
             Request::Stop => json!(e.stop()),
+            Request::FollowTrack { track } => json!(e.follow_track(track)?),
             Request::Status { after_log_id } => json!(e.status(after_log_id)),
             Request::Version => json!(crate::report::VERSION),
             Request::ReportPrepare { note } => json!(e.report_prepare(&note)?),

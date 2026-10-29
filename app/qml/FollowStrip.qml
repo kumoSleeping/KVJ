@@ -9,9 +9,9 @@ import KVJ
 // (未监听 red; 监听中 / 跟随中 green); following's own small picture
 // (FollowMonitor, its 16:9 room always kept, black until it finds); what
 // it found (the title, or the phase) and how fast it hears the music; the
-// input's level; 监听, 跟随 / 暂停, 跳至此处 (the
+// input's level; 监听 (an ear) and 跟随 (a note), icons ink while on, 跳至此处 (the
 // crosshair) and 画面偏移 (dragged or wheeled); with two tracks, which one
-// it listens to (监听 画面 1 | 画面 2, not while it runs); the input with its
+// it listens to (监听 画面 1 | 画面 2, also while it runs); the input with its
 // channels (a device with more than two lists each pair), 现场模式 and 刷新,
 // these two shown folded or not; at the foot the two helpers in full
 // (Assistants): the speed and the jump threshold, each paused or resumed on
@@ -252,37 +252,26 @@ Card {
             id: keysRow
             Layout.fillWidth: true
             spacing: 2
-            TextButton {
-                implicitHeight: 28
-                leftPadding: 8
-                rightPadding: 10
-                text: root.following ? "停止" : "监听"
-                widest: "监听"
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: root.following ? "停止监听" : "开始监听：听音乐、判断位置，画面仍归播放器"
+            // 监听 (an ear) and 跟随 (a note): icons only, ink while on.
+            InkKey {
+                iconName: "ear"
+                lit: root.following
                 enabled: root.following || root.canStart
+                tip: root.following ? "监听中：点一下停止" : "开始监听：听音乐、判断位置，画面仍归播放器"
                 onClicked: root.following ? Engine.stop() : root.app.listen()
             }
-            // Follow, or pause following: a key like 监听.
-            TextButton {
-                implicitHeight: 28
-                leftPadding: 8
-                rightPadding: 10
-                iconName: root.app && root.app.aiLeads ? "pause" : "play"
-                text: root.app && root.app.aiLeads ? "暂停" : "跟随"
-                widest: "跟随"
+            InkKey {
+                iconName: "music"
+                lit: !!root.app && root.app.aiLeads
                 enabled: root.following || root.canStart
+                tip: root.app && root.app.aiLeads ? "跟随中：点一下暂停跟随（继续监听，画面交回播放器）"
+                                                  : "开始跟随：画面跟着音乐走（没在监听时先开始监听）"
                 onClicked: {
                     if (root.app.aiLeads)
                         root.app.tempoPaused = root.app.jumpPaused = true
                     else
                         root.app.follow()
                 }
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: root.app && root.app.aiLeads ? "暂停跟随：继续监听，画面交回播放器"
-                                                          : "开始跟随：画面跟着音乐走（没在监听时先开始监听）"
             }
             IconButton {
                 implicitWidth: 28
@@ -350,12 +339,20 @@ Card {
                                 }
                                 font.weight: on ? Font.DemiBold : Font.Medium
                                 text: root.trackName(modelData)
-                                enabled: on || (!root.running && heard)
-                                onClicked: root.followTrack = modelData
+                                enabled: on || heard
+                                // While listening the engine changes over at
+                                // once (Engine.followTrack); view.track says so.
+                                onClicked: {
+                                    if (on)
+                                        return
+                                    if (root.running)
+                                        Engine.followTrack(modelData)
+                                    else
+                                        root.followTrack = modelData
+                                }
                                 ToolTip.visible: hovered
                                 ToolTip.delay: 600
-                                ToolTip.text: root.running && !on ? "先停止监听再换"
-                                              : !heard ? root.trackName(modelData) + " 上还没有带声音的素材"
+                                ToolTip.text: !heard ? root.trackName(modelData) + " 上还没有带声音的素材"
                                               : "声学追踪听" + root.trackName(modelData) + "的声音"
                             }
                         }
@@ -523,6 +520,30 @@ Card {
             ToolTip.visible: containsMouse && !pressed
             ToolTip.delay: 600
             ToolTip.text: "画面偏移：跟随的画面比音乐早（−）或晚（+）多少\n左右拖动或滚轮调，每格 10 ms；双击归零"
+        }
+    }
+
+    // A key of 声学追踪 that is an icon only: a plate, ink while `lit`.
+    component InkKey: IconButton {
+        property bool lit: false
+        implicitWidth: 34
+        implicitHeight: 28
+        iconSize: 15
+        icon.color: !enabled ? Theme.faint : lit ? Theme.bg : Theme.text
+        background: Rectangle {
+            radius: Theme.radius
+            color: parent.lit ? (parent.hovered ? Theme.body : Theme.text)
+                 : parent.down ? Theme.selected : parent.hovered && parent.enabled ? Theme.hover : Theme.inset
+            Behavior on color { ColorAnimation { duration: 90 } }
+        }
+    }
+    // While listening, the track followed is the engine's (view.track).
+    Connections {
+        target: Engine
+        function onViewChanged() {
+            const t = root.view.track
+            if (root.running && typeof t === "number" && t !== root.followTrack)
+                root.followTrack = t
         }
     }
 

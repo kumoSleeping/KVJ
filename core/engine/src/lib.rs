@@ -32,7 +32,7 @@ use serde::Serialize;
 use std::{
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc, Mutex, OnceLock,
     },
     time::{Instant, SystemTime, UNIX_EPOCH},
@@ -114,6 +114,9 @@ pub struct Engine {
     prepared: Mutex<Option<Arc<index::PreparedSet>>>,
     // Entries of the running Set that are turned off; read every round.
     off: Mutex<std::collections::HashSet<String>>,
+    // The track the running session listens to; read every round, so it can
+    // change while following (`follow_track`).
+    track: AtomicU8,
     session: Mutex<Option<Session>>,
     gate: Mutex<()>,
     reports: report::Reports,
@@ -132,6 +135,7 @@ impl Engine {
             diagnostics: Mutex::new(Diagnostics::default()),
             prepared: Mutex::new(None),
             off: Mutex::new(Default::default()),
+            track: AtomicU8::new(0),
             session: Mutex::new(None),
             gate: Mutex::new(()),
             reports: report::Reports::default(),
@@ -372,6 +376,7 @@ impl Engine {
             .map(|e| e.id.clone())
             .collect();
         let session = document::id();
+        self.track.store(track, Ordering::Relaxed);
         let view = View {
             session: session.clone(),
             input_device: input.device.clone(),
@@ -404,10 +409,35 @@ impl Engine {
             let cache = self.data_dir.join("cache").join("live");
             std::thread::Builder::new()
                 .name("kvj-follow".into())
-                .spawn(move || runtime::run(&engine, session, set, cache, cancel, prepare_only, input, track))?
+                .spawn(move || runtime::run(&engine, session, set, cache, cancel, prepare_only, input))?
         };
         *self.session.lock().unwrap() = Some(Session { cancel, worker });
         Ok(view)
+    }
+    /// While following: listen to `track` from the next round on, the input
+    /// left open (every track of the Set is indexed). What the other track
+    /// found is let go.
+    pub fn follow_track(&self, track: u8) -> Result<View> {
+        anyhow::ensure!(track <= document::LAST_TRACK, "轨道不存在");
+        anyhow::ensure!(self.running(), "没有在监听");
+        let set_id = self.view.lock().unwrap().set_id.clone();
+        let heard = self.with_store(|s| {
+            Ok(s.doc.sets.iter().find(|s| s.id == set_id).is_some_and(|s| s.entries.iter().any(|e| e.track == track && !e.silent)))
+        })?;
+        anyhow::ensure!(heard, "{}上没有带声音的素材", track_name(track));
+        if self.track.swap(track, Ordering::Relaxed) != track {
+            let session = self.view.lock().unwrap().session.clone();
+            self.log(&session, Level::Info, Stage::Session, format!("改为跟随{}", track_name(track)));
+            self.present(&session, |v| {
+                v.track = track;
+                v.matched = None;
+                v.candidate = None;
+                if ["matched", "searching"].contains(&v.phase.as_str()) {
+                    v.phase = "listening".into();
+                }
+            });
+        }
+        Ok(self.view.lock().unwrap().clone())
     }
     pub fn stop(&self) -> View {
         if let Some(s) = self.session.lock().unwrap().as_ref() {

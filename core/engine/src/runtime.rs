@@ -291,7 +291,6 @@ pub fn run(
     cancel: Arc<AtomicBool>,
     prepare_only: bool,
     input: super::audio_input::Selection,
-    track: u8,
 ) {
     let _background = super::qos::prefer_background();
     // A panic (a decoder library on a damaged file) fails the session, which
@@ -313,7 +312,7 @@ pub fn run(
             publish(&engine, &session, |v| v.phase = "prepared".into());
             return Ok(());
         }
-        run_inner(&engine, &session, &ready, &cancel, &input, track)
+        run_inner(&engine, &session, &ready, &cancel, &input)
     }))
     .unwrap_or_else(|_| Err(anyhow::anyhow!("引擎内部错误，请重新开始")));
     if cancel.load(Ordering::Relaxed) {
@@ -334,7 +333,7 @@ pub fn run(
         });
     }
 }
-fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &AtomicBool, input: &super::audio_input::Selection, track: u8) -> Result<()> {
+fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &AtomicBool, input: &super::audio_input::Selection) -> Result<()> {
     {
         if set.recordings.is_empty() {
             bail!("Set 没有素材")
@@ -558,6 +557,8 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
             }
             // What the DJ has on right now. Turning off the entry being followed
             // lets it go: the picture stays until another entry is found.
+            // The track listened to may change while following (follow_track).
+            let track = engine.track.load(Ordering::Relaxed);
             let on: Vec<bool> = {
                 let off = engine.off.lock().unwrap();
                 set.recordings

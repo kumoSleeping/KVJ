@@ -450,6 +450,17 @@ void Engine::stop()
     }, true);
 }
 
+void Engine::followTrack(int track)
+{
+    call({{"cmd", "follow_track"}, {"track", track}}, [this](const QJsonValue &ok) {
+        // The match first: following lets go of the old track's picture
+        // while that track is still the one followed.
+        applyPresented(ok.toObject());
+        m_view = ok.toObject().toVariantMap();
+        emit viewChanged();
+    }, false);
+}
+
 void Engine::applyPresented(const QJsonObject &view)
 {
     const QVariantMap matched = view.value("matched").toObject().toVariantMap();
