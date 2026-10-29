@@ -53,13 +53,17 @@ KVJ listens to the music the DJ is playing, recognizes which video in the librar
 - Pressing a track only places its **cursor** and never moves the picture; **跳至** (jump) or Enter plays from it. Every jump can dissolve.
 - Speed goes from −50 % to +50 %; ← / → **nudge** the picture like a pitch bend (0.7× / 1.5× while held), ↑ / ↓ change it by 1 %.
 - Each track's own sound can be on with its own volume (a cue mix), stretched by Rubber Band with its pitch kept; or only the topmost track's is heard.
-- Built for the show: the computer and its screens stay awake, and closing the window while listening or projecting asks first; decoder failures, a sound output that will not start, a lost projector screen, a lost file and a broken sound input all recover by themselves; video is decoded by the system hardware and decoded and drawn only when needed, so the load stays low.
+- Built for the show: the computer and its screens stay awake, and closing the window while listening or projecting asks first; decoder failures, a sound output that will not start, a lost projector screen, a lost file and a broken sound input all recover by themselves; video is decoded by the system hardware and decoded and drawn only when needed, so the load stays low. The choices behind this are in the [design principles](docs/principles.md) (Chinese).
+
+Every key and shortcut is in the [detailed guide](docs/guide.md).
 
 ### Board and 投放
 
 - The **board** in the middle is the audience's picture, seen and made in one place: 画面 1, 画面 2 and cameras are **layers** that are moved, sized, raised, filled or fitted, rounded, masked to a circle, feathered and cut by **split lines**. Around the picture is the **offstage** area, which the audience does not see.
 - The board has two modes: in **实时** (live) every change is on the air at once; in **投放** (staged) the audience keeps the picture last put out until **投放** (or Space) puts the new one out, with a dissolve if wanted, and ⌘Z **undoes** the board back to what is on the air. **输出预览** at the top right always shows what the audience sees.
 - A track's **投放画面 N** cuts that track to the top in one press; with **跳转置顶** on, a jump first puts its track on top and then plays.
+
+What the board, layers, 预备 and 投放 mean exactly is in the [glossary](docs/glossary.md) (Chinese).
 
 ### Overlay and effects
 
@@ -71,13 +75,6 @@ KVJ listens to the music the DJ is playing, recognizes which video in the librar
 
 - **+ 相机** puts a camera's picture on the board as a layer like 画面 1 and 画面 2: moved, sized, masked, raised, or put back in 预备.
 - A camera that goes away for a moment keeps its place and says what is wrong, and comes back by itself; a camera the system will not give never freezes KVJ.
-
-## Documents
-
-- [Acoustic tracking](docs/acoustic-tracking.md) (Chinese): what it does, how to use it, how it works.
-- [Glossary](docs/glossary.md) (Chinese): KVJ's terms.
-- [Design principles](docs/principles.md) (Chinese): the choices that run through the whole app.
-- [Detailed guide](docs/guide.md): every detail of using it.
 
 ## Build from source
 
