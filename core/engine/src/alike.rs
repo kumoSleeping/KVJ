@@ -17,8 +17,10 @@ use std::{
     time::Duration,
 };
 
-/// One query this often in each entry, this long.
+/// One query at most this far apart in each entry (at least four in a short
+/// one, at least `MIN_STEP` apart), this long.
 const STEP: f64 = 15.;
+const MIN_STEP: f64 = 4.;
 const QUERY: f64 = 2.;
 /// Places heard elsewhere before two entries are said to share their sound:
 /// one alone can be a common sample or a chance alignment.
@@ -46,13 +48,15 @@ pub fn scan(set: &PreparedSet, cancel: &AtomicBool) -> Option<Vec<Shared>> {
         let own = block.recording;
         let Some(features) = read(&block.path) else { continue };
         let span = (features.duration_ms() / 1000. - QUERY).min(300.);
-        let mut from = STEP / 2.;
+        let step = (span / 4.).clamp(MIN_STEP, STEP);
+        let mut from = step / 2.;
         while from <= span {
             if canceled() {
                 return None;
             }
             let Some(query) = features.slice(from, QUERY) else { break };
-            from += STEP;
+            let start = from;
+            from += step;
             let path = &set.recordings[own].entry.path;
             let allowed = |t: usize| set.recordings[set.targets[t].recording].entry.path != *path;
             let seeds = match set.index.lock().unwrap().search_slice_at_rate_among(&query, 1., &allowed, &canceled) {
@@ -78,7 +82,7 @@ pub fn scan(set: &PreparedSet, cancel: &AtomicBool) -> Option<Vec<Shared>> {
             if result.matched && result.score >= SCORE {
                 let other = set.targets[target].recording;
                 // Where the query began, in both.
-                let at = block.start + set.recordings[own].entry.audio_offset + LiveFeatures::origin_seconds() + from - STEP;
+                let at = block.start + set.recordings[own].entry.audio_offset + LiveFeatures::origin_seconds() + start;
                 let other_at = position(set, target, &query, &result) - query.duration_ms() / 1000. * result.rate;
                 let shared = found.entry((own, other)).or_insert_with(|| Shared {
                     entry: set.recordings[own].entry.id.clone(),
