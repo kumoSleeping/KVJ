@@ -13,10 +13,12 @@ import KVJ
 // is brought in; cameras are taken in with + 相机 and let go from their
 // layer's menu. Images dragged in are posted as stickers where they are let
 // go on the picture; the effects, the words (文字, beside + 相机) and the
-// reactions on the air show on it as they do for the audience. Right under the picture: 实时 | 投放,
-// the picture's sound, the output and 投放. In 实时 every change here is on
-// the air at once; in 投放 the audience keeps what was last put out until 投放
-// (Switcher.apply, also Space); the PGM monitor (输出预览) above 声学追踪 shows it meanwhile.
+// reactions on the air show on it as they do for the audience. Under the
+// picture at its right edge: the lock (实时 or 确认后上屏), 撤回 and the check
+// (上屏). In 实时 every change here is on the air at once; locked, the audience
+// keeps what was last put out until the check (Switcher.apply, also Space); the
+// PGM monitor (输出预览) above 声学追踪 shows it meanwhile. The dissolve, the
+// picture's sound, the output, + 相机 and 文字 are on the timeline's top line.
 //
 // A layer is chosen by pressing it, moved by dragging it (its edges snap to
 // the picture's edges and middle and to the other layers'; laid nearly over
@@ -414,8 +416,8 @@ ColumnLayout {
 
         // The picture, in the middle of the board with a small margin round
         // it (`room`), enough to reach a split line's point on its edge. The
-        // keys that put it on the air are on the timeline's top line
-        // (keysHost). Zoomed out, it shrinks about its middle.
+        // keys that put it on the air are under it (airKeys). Zoomed out, it
+        // shrinks about its middle.
         Rectangle {
             id: screen
             readonly property real room: 16
@@ -493,6 +495,64 @@ ColumnLayout {
                 }
             }
         }
+        // —— 实时 or 确认后上屏, 撤回 and 上屏 ——
+        // Under the picture at its right edge, where the board has room to
+        // spare; on the picture's foot when it has none. Kept to the picture
+        // at full size, so zooming the view never moves them.
+        Row {
+            id: airKeys
+            z: 9
+            spacing: 4
+            x: screen.fitX + screen.fitWidth - width
+            y: Math.min(screen.fitY + screen.fitHeight + 8, box.height - height - 4)
+            // 实时 or 确认上屏, one key: locked, the audience keeps what was
+            // last put on the air until the check key (or Space); open, every
+            // change is on the air at once.
+            IconButton {
+                iconName: Switcher.follow ? "lock-open" : "lock"
+                active: !Switcher.follow
+                tip: Switcher.follow ? "实时：画板上的每一下改动，观众立刻看到（点一下改为确认后上屏）"
+                                     : "确认后上屏：观众一直看上一次上屏的画面，改好后按 ✓ 才换（点一下改为实时）"
+                onClicked: Switcher.follow = !Switcher.follow
+            }
+            IconButton {
+                iconName: "undo-2"
+                tip: "撤回：画板回到观众正在看的样子（" + (Qt.platform.os === "osx" ? "⌘Z" : "Ctrl+Z") + "）"
+                // Kept in 实时 too (there is nothing to take back), so the row stays put.
+                enabled: !Switcher.follow && Switcher.pending
+                onClicked: Switcher.revert()
+            }
+            // 上屏, a check: the board's picture and stickers to the audience.
+            // Changes waiting light a dot on it, so nothing beside it moves.
+            TextButton {
+                primary: true
+                iconName: "check"
+                display: AbstractButton.IconOnly
+                icon.width: 16
+                icon.height: 16
+                implicitWidth: Theme.control + 4
+                leftPadding: 0
+                rightPadding: 0
+                // Kept in 实时 too (every change is on the air already), so the keys stay put.
+                enabled: !Switcher.follow && Switcher.pending
+                onClicked: Switcher.apply()
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: (Switcher.pending ? "有改动还没上屏。" : "")
+                              + "上屏：把画板上的画面和贴图给观众（空格）"
+                Rectangle {
+                    visible: !Switcher.follow && Switcher.pending
+                    x: parent.width - 6
+                    y: -2
+                    width: 8
+                    height: 8
+                    radius: 4
+                    color: Theme.warn
+                    border.width: 1.5
+                    border.color: Theme.bg
+                }
+            }
+        }
         // —— The view's size: − bar +, 复原 ——
         // In the title bar (zoomHost), its right end over the picture's.
         Row {
@@ -561,7 +621,7 @@ ColumnLayout {
             }
         }
 
-        // —— The mode, and the keys that put it on the air, then + 相机 ——
+        // —— The dissolve, the sound, the output, then + 相机 and 文字 ——
         // Shown by the host on the timeline's top line (`keys`), as wide as
         // the picture, + 相机 and 文字 past it.
         RowLayout {
@@ -573,23 +633,6 @@ ColumnLayout {
             readonly property real wanted: screen.fitWidth + 12 + cameraKey.implicitWidth + wordsKey.implicitWidth + 8
             width: parent ? parent.width : wanted
             spacing: 8
-            // 实时 or 确认上屏, one key: locked, the audience keeps what was
-            // last put on the air until the check key (or Space); open, every
-            // change is on the air at once.
-            IconButton {
-                iconName: Switcher.follow ? "lock-open" : "lock"
-                active: !Switcher.follow
-                tip: Switcher.follow ? "实时：画板上的每一下改动，观众立刻看到（点一下改为确认后上屏）"
-                                     : "确认后上屏：观众一直看上一次上屏的画面，改好后按 ✓ 才换（点一下改为实时）"
-                onClicked: Switcher.follow = !Switcher.follow
-            }
-            IconButton {
-                iconName: "undo-2"
-                tip: "撤回：画板回到观众正在看的样子（" + (Qt.platform.os === "osx" ? "⌘Z" : "Ctrl+Z") + "）"
-                // Kept in 实时 too (there is nothing to take back), so the row stays put.
-                enabled: !Switcher.follow && Switcher.pending
-                onClicked: Switcher.revert()
-            }
             Item { Layout.fillWidth: true }
             // The dissolve: on or off, and how long, a click each.
             Toggle {
@@ -719,36 +762,6 @@ ColumnLayout {
                 ToolTip.delay: 600
                 ToolTip.text: (out ? "投屏中。" : "") + "投屏：屏幕、清晰度、帧率、全屏，打开或收起投屏"
                 icon.color: out ? Theme.danger : contentColor
-            }
-            // 上屏, a check: the board's picture and stickers to the audience.
-            // Changes waiting light a dot on it, so nothing beside it moves.
-            TextButton {
-                primary: true
-                iconName: "check"
-                display: AbstractButton.IconOnly
-                icon.width: 16
-                icon.height: 16
-                implicitWidth: Theme.control + 4
-                leftPadding: 0
-                rightPadding: 0
-                // Kept in 实时 too (every change is on the air already), so the keys stay put.
-                enabled: !Switcher.follow && Switcher.pending
-                onClicked: Switcher.apply()
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: (Switcher.pending ? "有改动还没上屏。" : "")
-                              + "上屏：把画板上的画面和贴图给观众（空格）"
-                Rectangle {
-                    visible: !Switcher.follow && Switcher.pending
-                    x: parent.width - 6
-                    y: -2
-                    width: 8
-                    height: 8
-                    radius: 4
-                    color: Theme.warn
-                    border.width: 1.5
-                    border.color: Theme.bg
-                }
             }
             // A camera taken in comes onto the picture, at its lower right. Listed only while the menu is open (listing wakes
             // the camera stack).
