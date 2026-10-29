@@ -467,20 +467,6 @@ Item {
                 elide: Text.ElideRight
             }
             Item { Layout.fillWidth: true }
-            // 同步变速, on 画面 2's row: it plays at 画面 1's speed.
-            IconButton {
-                id: tempoLink
-                visible: !row.main && row.view.dual
-                implicitWidth: 24
-                implicitHeight: 24
-                iconName: "link-2"
-                iconSize: 14
-                // On: the link in ink, no plate; off: faint.
-                icon.color: !enabled ? Theme.faint : row.view.tempoLinked ? Theme.text : hovered ? Theme.muted : Theme.faint
-                tip: row.view.tempoLinked ? "同步变速：开（点一下关）\n" + row.name + "和画面 1 一起变速：调任一条的速度（键、滑条、复原、↑↓），两条都变；画面 1 跟随音乐时这条也跟着同样的速度"
-                                          : "同步变速：关（点一下开）\n开着时" + row.name + "和画面 1 一起变速"
-                onClicked: row.view.tempoLinked = !row.view.tempoLinked
-            }
             // The speed: a percent a key, the bar, 复原 (or a double-click on the readout).
             IconButton {
                 id: speedDown
@@ -585,15 +571,31 @@ Item {
             }
         }
         // Play and the keys that play from somewhere, right before the speed
-        // keys (and 同步变速's link), kept clear of the time at the left.
+        // keys (同步变速's link first on 画面 2's row, so the rest line up
+        // with 画面 1's), kept clear of the time at the left.
         Row {
             id: middle
             visible: !row.camera
             readonly property real leftEnd: timeText.x + timeText.width + 12
-            readonly property real rightStart: (tempoLink.visible ? tempoLink.x : speedDown.x) - 10
+            readonly property real rightStart: speedDown.x - 10
             x: Math.max(leftEnd, rightStart - width)
             height: row.barHeight
             spacing: 4
+            // 同步变速, on 画面 2's row first: it plays at 画面 1's speed.
+            IconButton {
+                id: tempoLink
+                visible: !row.main && row.view.dual
+                anchors.verticalCenter: parent.verticalCenter
+                implicitWidth: 24
+                implicitHeight: 24
+                iconName: "link-2"
+                iconSize: 14
+                // On: the link in ink, no plate; off: faint.
+                icon.color: !enabled ? Theme.faint : row.view.tempoLinked ? Theme.text : hovered ? Theme.muted : Theme.faint
+                tip: row.view.tempoLinked ? "同步变速：开（点一下关）\n" + row.name + "和画面 1 一起变速：调任一条的速度（键、滑条、复原、↑↓），两条都变；画面 1 跟随音乐时这条也跟着同样的速度"
+                                          : "同步变速：关（点一下开）\n开着时" + row.name + "和画面 1 一起变速"
+                onClicked: row.view.tempoLinked = !row.view.tempoLinked
+            }
             // Play / pause: ink while it plays.
             PlayKey {
                 id: playKey
