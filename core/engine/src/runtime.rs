@@ -107,6 +107,11 @@ impl Evidence {
 /// the 550 ms query still holds the audio from before: the picture would cut
 /// there and, a moment later, back. Queries this far apart share little audio.
 const CONFIRM_AFTER: f64 = 0.5;
+/// A confirmed jump is taken only if the new place scores this much better
+/// than the place shown, on the same audio. After a real jump the old place no
+/// longer fits (2026-10-29: by 0.40–0.80); two places that sound alike (a riff
+/// heard twice in one video) differ by less (0.15).
+const TWIN_MARGIN: f64 = 0.25;
 /// A jump heard within this of the clock's tempo keeps that tempo: a DJ seldom
 /// jumps and changes speed at once, and one window's own tempo is noisier.
 const TEMPO_KEPT: f64 = 0.08;
@@ -240,6 +245,35 @@ fn position(set: &PreparedSet, target: usize, query: &LiveFeatures, result: &Liv
         + LiveFeatures::origin_seconds()
         + result.offset_seconds
         + query.duration_ms() / 1000. * result.rate
+}
+/// A confirmed jump from `old` (fitting the same audio with score `held`) to
+/// `found` is not taken: the two sound alike and `found` is not earlier in
+/// the same entry. So of two alike places the earlier is kept, both ways.
+fn stays(old: &Evidence, held: f64, found: &Evidence) -> bool {
+    let earlier = old.recording == found.recording && found.now() < old.now();
+    found.score - held < TWIN_MARGIN && !earlier
+}
+/// How well `old`, carried on to `at`, fits `query` (its score), as local
+/// tracking would see it; none when its features cannot be read.
+fn fit_at(set: &PreparedSet, features: &mut FeatureCache, query: &LiveFeatures, at: Instant, old: &Evidence, cancel: &AtomicBool) -> Option<f64> {
+    let block = &set.targets[old.target];
+    let predicted = old.position + at.saturating_duration_since(old.at).as_secs_f64() * old.rate;
+    let reference = features.get(&block.path).ok()?;
+    kvj_recognize::track_live_prepared(
+        query,
+        &reference,
+        LiveHint {
+            offset_seconds: predicted
+                - query.duration_ms() / 1000. * old.rate
+                - block.start
+                - set.recordings[old.recording].entry.audio_offset
+                - LiveFeatures::origin_seconds(),
+            rate: old.rate,
+        },
+        &|| cancel.load(Ordering::Relaxed),
+    )
+    .ok()
+    .map(|result| result.score)
 }
 /// `corroborated`: room mode confirmed a plausible result over time.
 #[allow(clippy::too_many_arguments)]
@@ -428,6 +462,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
         let mut tracking_status = ListenerStatus::default();
         let mut source_checked = Instant::now();
         let mut last_rejection: Option<Instant> = None;
+        let mut last_twin: Option<Instant> = None;
         let (mut last_notice, mut notices): (Option<Instant>, u32) = (None, 0);
         // Recordings left out of the search for now: their file is gone or
         // changed (back once it is as it was), or their features are unreadable.
@@ -638,6 +673,8 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                     let mut retrieval_ms = 0.;
                     let mut verify_ms = 0.;
                     let mut local = None;
+                    // How well the place shown fits this audio, when it was tracked.
+                    let mut held_score = None;
                     let trackable = current.filter(|c| c.at.elapsed().as_secs_f64() < 2.);
                     if let Some(old) = trackable {
                         tracking_status.state = ListenerState::Verifying;
@@ -674,6 +711,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                             &|| cancel.load(Ordering::Relaxed),
                         )?;
                         verify_ms += started.elapsed().as_secs_f64() * 1000.;
+                        held_score = Some(result.score);
                         local = record(
                             set,
                             old.target,
@@ -990,10 +1028,33 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                                 on[p.recording] && at.saturating_duration_since(p.at).as_secs_f64() <= PENDING_SECONDS
                             });
                             let tempo = estimate.as_ref().map(|e| e.rate);
-                            if let Some(first) = pending.iter().find(|p| p.confirmed_by(&found, tempo)) {
+                            let confirming = pending.iter().find(|p| p.confirmed_by(&found, tempo)).copied();
+                            // Two places that sound alike: the earlier one in
+                            // the entry is kept, the later one never taken.
+                            let alike = confirming.and(current).and_then(|old| {
+                                let held = held_score.or_else(|| fit_at(set, &mut features, &query, at, &old, cancel))?;
+                                stays(&old, held, &found).then_some(held)
+                            });
+                            if let (Some(first), None) = (confirming, alike) {
                                 moved = Some(first.moved_to(&found));
                                 pending.clear();
                                 Some(found)
+                            } else if let Some(held) = alike {
+                                if detail {
+                                    outcome = format!("两处听起来一样（当前 {held:.3} / 新 {:.3}），保留当前画面", found.score);
+                                }
+                                if last_twin.is_none_or(|t| t.elapsed().as_secs_f64() >= 2.) {
+                                    log(engine, session, Level::Info, Stage::Decision, format!(
+                                        "{} · {:.3} 秒听起来和当前位置一样（{held:.3} / {:.3}），保留当前画面",
+                                        set.recordings[found.recording].entry.title, found.now(), found.score
+                                    ));
+                                    last_twin = Some(Instant::now());
+                                }
+                                pending.push(found);
+                                if pending.len() > PENDING_MAX {
+                                    pending.remove(0);
+                                }
+                                None
                             } else {
                                 if !pending.iter().any(|p| p.recording == found.recording && (p.now() - found.now()).abs() < 0.25) {
                                     log(engine, session, Level::Info, Stage::Decision, format!(
@@ -1075,7 +1136,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         });
                     } else {
                         lost = current.is_some();
-                        if detail {
+                        if detail && outcome.is_empty() {
                             outcome = if pending.last().is_some_and(|p| p.at == at) {
                                 format!("新位置待印证（{} 个）", pending.len())
                             } else if current.is_some() {
@@ -1221,6 +1282,22 @@ mod tests {
         assert_eq!(ClockEstimate::after_jump(found(0.875), Some(1.02), Some(1.004)).rate, 1.004);
         // Heard, and moved, well away from it: the DJ changed speed.
         assert_eq!(ClockEstimate::after_jump(found(0.875), Some(0.88), Some(1.004)).rate, 0.875);
+    }
+
+    #[test]
+    fn of_two_places_that_sound_alike_the_earlier_is_kept() {
+        let at = Instant::now();
+        let place = |recording, position, score| Evidence { target: 0, recording, position, at, rate: 1., score, margin: 0.2 };
+        // 18:01:21 on 2026-10-29: at 1810 s (0.605 there), 1652 s heard at 0.757.
+        let later = place(0, 1810.091, 0.605);
+        let earlier = place(0, 1652.784, 0.757);
+        assert!(!stays(&later, 0.605, &earlier));
+        // And from 1652 s, 1810 s sounding the same is not taken.
+        assert!(stays(&earlier, 0.70, &place(0, 1810.6, 0.757)));
+        // A real jump: the old place no longer fits.
+        assert!(!stays(&earlier, 0.215, &place(0, 1810.6, 0.801)));
+        // Alike in another entry: kept where it is.
+        assert!(stays(&later, 0.605, &place(1, 10., 0.757)));
     }
 
     #[test]

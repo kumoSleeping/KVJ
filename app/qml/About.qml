@@ -22,6 +22,10 @@ Popup {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
 
     property bool autoCheck: true
+    // 详细日志, kept across starts until turned off.
+    property bool detailLog: false
+    onDetailLogChanged: Engine.detailLog = detailLog
+    Component.onCompleted: Engine.detailLog = detailLog
     readonly property var update: Engine.update
     readonly property bool newer: !!update && update.newer === true
     readonly property var job: Engine.updateJob
@@ -67,6 +71,10 @@ Popup {
     Settings {
         category: "update"
         property alias auto: about.autoCheck
+    }
+    Settings {
+        category: "log"
+        property alias detail: about.detailLog
     }
     property bool checkedOnce: false
     Timer {
@@ -255,14 +263,13 @@ Popup {
                     }
                 }
             }
-            // Off at every start: it writes a few lines a second.
             Toggle {
                 text: "详细日志"
-                checked: Engine.detailLog
-                onToggled: Engine.detailLog = checked
+                checked: about.detailLog
+                onToggled: about.detailLog = checked
                 ToolTip.visible: hovered
                 ToolTip.delay: 500
-                ToolTip.text: "记下声学追踪每一轮的得分和耗时，以及画面跟时钟差多少，写进日志文件夹里的 detail-日期.log。每次启动都是关着的"
+                ToolTip.text: "记下声学追踪每一轮的得分和耗时，以及画面跟时钟差多少，写进日志文件夹里的 detail-日期.log。一直开着，直到关掉"
             }
         }
     }

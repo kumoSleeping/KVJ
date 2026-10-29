@@ -50,7 +50,7 @@ class Engine : public QObject
     Q_PROPERTY(bool keepAwake READ keepAwake WRITE setKeepAwake NOTIFY keepAwakeChanged)
     // 详细日志: every recognition round and the pictures' timing go to
     // <dataDir>/logs/detail-<date>.log, with the usual lines between them.
-    // Off at every start.
+    // Off until set (About keeps the user's choice across starts).
     Q_PROPERTY(bool detailLog READ detailLog WRITE setDetailLog NOTIFY detailLogChanged)
 
 public:
