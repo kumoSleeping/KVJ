@@ -8,7 +8,7 @@ import KVJ
 // operator's monitor and preview copy their picture from `surface`.
 Window {
     id: root
-    title: "KVJ 投放"
+    title: "KVJ 投屏"
     color: "black"
     width: 960
     height: 540

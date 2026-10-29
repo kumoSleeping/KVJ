@@ -573,54 +573,20 @@ ColumnLayout {
             readonly property real wanted: screen.fitWidth + 12 + cameraKey.implicitWidth + wordsKey.implicitWidth + 8
             width: parent ? parent.width : wanted
             spacing: 8
-            // 跟随 or 投放, a segmented key: the mode shown in ink on a plate.
-            Rectangle {
-                implicitWidth: modes.implicitWidth + 4
-                implicitHeight: Theme.control
-                radius: Theme.radius
-                color: Theme.inset
-                Row {
-                    id: modes
-                    anchors.centerIn: parent
-                    spacing: 2
-                    Repeater {
-                        model: [{ text: "实时", follow: true, tip: "实时：在这里的每一下改动，观众立刻看到" },
-                                { text: "投放", follow: false, tip: "投放：观众一直看上一次投放的画面，在这里改好后按「投放」才换" }]
-                        Rectangle {
-                            required property var modelData
-                            readonly property bool on: Switcher.follow === modelData.follow
-                            width: modeText.implicitWidth + 20
-                            height: Theme.control - 4
-                            radius: Theme.radius - 1
-                            color: on ? Theme.raised : modeMouse.containsMouse ? Theme.hover : "transparent"
-                            border.width: on && Theme.dark ? 1 : 0
-                            border.color: Theme.line
-                            Text {
-                                id: modeText
-                                anchors.centerIn: parent
-                                text: parent.modelData.text
-                                font.pixelSize: Theme.sizeSm
-                                font.weight: parent.on ? Font.DemiBold : Font.Medium
-                                color: parent.on ? Theme.text : Theme.muted
-                            }
-                            MouseArea {
-                                id: modeMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: Switcher.follow = parent.modelData.follow
-                                ToolTip.visible: containsMouse
-                                ToolTip.delay: 600
-                                ToolTip.text: parent.modelData.tip
-                            }
-                        }
-                    }
-                }
+            // 实时 or 确认上屏, one key: locked, the audience keeps what was
+            // last put on the air until the check key (or Space); open, every
+            // change is on the air at once.
+            IconButton {
+                iconName: Switcher.follow ? "lock-open" : "lock"
+                active: !Switcher.follow
+                tip: Switcher.follow ? "实时：画板上的每一下改动，观众立刻看到（点一下改为确认后上屏）"
+                                     : "确认后上屏：观众一直看上一次上屏的画面，改好后按 ✓ 才换（点一下改为实时）"
+                onClicked: Switcher.follow = !Switcher.follow
             }
             IconButton {
                 iconName: "undo-2"
                 tip: "撤回：画板回到观众正在看的样子（" + (Qt.platform.os === "osx" ? "⌘Z" : "Ctrl+Z") + "）"
-                // Kept in 跟随 too (there is nothing to take back), so the row stays put.
+                // Kept in 实时 too (there is nothing to take back), so the row stays put.
                 enabled: !Switcher.follow && Switcher.pending
                 onClicked: Switcher.revert()
             }
@@ -632,8 +598,8 @@ ColumnLayout {
                 onToggled: Switcher.fadeMs = checked ? Switcher.fadeLength : 0
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: Switcher.follow ? "轨道上的「投放」快切用这个渐变；实时模式下画板上的改动仍是直接切"
-                                              : "投放（空格）和轨道上的「投放」快切用这个渐变"
+                ToolTip.text: Switcher.follow ? "轨道上的快切用这个渐变；实时模式下画板上的改动仍是直接切"
+                                              : "上屏（空格）和轨道上的快切用这个渐变"
             }
             TextButton {
                 readonly property var values: [300, 600, 1000, 2000]
@@ -654,20 +620,32 @@ ColumnLayout {
                     Switcher.fadeMs = next
                 }
             }
-            // The picture's own sound: the key (an icon only) turns it on or
-            // off; the small key beside it opens what on plays (顶层声音, 画面 1,
-            // 画面 2, how loud, where) in a popover.
-            RowLayout {
-                spacing: -1
+            // The picture's own sound, one split key in one outline: its larger
+            // left part (an icon only) turns it on or off; the small right part
+            // opens what on plays (顶层声音, 画面 1, 画面 2, how loud, where) in a
+            // popover.
+            Rectangle {
+                implicitWidth: soundKey.width + soundMore.width + 1
+                implicitHeight: Theme.control
+                radius: Theme.radius
+                color: "transparent"
+                border.width: 1
+                border.color: Theme.line
                 TextButton {
                     id: soundKey
                     readonly property var out: composer.output
-                    outlined: true
+                    flat: true
+                    anchors.left: parent.left
+                    height: parent.height
+                    leftInset: 2
+                    rightInset: 1
+                    topInset: 2
+                    bottomInset: 2
                     iconName: out && out.anySound ? "volume-2" : "volume-x"
                     display: AbstractButton.IconOnly
                     icon.width: 16
                     icon.height: 16
-                    implicitWidth: Theme.control
+                    implicitWidth: Theme.control + 6
                     leftPadding: 0
                     rightPadding: 0
                     // What plays, said only in its tooltip.
@@ -694,14 +672,27 @@ ColumnLayout {
                         color: Theme.warn
                     }
                 }
+                Rectangle {
+                    x: soundKey.width
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 1
+                    height: parent.height - 12
+                    color: Theme.line
+                }
                 TextButton {
                     id: soundMore
-                    outlined: true
+                    flat: true
+                    anchors.right: parent.right
+                    height: parent.height
+                    leftInset: 1
+                    rightInset: 2
+                    topInset: 2
+                    bottomInset: 2
                     iconName: "chevron-down"
                     display: AbstractButton.IconOnly
                     icon.width: 12
                     icon.height: 12
-                    implicitWidth: 22
+                    implicitWidth: 20
                     leftPadding: 0
                     rightPadding: 0
                     onClicked: soundKey.out.openSound(soundKey)
@@ -717,30 +708,36 @@ ColumnLayout {
                 readonly property bool out: !!composer.output && !!composer.output.projection && composer.output.projection.visible
                 outlined: true
                 iconName: "monitor"
-                text: out ? "投屏中" : "投屏"
-                widest: "投屏中"
-                leftPadding: 8
-                rightPadding: 10
+                display: AbstractButton.IconOnly
+                icon.width: 16
+                icon.height: 16
+                implicitWidth: Theme.control + 4
+                leftPadding: 0
+                rightPadding: 0
                 onClicked: composer.output.openOutput(outputKey)
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "投屏：屏幕、清晰度、帧率、全屏、画面声音，打开或收起投屏"
+                ToolTip.text: (out ? "投屏中。" : "") + "投屏：屏幕、清晰度、帧率、全屏，打开或收起投屏"
                 icon.color: out ? Theme.danger : contentColor
-                font.weight: out ? Font.DemiBold : Font.Medium
             }
-            // Changes waiting to go on the air light a dot on the key, so
-            // nothing beside it moves.
+            // 上屏, a check: the board's picture and stickers to the audience.
+            // Changes waiting light a dot on it, so nothing beside it moves.
             TextButton {
                 primary: true
-                iconName: "cast"
-                text: "投放"
-                // Kept in 跟随 too (every change is on the air already), so the keys stay put.
+                iconName: "check"
+                display: AbstractButton.IconOnly
+                icon.width: 16
+                icon.height: 16
+                implicitWidth: Theme.control + 4
+                leftPadding: 0
+                rightPadding: 0
+                // Kept in 实时 too (every change is on the air already), so the keys stay put.
                 enabled: !Switcher.follow && Switcher.pending
                 onClicked: Switcher.apply()
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: (Switcher.pending ? "有未投放的改动。" : "")
-                              + "把画板上的画面和贴图给观众（空格）"
+                ToolTip.text: (Switcher.pending ? "有改动还没上屏。" : "")
+                              + "上屏：把画板上的画面和贴图给观众（空格）"
                 Rectangle {
                     visible: !Switcher.follow && Switcher.pending
                     x: parent.width - 6

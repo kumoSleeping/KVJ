@@ -59,11 +59,11 @@ KVJ listens to the sound the DJ is playing and compares it with the sound of the
 
 [Detailed guide →](docs/guide.md)
 
-### Board and 投放
+### Board and going on air
 
 - The **board** in the middle shows the audience's picture, and the picture is arranged there too. 画面 1, 画面 2 and cameras are **layers** that can be moved, sized, raised, filled or fitted, rounded, masked to a circle, feathered and cut by **split lines**. Around the picture is the **offstage** area, which the audience does not see.
-- The board has two modes, **实时** (live) and **投放** (staged). In 实时 every change is on the air at once; in 投放 the audience keeps the picture last put out until **投放** (or Space) puts the new one out, with a dissolve if wanted, and ⌘Z **undoes** the board back to what is on the air. **输出预览** at the top right always shows what the audience sees.
-- A track's **投放画面 N** cuts that track to the top in one press; with **跳转置顶** on, a jump first puts its track on top and then plays.
+- The lock key under the board switches between two ways of working. Unlocked is **实时** (live): every change is on the air at once. Locked is **确认后上屏** (confirm first): the audience keeps the picture last put on the air until the ✓ key (or Space) puts the new one out, with a dissolve if wanted, and ⌘Z **undoes** the board back to what is on the air. **输出预览** at the top right always shows what the audience sees.
+- A track's lightning key (**快切**, quick cut) puts that track on top for the audience in one press; with **跳转置顶** on, a jump first puts its track on top and then plays.
 
 [Glossary →](docs/glossary.md) (Chinese)
 

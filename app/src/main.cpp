@@ -106,7 +106,7 @@ QQuickWindow *shownWindow()
     for (QWindow *window : QGuiApplication::topLevelWindows()) {
         auto *quick = qobject_cast<QQuickWindow *>(window);
         if (quick && quick->isVisible() && quick->title().startsWith(QLatin1String("KVJ"))
-            && quick->title() != QLatin1String("KVJ 投放"))
+            && quick->title() != QStringLiteral("KVJ 投屏"))
             return quick;
     }
     return nullptr;

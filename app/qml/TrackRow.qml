@@ -580,20 +580,22 @@ Item {
                 onClicked: row.view.bringUp(row.key)
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: row.name + " 在画板上浮到最上层并选中，好调整大小和位置（在画外时铺满画面）；不直接给观众，按「投放」才上屏"
+                ToolTip.text: row.name + " 在画板上浮到最上层并选中，好调整大小和位置（在画外时铺满画面）；实时模式下观众立刻看到，确认后上屏时按 ✓ 才上屏"
             }
             Item { Layout.preferredWidth: 4 }
             // 快切: this track's layer floated to the top, to the audience with
             // the board's dissolve, as it is sized; the others stay under it.
             TextButton {
                 implicitHeight: 22
-                leftPadding: 8
-                rightPadding: 10
+                implicitWidth: 30
+                leftPadding: 0
+                rightPadding: 0
                 outlined: !row.onTop
                 primary: row.onTop
-                font.pixelSize: Theme.sizeXs
-                iconName: "cast"
-                text: "投放" + row.name
+                iconName: "zap"
+                display: AbstractButton.IconOnly
+                icon.width: 13
+                icon.height: 13
                 onClicked: row.view.takeLive(row.key)
                 ToolTip.visible: hovered
                 ToolTip.delay: 600

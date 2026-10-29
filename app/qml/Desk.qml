@@ -226,7 +226,7 @@ Item {
                     displayText: currentIndex === 0 ? desk.heightText(desk.recommendedHeight) : currentText
                     ToolTip.visible: hovered && !popup.visible
                     ToolTip.delay: 600
-                    ToolTip.text: "推荐：投放画面 " + desk.outputRows + " 行" + (fullscreen.checked ? "（全屏）" : "（窗口）")
+                    ToolTip.text: "推荐：投屏画面 " + desk.outputRows + " 行" + (fullscreen.checked ? "（全屏）" : "（窗口）")
                                   + (desk.videoSize.height > 0 ? "，视频 " + desk.videoSize.width + "×" + desk.videoSize.height : "")
                                   + " → " + desk.heightText(desk.recommendedHeight)
                 }

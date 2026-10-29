@@ -1214,7 +1214,7 @@ ApplicationWindow {
                                 text: "输出预览"
                             }
                             StatusLight {
-                                word: projection.visible ? "投放中" : projection.waiting ? "已断开" : "未投放"
+                                word: projection.visible ? "投屏中" : projection.waiting ? "已断开" : "未投屏"
                                 on: projection.visible
                             }
                         }
@@ -1437,7 +1437,7 @@ ApplicationWindow {
     MessageDialog {
         id: quitDialog
         title: "退出 KVJ？"
-        text: projection.visible ? "投放正在进行，退出会收起投放画面" + (app.running ? "并停止跟随。" : "。")
+        text: projection.visible ? "投屏正在进行，退出会收起投屏画面" + (app.running ? "并停止跟随。" : "。")
                                  : "跟随正在进行，退出会停止它。"
         buttons: MessageDialog.Ok | MessageDialog.Cancel
         onAccepted: {
@@ -1449,8 +1449,8 @@ ApplicationWindow {
     // asked here, on the operator's screen, never on the audience's.
     MessageDialog {
         id: hideDialog
-        title: "收起投放？"
-        text: "投放画面会从屏幕上收起。"
+        title: "收起投屏？"
+        text: "投屏画面会从屏幕上收起。"
         buttons: MessageDialog.Ok | MessageDialog.Cancel
         onAccepted: projection.closeOutput()
     }

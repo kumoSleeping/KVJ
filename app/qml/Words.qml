@@ -122,7 +122,7 @@ ColumnLayout {
             }
             ToolTip.visible: hovered
             ToolTip.delay: 600
-            ToolTip.text: "做成文字贴图，贴在画板中间，随投放上屏（" + (Qt.platform.os === "osx" ? "⌘" : "Ctrl+") + "回车）"
+            ToolTip.text: "做成文字贴图，贴在画板中间，随上屏（" + (Qt.platform.os === "osx" ? "⌘" : "Ctrl+") + "回车）"
         }
         TextButton {
             Layout.fillWidth: true

@@ -109,6 +109,9 @@ qt_add_qml_module(KVJ
         qml/icons/volume-2.svg
         qml/icons/x.svg
         qml/icons/maximize.svg
+        qml/icons/lock.svg
+        qml/icons/lock-open.svg
+        qml/icons/zap.svg
         qml/icons/fit-contain.svg
         qml/icons/crop.svg
         qml/icons/proportions.svg
