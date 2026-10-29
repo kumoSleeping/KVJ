@@ -408,10 +408,9 @@ QtObject {
     readonly property bool pending: JSON.stringify(preview) !== JSON.stringify(program) || Live.stickersPending
 
     // —— Putting the preview on the air ——
-    // 0 cuts; else a dissolve this long. `fadeLength` is the length the
-    // dissolve takes when it is switched on again.
+    // 0 cuts; else a dissolve this long. Set by the host: the one 渐变 the
+    // jumps share (the timeline's slider).
     property int fadeMs: 600
-    property int fadeLength: 600
     // While dissolving: { from, to (layouts), born (Date.now() ms), ms }.
     // Drawing stops at born + ms on its own (Program.qml); this is cleared
     // a moment after.
@@ -449,14 +448,12 @@ QtObject {
         onTriggered: switcher.transition = null
     }
 
-    // Kept between runs: the two layouts, the dissolve and following.
+    // Kept between runs: the two layouts and following.
     property bool loaded: false
     property Settings store: Settings {
         category: "switcher"
         property string program: ""
         property string preview: ""
-        property int fadeMs: 600
-        property int fadeLength: 600
         property bool follow: false
         property string aside: "{}"
     }
@@ -479,13 +476,6 @@ QtObject {
             program = copy(preview)
         }
     }
-    onFadeMsChanged: {
-        if (fadeMs > 0)
-            fadeLength = fadeMs
-        if (loaded)
-            store.fadeMs = fadeMs
-    }
-    onFadeLengthChanged: if (loaded) store.fadeLength = fadeLength
     function restore(text) {
         try {
             return normalize(JSON.parse(text))
@@ -496,8 +486,6 @@ QtObject {
     Component.onCompleted: {
         program = store.program ? restore(store.program) : copy(plain)
         preview = store.preview ? restore(store.preview) : copy(program)
-        fadeLength = Math.max(1, store.fadeLength)
-        fadeMs = Math.max(0, store.fadeMs)
         follow = store.follow
         try {
             aside = JSON.parse(store.aside) || {}

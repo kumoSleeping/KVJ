@@ -144,9 +144,14 @@ ApplicationWindow {
     // The main track's, for the player (see isMain).
     readonly property var playingEntries: (playingSet ? playingSet.entries : entries).filter(app.isMain)
     readonly property bool parked: !!playingSet && !!currentSet && playingSet.id !== currentSet.id
-    // Every jump, by hand or by following, dissolves for fadeMs (跳转渐变,
-    // the timeline's slider); 0 cuts straight.
+    // The one 渐变 (the timeline's slider): every jump, by hand or by
+    // following, and every 上屏 dissolves for fadeMs; 0 cuts straight.
     readonly property bool fadeOn: fadeMs > 0
+    Binding {
+        target: Switcher
+        property: "fadeMs"
+        value: app.fadeMs
+    }
     // At the end of the Set's last entry: start over from its first entry, or
     // stop on the last frame.
     property bool loopOn: false

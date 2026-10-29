@@ -17,8 +17,9 @@ import KVJ
 // picture at its right edge: the lock (实时 or 确认后上屏), 撤回 and the check
 // (上屏). In 实时 every change here is on the air at once; locked, the audience
 // keeps what was last put out until the check (Switcher.apply, also Space); the
-// PGM monitor (输出预览) above 声学追踪 shows it meanwhile. The dissolve, the
-// picture's sound, the output, + 相机 and 文字 are on the timeline's top line.
+// PGM monitor (输出预览) above 声学追踪 shows it meanwhile. The picture's
+// sound, the output, + 相机 and 文字 are on the timeline's top line; the
+// dissolve is the one 渐变 at its right (Switcher.fadeMs, set by the host).
 //
 // A layer is chosen by pressing it, moved by dragging it (its edges snap to
 // the picture's edges and middle and to the other layers'; laid nearly over
@@ -200,8 +201,8 @@ ColumnLayout {
         }
         choose(i)
     }
-    // The quick cut (a track's 投放): `id`'s layer floated to the top as it is
-    // sized, on the air with the dissolve set here.
+    // The quick cut ([ / ]): `id`'s layer floated to the top as it is
+    // sized, on the air with the one 渐变.
     function takeLive(id) {
         Qt.callLater(stackSources)
         Switcher.take(id, id => ratio(id), aspect)
@@ -610,7 +611,7 @@ ColumnLayout {
             }
         }
 
-        // —— The dissolve, the sound, the output, then + 相机 and 文字 ——
+        // —— The sound, the output, then + 相机 and 文字 ——
         // Shown by the host on the timeline's top line (`keys`), as wide as
         // the picture, + 相机 and 文字 past it.
         RowLayout {
@@ -623,35 +624,6 @@ ColumnLayout {
             width: parent ? parent.width : wanted
             spacing: 8
             Item { Layout.fillWidth: true }
-            // The dissolve: on or off, and how long, a click each.
-            Toggle {
-                text: "渐变"
-                checked: Switcher.fadeMs > 0
-                onToggled: Switcher.fadeMs = checked ? Switcher.fadeLength : 0
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: Switcher.follow ? "[ / ] 直接上屏一条轨道时用这个渐变；实时模式下画板上的改动仍是直接切"
-                                              : "上屏（空格）和 [ / ] 直接上屏一条轨道时用这个渐变"
-            }
-            TextButton {
-                readonly property var values: [300, 600, 1000, 2000]
-                flat: true
-                leftPadding: 6
-                rightPadding: 6
-                // Always there (greyed while off), so nothing beside it moves.
-                enabled: Switcher.fadeMs > 0
-                text: (Switcher.fadeLength / 1000) + " 秒"
-                widest: "0.3 秒"
-                font.features: { "tnum": 1 }
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "渐变时长，点一下换一档"
-                onClicked: {
-                    const next = values[(values.indexOf(Switcher.fadeLength) + 1) % values.length]
-                    Switcher.fadeLength = next
-                    Switcher.fadeMs = next
-                }
-            }
             // The picture's own sound, one split key in one outline: its larger
             // left part (an icon only) turns it on or off; the small right part
             // opens what on plays (顶层声音, 画面 1, 画面 2, how loud, where) in a

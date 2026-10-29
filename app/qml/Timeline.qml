@@ -446,8 +446,8 @@ Rectangle {
                     onClicked: line.viewsLocked = !line.viewsLocked
                 }
             }
-            // 跳转渐变: manual jumps and acoustic tracking's dissolve from the
-            // last picture, this long; 0 cuts straight.
+            // 渐变, the one dissolve: 上屏, [ / ] and every jump, by hand or
+            // by acoustic tracking, this long; 0 cuts straight.
             Seek {
                 Layout.preferredWidth: 80
                 Layout.minimumWidth: 40
@@ -461,7 +461,7 @@ Rectangle {
                 onMoved: line.player.fadeMs = value
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "跳转渐变：手动跳转和声学追踪的跳转从上一个画面溶过去的时长；拉到 0 是直接切"
+                ToolTip.text: "渐变时长：上屏（空格）、[ / ] 直接上屏，以及手动和声学追踪的跳转都用它；拉到 0 是直接切"
             }
             Text {
                 Layout.preferredWidth: 40
