@@ -424,18 +424,19 @@ ColumnLayout {
         Rectangle {
             id: screen
             readonly property real room: 16
-            readonly property real fitWidth: Math.max(1, Math.min(box.width - 2 * room, (box.height - 2 * room) * composer.aspect))
+            // Level with the output monitor (pictureTop), the picture keeps
+            // that top however short the board gets: the room left under it
+            // holds the keys (airKeys), and a shorter board makes the picture
+            // smaller instead of pushing it up or under them.
+            readonly property real topLine: Math.max(room, composer.pictureTop - box.y)
+            readonly property bool aligned: !isNaN(composer.pictureTop)
+            readonly property real fitWidth: Math.max(1, Math.min(box.width - 2 * room,
+                (aligned ? box.height - topLine - airKeys.height - 12 : box.height - 2 * room) * composer.aspect))
             readonly property real fitHeight: fitWidth / Math.max(0.2, composer.aspect)
-            // Where it is at full size: in the middle of the board across;
-            // its top level with the output monitor's (pictureTop) where the
-            // board has the room, else in the middle.
+            // Where it is at full size: in the middle of the board across, its
+            // top level with the output monitor's (else in the middle).
             readonly property real fitX: (box.width - fitWidth) / 2
-            readonly property real fitY: {
-                const top = composer.pictureTop - box.y
-                if (isNaN(top))
-                    return (box.height - fitHeight) / 2
-                return Math.max(room, Math.min(top, box.height - fitHeight - room))
-            }
+            readonly property real fitY: aligned ? topLine : (box.height - fitHeight) / 2
             width: fitWidth * composer.zoom
             height: width / Math.max(0.2, composer.aspect)
             x: (box.width - width) / 2
@@ -505,15 +506,15 @@ ColumnLayout {
             }
         }
         // —— 实时 or 确认后上屏, 撤回 and 上屏 ——
-        // Under the picture at its right edge, where the board has room to
-        // spare; on the picture's foot when it has none. Kept to the picture
-        // at full size, so zooming the view never moves them.
+        // Under the picture at its right edge, in the room the picture leaves
+        // for them. Kept to the picture at full size, so zooming the view
+        // never moves them.
         Row {
             id: airKeys
             z: 9
             spacing: 4
             x: screen.fitX + screen.fitWidth - width
-            y: Math.min(screen.fitY + screen.fitHeight + 8, box.height - height - 4)
+            y: screen.fitY + screen.fitHeight + 8
             // 实时 or 确认上屏, one key: locked, the audience keeps what was
             // last put on the air until the check key (or Space); open, every
             // change is on the air at once.
