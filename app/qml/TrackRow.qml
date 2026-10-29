@@ -242,7 +242,40 @@ Item {
         }
         view.activate(key)
         touch()
+        // Paused, the cursor and the playhead are one: the picture shows
+        // where the cursor is, ready for Enter.
+        if (!playing && canSeek)
+            showMark()
     }
+    // The paused picture to the cursor, still paused.
+    function showMark() {
+        if (!markClip)
+            return
+        if (main) {
+            const t = view.transport
+            if (!t)
+                return
+            if (t.entry && t.entry.id === markClip.entry.id)
+                t.seek(markAt)
+            else
+                t.load(markClip.entry, markAt, false)
+            view.player.tick()
+        } else if (player) {
+            player.seek(markClip.entry, markAt)
+        }
+    }
+    // Paused, the cursor goes where the picture is (pausing, a step, a seek).
+    function markPlayhead() {
+        if (playing || !playClip)
+            return
+        if (markId === playClip.entry.id && Math.abs(markAt - position) < 0.001)
+            return
+        markId = playClip.entry.id
+        markAt = position
+        keep()
+    }
+    onPlayingChanged: markPlayhead()
+    onPlayTChanged: markPlayhead()
     function setMark(x) {
         markTime(viewLeft + Math.max(0, Math.min(laneWidth, x)) / pps)
     }
@@ -635,7 +668,8 @@ Item {
         // The row's whole length at a glance: where its picture is, a
         // notch where one entry meets the next, its cursor as a hollow
         // ball and, zoomed in, a frame round what the lane shows. A press
-        // or drag places the cursor, never the picture.
+        // or drag places the cursor; paused, the picture goes with it
+        // (markTime).
         Item {
             id: seek
             visible: !row.camera
@@ -1076,8 +1110,8 @@ Item {
                     }
                 }
             }
-            // A press or drag places the cursor, never the picture (Enter or
-            // 跳至 plays from it); a right click on an entry offers 移出轨道,
+            // A press or drag places the cursor (Enter or 跳至 plays from it;
+            // paused, the picture goes with it); a right click on an entry offers 移出轨道,
             // elsewhere the track's menu.
             // The wheel and a pinch move and zoom this row.
             MouseArea {
