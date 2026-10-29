@@ -55,7 +55,9 @@ KVJ listens to the music the DJ is playing, recognizes which video in the librar
 - Each track's own sound can be on with its own volume (a cue mix), stretched by Rubber Band with its pitch kept; or only the topmost track's is heard.
 - The computer and its screens stay awake, and closing the window while listening or projecting asks first; decoder failures, a sound output that will not start, a lost projector screen, a lost file and a broken sound input all recover by themselves; video is decoded by the system hardware and decoded and drawn only when needed, so the load stays low.
 
-[Design principles →](docs/principles.md) (Chinese) · [Detailed guide →](docs/guide.md)
+[Design principles →](docs/principles.md) (Chinese)
+
+[Detailed guide →](docs/guide.md)
 
 ### Board and 投放
 

@@ -2,7 +2,11 @@
 
 本文定下 KVJ 的用词：界面、README、使用说明和代码注释都以这里为准。每个词给出中文名、英文名、代码里的名字和一句定义。
 
-[声学追踪介绍 →](acoustic-tracking.md) · [设计原则 →](principles.md) · [详细说明（英文） →](guide.md)
+[声学追踪介绍 →](acoustic-tracking.md)
+
+[设计原则 →](principles.md)
+
+[详细说明（英文） →](guide.md)
 
 ## 简介
 
