@@ -654,9 +654,9 @@ ColumnLayout {
                     Switcher.fadeMs = next
                 }
             }
-            // The picture's own sound: the key turns it on or off and says
-            // what plays; the small key beside it opens what on plays (顶层
-            // 声音, 画面 1, 画面 2, how loud, where) in a popover.
+            // The picture's own sound: the key (an icon only) turns it on or
+            // off; the small key beside it opens what on plays (顶层声音, 画面 1,
+            // 画面 2, how loud, where) in a popover.
             RowLayout {
                 spacing: -1
                 TextButton {
@@ -664,21 +664,26 @@ ColumnLayout {
                     readonly property var out: composer.output
                     outlined: true
                     iconName: out && out.anySound ? "volume-2" : "volume-x"
-                    text: !out || !out.soundLive ? "声音关"
+                    display: AbstractButton.IconOnly
+                    icon.width: 16
+                    icon.height: 16
+                    implicitWidth: Theme.control
+                    leftPadding: 0
+                    rightPadding: 0
+                    // What plays, said only in its tooltip.
+                    readonly property string playing: !out || !out.soundLive ? ""
                           : out.topOnly ? "顶层声音"
                           // On, but 单轨 shows a track not chosen: nothing plays.
-                          : !out.anySound ? "声音开"
+                          : !out.anySound ? "这条轨道没选"
                           : out.solo >= 0 ? "画面 " + (out.solo + 1) + " · " + Math.round((out.solo === 1 ? out.soundVolume2 : out.soundVolume) * 100) + "%"
                           : out.hears1 && out.hears2 ? "画面 1+2"
                           : out.hears1 ? "画面 1 · " + Math.round(out.soundVolume * 100) + "%"
                           : "画面 2 · " + Math.round(out.soundVolume2 * 100) + "%"
-                    widest: "画面 2 · 100%"
-                    leftPadding: 8
-                    rightPadding: 10
                     onClicked: out.soundLive = !out.soundLive
                     ToolTip.visible: hovered
                     ToolTip.delay: 600
-                    ToolTip.text: out && out.soundLive ? "关声音" : "开声音（播放什么在右边的小键里选）"
+                    ToolTip.text: out && out.soundLive ? "声音开：" + playing + "（点一下关）"
+                                                       : "声音关（点一下开，播放什么在右边的小键里选）"
                     Rectangle {
                         visible: !!soundKey.out && soundKey.out.soundError.length > 0
                         x: parent.width - 9
