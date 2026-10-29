@@ -13,8 +13,8 @@ import KVJ
 // is brought in; cameras are taken in with + 相机 and let go from their
 // layer's menu. Images dragged in are posted as stickers where they are let
 // go on the picture; the effects, the words (文字, beside + 相机) and the
-// reactions on the air show on it as they do for the audience. Right under the picture: 跟随 | 投放,
-// the picture's sound, the output and 投放. In 跟随 every change here is on
+// reactions on the air show on it as they do for the audience. Right under the picture: 实时 | 投放,
+// the picture's sound, the output and 投放. In 实时 every change here is on
 // the air at once; in 投放 the audience keeps what was last put out until 投放
 // (Switcher.apply, also Space); the PGM monitor (输出预览) above 声学追踪 shows it meanwhile.
 //
@@ -584,7 +584,7 @@ ColumnLayout {
                     anchors.centerIn: parent
                     spacing: 2
                     Repeater {
-                        model: [{ text: "跟随", follow: true, tip: "跟随：在这里的每一下改动，观众立刻看到" },
+                        model: [{ text: "实时", follow: true, tip: "实时：在这里的每一下改动，观众立刻看到" },
                                 { text: "投放", follow: false, tip: "投放：观众一直看上一次投放的画面，在这里改好后按「投放」才换" }]
                         Rectangle {
                             required property var modelData
@@ -632,7 +632,7 @@ ColumnLayout {
                 onToggled: Switcher.fadeMs = checked ? Switcher.fadeLength : 0
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: Switcher.follow ? "轨道上的「投放」快切用这个渐变；跟随模式下画板上的改动仍是直接切"
+                ToolTip.text: Switcher.follow ? "轨道上的「投放」快切用这个渐变；实时模式下画板上的改动仍是直接切"
                                               : "投放（空格）和轨道上的「投放」快切用这个渐变"
             }
             TextButton {

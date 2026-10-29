@@ -386,7 +386,7 @@ Item {
             MenuSeparator {}
             PopAction {
                 enabled: !row.view.running && row.clips.length > 0
-                text: row.view.running ? "清空轨道（先停止监听）" : "清空轨道（素材回到素材库）"
+                text: row.view.running ? "清空轨道（先停止监听）" : "清空轨道（素材回到媒体库）"
                 risky: true
                 onTriggered: row.view.clearTrack(row.track)
             }
@@ -536,11 +536,11 @@ Item {
             // Who sets the speed: following, a held key, the hand; for an aux track, the main one's pace.
             Text {
                 Layout.maximumWidth: 96
-                text: row.main ? (row.view.match ? (row.view.match.rate_confidence >= 0.7 ? "智能 · 已稳定" : "智能 · 校准中")
-                                  : row.view.player && row.view.player.aiLeads ? (row.view.player.tempoPaused ? "智能跳转 · 手动速度" : "智能调速 · 不跳转")
+                text: row.main ? (row.view.match ? (row.view.match.rate_confidence >= 0.7 ? "对速 · 已稳定" : "对速 · 校准中")
+                                  : row.view.player && row.view.player.aiLeads ? (row.view.player.tempoPaused ? "只跳转 · 手动速度" : "只对速 · 不跳转")
                                   : row.bending ? (row.view.speed > row.view.tempo ? "按住加速" : "按住减速")
-                                  : row.view.manual ? "手动" : "智能跟随")
-                      : row.player && row.player.lead ? "智能跟随"
+                                  : row.view.manual ? "手动" : "声学追踪")
+                      : row.player && row.player.lead ? "声学追踪"
                       : row.linked ? "同步变速"
                       : row.player && row.player.followMain ? "跟画面 1 速度" : "手动"
                 font.pixelSize: 11

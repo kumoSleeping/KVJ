@@ -264,7 +264,7 @@ Rectangle {
                 RowLayout {
                     Layout.fillWidth: true
                     Text {
-                        text: "跳转监测"
+                        text: "跳转"
                         font.pixelSize: Theme.sizeSm
                         font.weight: Font.DemiBold
                         color: root.working ? Theme.text : Theme.muted

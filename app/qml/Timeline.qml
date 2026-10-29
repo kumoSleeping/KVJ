@@ -460,7 +460,7 @@ Rectangle {
                 onToggled: line.player.fadeOn = checked
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
-                ToolTip.text: "手动跳转和智能跟随的跳转都从上一个画面溶过去；关掉是直接切"
+                ToolTip.text: "手动跳转和声学追踪的跳转都从上一个画面溶过去；关掉是直接切"
             }
             Seek {
                 Layout.preferredWidth: 80

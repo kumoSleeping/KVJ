@@ -1,7 +1,9 @@
 # KVJ — detailed guide
 
+> Parts of this guide describe the layout before the board (画板, 预备, 实时 | 投放) and two tracks; the [README](../README.en.md) and the [glossary](glossary.md) are current. The terms follow the glossary.
+
 Live VJ for DJs. KVJ is a video player first: pick an entry, play, pause, jump
-anywhere and set the speed by hand. It is a smart player second: smart following
+anywhere and set the speed by hand. It is a smart player second: acoustic tracking (**声学追踪**)
 listens to what the DJ is playing, recognizes which video of the Set it belongs
 to and where, and plays that video in sync, jumping and changing speed with the
 music. Live words and emoji go over the picture. macOS and Windows.
@@ -84,7 +86,7 @@ track's lane is blank, a camera's plain.
 The track row pressed last is the **active** one: its header has an ink edge
 on a deeper tone. The slim bar on top is about it: its name and the entry it
 shows, its cursor with **跳至光标处**, its zoom keys (− **全览** +), then
-**快捷键** and **跳转渐变**: every jump, by hand or by smart following,
+**快捷键** and **跳转渐变**: every jump, by hand or by acoustic tracking,
 dissolves from the last picture over the chosen time (0.1–2 s), or cuts when
 it is off.
 
@@ -98,11 +100,11 @@ play and pause, where it is in its entry, its cursor with **跳至**, the whole
 track at a glance (where its picture is, a notch between entries, the cursor
 as a hollow ball and, zoomed in, a frame round what the lane shows), the speed
 with − / + a percent at a time, a small bar and **复原** (or a double-click on
-the speed), who sets the speed (手动, 智能跟随, 跟画面 1 速度 …), and **循环**
+the speed), who sets the speed (手动, 声学追踪, 对速 · 已稳定, 跟画面 1 速度 …), and **循环**
 or **播完即停** after the track's last entry (kept per track). The other tracks
 play on their own clocks beside the first; **跟随画面 1 的速度** plays one at its
 own speed times the first track's, so it keeps pace when that tempo changes.
-A track's keys rest while smart following leads its player.
+A track's keys rest while acoustic tracking leads its player.
 
 **A click never moves a picture.** A press or drag on a track's overview, ruler
 or lane only places that track's cursor, a line through its ruler and lane;
@@ -147,7 +149,7 @@ by what passes while the decoder gets there, and a paused seek lands on the
 exact frame. Tracks other than the followed one are never followed or
 identified.
 
-At the right end of the rows sits **音频对位** pressed into a strip as tall as
+At the right end of the rows sits **声学追踪** pressed into a strip as tall as
 one row, beside the first: what following does (未监听, 监听中 or 跟随中, and
 the title), the input's level, the ear (开始监听 / 停止监听), **跟随** (开始跟随; 暂停 while it
 leads), the crosshair (跳至此处), the input, which track is followed, and the
@@ -182,10 +184,10 @@ the picture by steering its speed a little, and seeks only on a jump. The
 sticker gallery runs in a row under the reactions; the effects have the column
 beside the desk.
 
-**音频对位** takes the picture from the player while it
+**声学追踪** takes the picture from the player while it
 is on: the player's keys grey out and the timeline shows where following is.
 Its two helpers show their work: **对速** keeps the speed with the music
-(its dot swings at the followed speed), **跳转监测** watches how far the music is
+(its dot swings at the followed speed), **跳转** watches how far the music is
 from the picture against the jump threshold (2.5 s, or 2 s without a
 confirmation) and ripples in amber once it is passed or the music goes quiet.
 Each pauses on its own and the player takes over what it did: with 跳转 paused

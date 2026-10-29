@@ -290,7 +290,7 @@ Card {
                 implicitWidth: 28
                 implicitHeight: 28
                 iconName: "crosshair"
-                tip: "跳至此处：播放器跳到智能跟随判断的位置"
+                tip: "跳至此处：播放器跳到声学追踪判断的位置"
                 enabled: !!root.match && !!root.app && root.app.manualSeek
                 onClicked: root.app.jumpToMatch()
             }
@@ -303,7 +303,7 @@ Card {
                 implicitHeight: 28
                 iconName: "ellipsis"
                 active: more.visible
-                tip: "画面偏移、对速和跳转监测"
+                tip: "画面偏移、对速和跳转"
                 onClicked: more.visible ? more.close() : more.open()
             }
             OffsetKey {

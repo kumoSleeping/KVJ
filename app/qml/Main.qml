@@ -699,7 +699,7 @@ ApplicationWindow {
         case "permission": return "等待录音权限"
         case "listening": return "监听中"
         case "matched": return "跟随中"
-        case "searching": return "重新搜索"
+        case "searching": return "重新检索"
         case "prepared": return "索引就绪"
         case "failed": return "失败"
         case "stopped": return "已停止"

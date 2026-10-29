@@ -686,7 +686,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                                 session,
                                 Level::Info,
                                 Stage::Decision,
-                                "局部证据不足；救场复核，保留当前画面".into(),
+                                "局部证据不足；转入检索复核，保留当前画面".into(),
                             );
                         }
                         // Known tempo first, then nearby bins, then the rest of
@@ -975,7 +975,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                                 Level::Info,
                                 Stage::Decision,
                                 format!(
-                                    "救场定位：{} · {:.3} 秒 · {:.3}× · 本轮 {:.2} ms",
+                                    "检索定位：{} · {:.3} 秒 · {:.3}× · 本轮 {:.2} ms",
                                     set.recordings[chosen.recording].entry.title,
                                     chosen.now(),
                                     rate,
