@@ -85,6 +85,10 @@ impl Evidence {
     /// window's tempo is often 5–8 % off just after a jump, so the two may
     /// instead agree at `tempo`, the clock's before the jump: the music moved
     /// on between them at that tempo, and each heard about that tempo.
+    /// The tempo at which the music moved from this hearing to `later`.
+    fn moved_to(&self, later: &Self) -> f64 {
+        (later.position - self.position) / later.at.saturating_duration_since(self.at).as_secs_f64().max(1e-3)
+    }
     fn confirmed_by(&self, later: &Self, tempo: Option<f64>) -> bool {
         let since = later.at.saturating_duration_since(self.at).as_secs_f64();
         let at_own = (self.now() - later.now()).abs() < 0.25 && (self.rate - later.rate).abs() < 0.06;
@@ -145,17 +149,26 @@ impl ClockEstimate {
         }
     }
     /// After a jump: the tempo before it, unless the jump was heard well away
-    /// from it. The slope across the next observations corrects it as usual.
-    fn after_jump(found: Evidence, tempo: Option<f64>) -> Self {
+    /// from it, both in its own window and in how far the music moved between
+    /// the two hearings that confirmed it (`moved`). The slope across the next
+    /// observations corrects it as usual.
+    fn after_jump(found: Evidence, moved: Option<f64>, tempo: Option<f64>) -> Self {
         let mut clock = Self::new(found);
-        if let Some(tempo) = tempo.filter(|t| (found.rate - t).abs() < TEMPO_KEPT) {
+        let near = |t: f64| (found.rate - t).abs() < TEMPO_KEPT || moved.is_some_and(|m| (m - t).abs() < TEMPO_KEPT);
+        if let Some(tempo) = tempo.filter(|&t| near(t)) {
             clock.rate = tempo;
         }
         clock
     }
     fn observe(&mut self, found: Evidence) -> (f64, f64, f64) {
         if self.points.back().is_some_and(|old| !found.agrees(old)) {
+            // Starting over keeps the tempo unless this one window heard it
+            // well away: its own tempo is noisier than the slope that follows.
+            let rate = self.rate;
             *self = Self::new(found);
+            if (found.rate - rate).abs() < TEMPO_KEPT {
+                self.rate = rate;
+            }
         }
         self.points.push_back(found);
         while self.points.len() > 32
@@ -969,13 +982,16 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                     }
                     // A jump away from the shown place waits for its confirmation
                     // (CONFIRM_AFTER); the picture stays meanwhile.
+                    // How fast the music moved between a confirmed jump's two hearings.
+                    let mut moved = None;
                     let rescued = match rescued {
                         Some(found) if !vouched && current.is_some_and(|old| found.discontinuity(&old)) => {
                             pending.retain(|p| {
                                 on[p.recording] && at.saturating_duration_since(p.at).as_secs_f64() <= PENDING_SECONDS
                             });
                             let tempo = estimate.as_ref().map(|e| e.rate);
-                            if pending.iter().any(|p| p.confirmed_by(&found, tempo)) {
+                            if let Some(first) = pending.iter().find(|p| p.confirmed_by(&found, tempo)) {
+                                moved = Some(first.moved_to(&found));
                                 pending.clear();
                                 Some(found)
                             } else {
@@ -1000,7 +1016,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         let jumped = current.is_none_or(|old| chosen.discontinuity(&old));
                         if jumped {
                             lock_revision += 1;
-                            estimate = Some(ClockEstimate::after_jump(chosen, estimate.as_ref().map(|e| e.rate)));
+                            estimate = Some(ClockEstimate::after_jump(chosen, moved, estimate.as_ref().map(|e| e.rate)));
                             tracking_status.state = ListenerState::Waiting;
                             tracking_status.position = None;
                             tracking_status.error_ms = None;
@@ -1012,7 +1028,11 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                             outcome = format!(
                                 "采用{}{}：{} · 观测 {:.3} 秒 {:.3}× → 时钟 {:.3} 秒 {:.3}×（差 {:+.1} ms）· 速度置信 {:.2}",
                                 if local.is_some() { "本地" } else if vouched { "现场印证" } else { "检索" },
-                                if jumped { "（跳转）" } else { "" },
+                                if jumped {
+                                    moved.map_or_else(|| "（跳转）".to_string(), |m| format!("（跳转，两次听到间 {m:.3}×）"))
+                                } else {
+                                    String::new()
+                                },
                                 set.recordings[chosen.recording].entry.title,
                                 chosen.position, chosen.rate, position, rate,
                                 (chosen.position - position) * 1000., rate_confidence
@@ -1192,9 +1212,29 @@ mod tests {
         let found = |rate| Evidence {
             target: 0, recording: 0, position: 400., at: Instant::now(), rate, score: 0.7, margin: 0.2,
         };
-        assert_eq!(ClockEstimate::after_jump(found(0.946), Some(1.)).rate, 1.);
-        assert_eq!(ClockEstimate::after_jump(found(1.075), Some(1.)).rate, 1.);
-        assert_eq!(ClockEstimate::after_jump(found(0.90), Some(1.)).rate, 0.9);
-        assert_eq!(ClockEstimate::after_jump(found(0.946), None).rate, 0.945);
+        assert_eq!(ClockEstimate::after_jump(found(0.946), None, Some(1.)).rate, 1.);
+        assert_eq!(ClockEstimate::after_jump(found(1.075), None, Some(1.)).rate, 1.);
+        assert_eq!(ClockEstimate::after_jump(found(0.90), None, Some(1.)).rate, 0.9);
+        assert_eq!(ClockEstimate::after_jump(found(0.946), None, None).rate, 0.945);
+        // 18:20:46 on 2026-10-29: heard at 0.875× with the clock at 1.004×,
+        // while the music moved on at about 1× between its two hearings.
+        assert_eq!(ClockEstimate::after_jump(found(0.875), Some(1.02), Some(1.004)).rate, 1.004);
+        // Heard, and moved, well away from it: the DJ changed speed.
+        assert_eq!(ClockEstimate::after_jump(found(0.875), Some(0.88), Some(1.004)).rate, 0.875);
+    }
+
+    #[test]
+    fn the_clock_starting_over_keeps_its_tempo_unless_heard_well_away() {
+        let t0 = Instant::now() - Duration::from_secs(10);
+        let heard = |s: f64, position, rate| Evidence {
+            target: 0, recording: 0, position, at: t0 + Duration::from_secs_f64(s), rate, score: 0.7, margin: 0.2,
+        };
+        let mut clock = ClockEstimate::new(heard(0., 660., 1.006));
+        clock.observe(heard(0., 660., 1.006));
+        // 18:21:13: one window said 0.948×, unlike the last; the clock stays.
+        assert_eq!(clock.observe(heard(0.5, 660.3, 0.948)).1, 1.005);
+        // A window far from it: started over at that tempo.
+        assert_eq!(clock.observe(heard(1.0, 660.6, 0.85)).1, 0.85);
+        assert!((heard(0., 398.345, 1.057).moved_to(&heard(0.5, 398.848, 0.959)) - 1.006).abs() < 1e-9);
     }
 }
