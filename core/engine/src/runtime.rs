@@ -112,6 +112,10 @@ const CONFIRM_AFTER: f64 = 0.5;
 /// longer fits (2026-10-29: by 0.40–0.80); two places that sound alike (a riff
 /// heard twice in one video) differ by less (0.15).
 const TWIN_MARGIN: f64 = 0.25;
+/// The place shown is judged by its best fit over this long, not one round's:
+/// a weak passage (an electric guitar intro) fits from 0.3 to 0.7 round to
+/// round, and one low round let the later of two alike places in for 1–2 s.
+const HELD_SECONDS: f64 = 0.4;
 /// A jump heard within this of the clock's tempo keeps that tempo: a DJ seldom
 /// jumps and changes speed at once, and one window's own tempo is noisier.
 const TEMPO_KEPT: f64 = 0.08;
@@ -478,6 +482,8 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
         let mut source_checked = Instant::now();
         let mut last_rejection: Option<Instant> = None;
         let mut last_twin: Option<Instant> = None;
+        // How well the place shown fit its recent rounds (since it was taken).
+        let mut held_fits: VecDeque<(Instant, f64)> = VecDeque::new();
         let (mut last_notice, mut notices): (Option<Instant>, u32) = (None, 0);
         // Recordings left out of the search for now: their file is gone or
         // changed (back once it is as it was), or their features are unreadable.
@@ -727,6 +733,10 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         )?;
                         verify_ms += started.elapsed().as_secs_f64() * 1000.;
                         held_score = Some(result.score);
+                        held_fits.push_back((at, result.score));
+                        while held_fits.front().is_some_and(|(t, _)| at.saturating_duration_since(*t).as_secs_f64() > HELD_SECONDS) {
+                            held_fits.pop_front();
+                        }
                         local = record(
                             set,
                             old.target,
@@ -1048,6 +1058,10 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                             // the entry is kept, the later one never taken.
                             let alike = confirming.and(current).and_then(|old| {
                                 let held = held_score.or_else(|| fit_at(set, &mut features, &query, at, &old, cancel))?;
+                                let held = held_fits
+                                    .iter()
+                                    .filter(|(t, _)| at.saturating_duration_since(*t).as_secs_f64() <= HELD_SECONDS)
+                                    .fold(held, |best, (_, fit)| best.max(*fit));
                                 stays(&old, held, &found).then_some(held)
                             });
                             if let (Some(first), None) = (confirming, alike) {
@@ -1092,6 +1106,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         let jumped = current.is_none_or(|old| chosen.discontinuity(&old));
                         if jumped {
                             lock_revision += 1;
+                            held_fits.clear();
                             estimate = Some(ClockEstimate::after_jump(chosen, moved, estimate.as_ref().map(|e| e.rate)));
                             tracking_status.state = ListenerState::Waiting;
                             tracking_status.position = None;
