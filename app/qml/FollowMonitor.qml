@@ -38,7 +38,6 @@ ColumnLayout {
     Rectangle {
         Layout.fillWidth: true
         Layout.preferredHeight: width * 9 / 16
-        radius: Theme.radius
         color: "black"
         clip: true
 
@@ -78,13 +77,11 @@ ColumnLayout {
     Rectangle {
         Layout.fillWidth: true
         implicitHeight: 3
-        radius: 1.5
         color: Theme.line
         Rectangle {
             width: root.duration > 0 ? parent.width * Math.max(0, Math.min(1, root.at / root.duration)) : 0
             height: parent.height
-            radius: 1.5
-            color: Theme.text
+                color: Theme.text
         }
     }
 }

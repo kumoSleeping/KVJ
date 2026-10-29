@@ -157,7 +157,6 @@ Card {
             Rectangle {
                 width: parent.width
                 height: parent.height - 3
-                radius: Theme.radius
                 color: "black"
             }
             FollowMonitor {
@@ -178,7 +177,6 @@ Card {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 3
                 height: foot.implicitHeight + 16
-                radius: Theme.radius
                 gradient: Gradient {
                     GradientStop { position: 0; color: "transparent" }
                     GradientStop { position: 1; color: "#99000000" }

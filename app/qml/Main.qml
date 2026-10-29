@@ -1240,7 +1240,6 @@ ApplicationWindow {
                                 height: width / Math.max(0.2, desk.aspect)
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 color: "black"
-                                radius: Theme.radius
                                 clip: true
                                 Stage {
                                     id: pgmStage
