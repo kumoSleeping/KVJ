@@ -827,13 +827,16 @@ ApplicationWindow {
     property bool singleTrack: false
     property int soloTrack: 0
     // The track to keep: the one following follows while it runs, else the
-    // one playing, else (both or neither) the one on top on the air.
+    // one playing, else the one on top on the air when both play, else the
+    // row last pressed on the timeline (the one the keys act on).
     function keptTrack() {
         if (app.running && (app.followTrack === 0 || app.followTrack === 1))
             return app.followTrack
         const playing = [transport.playing, aux1.playing]
         if (playing[0] !== playing[1])
             return playing[1] ? 1 : 0
+        if (!playing[0] && (timeline.activeTrack === 0 || timeline.activeTrack === 1))
+            return timeline.activeTrack
         return timeline.onTop === "track:1" ? 1 : 0
     }
     function setSingle(on) {
@@ -854,7 +857,11 @@ ApplicationWindow {
             if (!app.running)
                 strip.followTrack = keep
         } else {
+            // Back where it was, paused or playing as it was: not a track
+            // coming onto the picture, which playShown would start.
+            app.shownBefore = null
             Switcher.bringBack("track:" + (1 - app.soloTrack))
+            app.noteShown()
         }
         app.singleTrack = on
     }
