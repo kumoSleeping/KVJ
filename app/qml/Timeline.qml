@@ -466,7 +466,7 @@ Rectangle {
                 Layout.minimumWidth: 40
                 implicitHeight: 24
                 from: 0
-                to: 2000
+                to: 5000
                 stepSize: 50
                 snapMode: Slider.SnapAlways
                 value: line.player ? line.player.fadeMs : 400
