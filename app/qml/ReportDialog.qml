@@ -69,7 +69,7 @@ Popup {
         }
         Text {
             Layout.fillWidth: true
-            text: "仅在确认上传时发送到 bug.kvj.kumo.ltd，保存 30 天。包含最近两天的运行日志、软件版本、系统与 CPU 线程数，不附带素材、Set、设置或蓝牙配对信息。"
+            text: "仅在确认上传时发送到 bug.kvj.kumo.ltd，保存 30 天。包含最近两天的运行日志、软件版本、系统与 CPU 线程数，不附带素材、Set 或设置。"
             font.pixelSize: Theme.sizeXs
             color: Theme.muted
             wrapMode: Text.Wrap

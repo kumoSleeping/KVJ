@@ -40,8 +40,6 @@ qt_add_qml_module(KVJ
         qml/Select.qml
         qml/Toggle.qml
         qml/Seek.qml
-        qml/SendPanel.qml
-        qml/SendWindow.qml
         qml/Transport.qml
         qml/Assistants.qml
         qml/FollowMonitor.qml
@@ -186,7 +184,7 @@ if(APPLE)
     # when present at run time; weak links keep KVJ launching on macOS 12.
     target_link_libraries(KVJ PRIVATE
         "-weak_framework ScreenCaptureKit" "-weak_framework CoreAudio"
-        "-framework CoreMedia" "-framework AudioToolbox" "-framework CoreBluetooth"
+        "-framework CoreMedia" "-framework AudioToolbox"
         "-framework Foundation" "-framework CoreFoundation" "-framework Security" iconv objc)
 elseif(WIN32)
     target_link_libraries(KVJ PRIVATE kernel32 ntdll userenv ws2_32 dbghelp)
@@ -235,7 +233,7 @@ if(KVJ_BUILD_CHECKS)
     if(APPLE)
         target_link_libraries(kvj-sound-check PRIVATE
             "-weak_framework ScreenCaptureKit" "-weak_framework CoreAudio"
-            "-framework CoreMedia" "-framework AudioToolbox" "-framework CoreBluetooth"
+            "-framework CoreMedia" "-framework AudioToolbox"
             "-framework Foundation" "-framework CoreFoundation" "-framework Security" iconv objc)
     elseif(WIN32)
         target_link_libraries(kvj-sound-check PRIVATE kernel32 ntdll userenv ws2_32 dbghelp)

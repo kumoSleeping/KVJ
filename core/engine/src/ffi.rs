@@ -2,7 +2,7 @@
 //! reply, `{"ok": …}` or `{"error": "…"}`. The engine also pushes the presented
 //! View as JSON through `on_event` from its worker thread; the host must hand it
 //! to its own UI thread and must not call back into the engine from inside it.
-use super::{audio_input::Selection, clock_ms, sound::SoundStream, BluetoothDevice, Edit, Engine};
+use super::{audio_input::Selection, clock_ms, sound::SoundStream, Edit, Engine};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
@@ -58,13 +58,6 @@ enum Request {
     },
     Stop,
     Status { after_log_id: Option<u64> },
-    BluetoothScan,
-    BluetoothListen {
-        on: bool,
-        #[serde(default)]
-        receiving: bool,
-    },
-    BluetoothPair { id: String, allow: bool },
     Version,
     ReportPrepare { note: String },
     ReportSubmit { id: String },
@@ -74,17 +67,6 @@ enum Request {
     UpdateCancel,
     UpdateInstall,
     UpdateSettle,
-    BluetoothForget { token: String },
-    BluetoothConnect { device: BluetoothDevice },
-    BluetoothDisconnect { id: String },
-    BluetoothSelect { id: Option<String> },
-    SendStart {
-        peer: String,
-        #[serde(default = "auto")]
-        device: String,
-        #[serde(default)]
-        channel_start: u16,
-    },
 }
 fn auto() -> String {
     "auto".into()
@@ -105,9 +87,6 @@ impl KvjEngine {
             }
             Request::Stop => json!(e.stop()),
             Request::Status { after_log_id } => json!(e.status(after_log_id)),
-            Request::BluetoothScan => json!(e.bluetooth_scan()?),
-            Request::BluetoothListen { on, receiving } => json!(e.bluetooth_listen(on, receiving)?),
-            Request::BluetoothPair { id, allow } => json!(e.bluetooth_pair(&id, allow)?),
             Request::Version => json!(crate::report::VERSION),
             Request::ReportPrepare { note } => json!(e.report_prepare(&note)?),
             Request::ReportSubmit { id } => json!({ "id": e.report_submit(&id)? }),
@@ -117,14 +96,6 @@ impl KvjEngine {
             Request::UpdateCancel => json!(crate::update::cancel()),
             Request::UpdateInstall => json!(e.update_install()?),
             Request::UpdateSettle => json!({ "notice": e.update_settle() }),
-            Request::BluetoothForget { token } => json!(e.bluetooth_forget(&token)?),
-            Request::BluetoothConnect { device } => json!(e.bluetooth_connect(device)?),
-            Request::BluetoothDisconnect { id } => json!(e.bluetooth_disconnect(&id)),
-            Request::BluetoothSelect { id } => json!(e.bluetooth_select(id)?),
-            Request::SendStart { peer, device, channel_start } => {
-                // Recognition, and with it room mode, runs on the receiving computer.
-                json!(e.send_start(&peer, Selection { device, channel_start, room: false })?)
-            }
         })
     }
 }

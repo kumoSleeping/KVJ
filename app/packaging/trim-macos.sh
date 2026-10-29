@@ -64,7 +64,7 @@ find "$C" -type f \( -perm -u+x -o -name '*.dylib' \) | while IFS= read -r file;
 done
 
 # 4. Every change above invalidated the signatures. macOS remembers privacy
-# grants (Bluetooth, microphone, audio capture) by the designated requirement;
+# grants (microphone, camera, audio capture) by the designated requirement;
 # an ad-hoc signature's requirement is its own hash, so every build would ask
 # again. With a local signing identity the requirement is "com.kumo.kvj signed
 # by this certificate" and grants survive updates. Set it up with

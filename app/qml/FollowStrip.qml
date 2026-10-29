@@ -11,8 +11,7 @@ import KVJ
 // it found (the title, or the phase) and how fast it hears the music; the
 // input's level; 监听, 跟随 / 暂停, 跳至此处 (the
 // crosshair) and 画面偏移 (dragged or wheeled); the input with its channels (a
-// device with more than two lists each pair), 现场模式, the Bluetooth DJs (a
-// key that shows while receiving or while one asks to pair) and 刷新; at the
+// device with more than two lists each pair), 现场模式 and 刷新; at the
 // foot the two helpers in full (Assistants): the speed and the jump threshold,
 // each paused or resumed on its own. With two tracks, which one it listens
 // to is chosen under its name (监听 画面 1 | 画面 2), not while it runs.
@@ -21,11 +20,10 @@ import KVJ
 //   app            the window (Main.qml's `app`): read following, match,
 //                  followPaused, aiLeads, aiMain, manualSeek, tempoPaused,
 //                  jumpPaused, musicAway, shownTempo, view, phase, running,
-//                  devices, receiving, incoming, awayDjs, discoverable,
-//                  entries, phaseText(), clock(); called listen(), follow(),
-//                  jumpToMatch(), resetTempo(); tempoPaused / jumpPaused /
-//                  discoverable set as the card did. Engine: stop(),
-//                  refreshDevices(), clearError(), the Bluetooth calls.
+//                  devices, entries, phaseText(), clock(); called listen(),
+//                  follow(), jumpToMatch(), resetTempo(); tempoPaused /
+//                  jumpPaused set as the card did. Engine: stop(),
+//                  refreshDevices(), clearError().
 //   surface        the projection's VideoSurface, for the monitor's mirror
 //   entries        the Set's entries (default app.entries): which tracks have
 //                  sound to follow
@@ -87,10 +85,6 @@ Card {
     readonly property bool canStart: !running && !Engine.importing
                                      && (entries || []).some(e => (e.track || 0) === followTrack && e.enabled !== false && !e.silent)
     readonly property bool monitorVisible: following
-    readonly property bool asking: !!app && (app.incoming || []).some(p => p.link.state === "asking")
-    // The DJs' key shows while receiving over Bluetooth or while one asks.
-    readonly property bool djsOffered: !!app && (app.receiving || asking)
-    onDjsOfferedChanged: if (!djsOffered) djs.close()
     // Following hears nothing yet: the monitor says so.
     readonly property var view: app ? app.view : ({})
     readonly property string inputState: view.input ? view.input.state : ""
@@ -202,9 +196,8 @@ Card {
                     Text {
                         id: status
                         Layout.fillWidth: true
-                        readonly property bool warn: Engine.error.length > 0 || root.asking
+                        readonly property bool warn: Engine.error.length > 0
                         text: Engine.error.length > 0 ? Engine.error
-                              : root.asking ? "有 DJ 请求连接 · 点这里"
                               : root.match ? root.match.entry.title
                               : root.following && root.app.phase === "indexing" ? root.app.phaseText(root.app.phase) : ""
                         font.pixelSize: Theme.sizeXs
@@ -216,17 +209,11 @@ Card {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: status.warn ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: {
-                                if (Engine.error.length > 0)
-                                    Engine.clearError()
-                                else if (root.asking)
-                                    djs.open()
-                            }
+                            onClicked: if (Engine.error.length > 0) Engine.clearError()
                         }
                         ToolTip.visible: statusArea.containsMouse
                         ToolTip.delay: 600
                         ToolTip.text: Engine.error.length > 0 ? Engine.error + "\n（点一下清除）"
-                                      : root.asking ? "有 DJ 电脑请求连接，点一下允许或拒绝"
                                       : root.match ? (root.app.followPaused ? "只监听" : "跟随中") + " · " + root.match.entry.title + " · "
                                                      + root.app.clock(root.match.position, true) + " · " + root.trackName(root.followTrack)
                                       : (root.following ? root.app.phaseText(root.app.phase) + " · " : "") + "跟随" + root.trackName(root.followTrack)
@@ -398,7 +385,7 @@ Card {
             }
         }
 
-        // The input, its channels with it; 现场模式; the DJs; 刷新.
+        // The input, its channels with it; 现场模式; 刷新.
         RowLayout {
             Layout.fillWidth: true
             spacing: 2
@@ -418,17 +405,8 @@ Card {
                 text: "现场"
                 on: root.roomMode
                 enabled: !root.running
-                tip: "现场模式：麦克风听现场，在混响里也能跟上。选麦克风时自动打开；电脑内录或蓝牙接收时关闭"
+                tip: "现场模式：麦克风听现场，在混响里也能跟上。选麦克风时自动打开；电脑内录时关闭"
                 onClicked: root.roomMode = !root.roomMode
-            }
-            Chip {
-                id: djKey
-                visible: root.djsOffered
-                text: "DJ"
-                on: djs.visible
-                warn: root.asking
-                tip: root.asking ? "有 DJ 请求连接：允许或拒绝" : "蓝牙 DJ：当前 DJ、可被发现、忘记记住的 DJ"
-                onClicked: djs.visible ? djs.close() : djs.open()
             }
             IconButton {
                 implicitWidth: 26
@@ -541,12 +519,10 @@ Card {
         }
     }
 
-    // A small text key: ink while `on`, an outline while not; a
-    // dot at its corner while `warn`.
+    // A small text key: ink while `on`, an outline while not.
     component Chip: AbstractButton {
         id: chip
         property bool on: false
-        property bool warn: false
         property string tip
         implicitWidth: implicitContentWidth + leftPadding + rightPadding
         implicitHeight: 22
@@ -558,15 +534,6 @@ Card {
             color: chip.on ? (chip.enabled ? Theme.text : Theme.faint)
                            : chip.down ? Theme.selected : chip.hovered && chip.enabled ? Theme.hover : Theme.inset
             Behavior on color { ColorAnimation { duration: 90 } }
-            Rectangle {
-                visible: chip.warn
-                x: parent.width - 5
-                y: -1
-                width: 6
-                height: 6
-                radius: 3
-                color: Theme.warn
-            }
         }
         contentItem: Text {
             text: chip.text
@@ -579,167 +546,5 @@ Card {
         ToolTip.visible: hovered && tip.length > 0
         ToolTip.delay: 600
         ToolTip.text: tip
-    }
-
-    // —— The Bluetooth DJs, under their key ——
-    Popup {
-        id: djs
-        parent: djKey
-        x: djKey.width - width
-        y: djKey.height + 6
-        width: 300
-        padding: 14
-        margins: 8
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-        background: Rectangle {
-            radius: Theme.radiusLg
-            color: Theme.raised
-            border.width: 1
-            border.color: Theme.line
-        }
-        contentItem: ColumnLayout {
-            id: djList
-            Layout.fillWidth: true
-            spacing: 4
-            RowLayout {
-                Layout.fillWidth: true
-                Heading { text: "蓝牙 DJ"; Layout.fillWidth: true }
-                Toggle {
-                    text: "可被发现"
-                    checked: !!root.app && root.app.discoverable
-                    onToggled: root.app.discoverable = checked
-                    ToolTip.visible: hovered
-                    ToolTip.delay: 500
-                    ToolTip.text: "开着时 DJ 电脑随时能找到这台并请求连接；记住的 DJ 回来会自动连上"
-                }
-            }
-            // The chosen DJ is let go only on a second press (within 4 s):
-            // one stray click must not cut the music off.
-            property string letGoId: ""
-            Timer {
-                id: letGoTimer
-                interval: 4000
-                onTriggered: djList.letGoId = ""
-            }
-            Repeater {
-                model: root.app ? (root.app.incoming || []).filter(p => p.link.state !== "disconnected" || p.selected || p.known) : []
-                ItemDelegate {
-                    id: dj
-                    required property var modelData
-                    readonly property bool asking: modelData.link.state === "asking"
-                    readonly property bool lettingGo: modelData.selected && djList.letGoId === modelData.link.peer
-                    Layout.fillWidth: true
-                    implicitHeight: 32
-                    topPadding: 0
-                    bottomPadding: 0
-                    leftPadding: 8
-                    rightPadding: 2
-                    onClicked: {
-                        if (asking || modelData.link.state === "disconnected") {
-                            return
-                        } else if (!modelData.selected) {
-                            djList.letGoId = ""
-                            Engine.selectBluetooth(modelData.link.peer)
-                        } else if (lettingGo) {
-                            djList.letGoId = ""
-                            Engine.selectBluetooth("")
-                        } else {
-                            djList.letGoId = modelData.link.peer
-                            letGoTimer.restart()
-                        }
-                    }
-                    ToolTip.visible: hovered && !!modelData.link.error
-                    ToolTip.delay: 400
-                    ToolTip.text: modelData.link.error || ""
-                    contentItem: RowLayout {
-                        spacing: 6
-                        Text {
-                            Layout.fillWidth: true
-                            text: dj.modelData.device.name
-                            font.pixelSize: Theme.size
-                            font.weight: dj.modelData.selected || dj.asking ? Font.DemiBold : Font.Normal
-                            color: dj.modelData.selected || dj.asking ? Theme.text : Theme.muted
-                            elide: Text.ElideRight
-                        }
-                        Text {
-                            visible: !dj.asking
-                            text: dj.lettingGo ? "再点一下取消"
-                                : dj.modelData.link.state === "receiving" ? "发送中"
-                                : dj.modelData.link.state === "connected" ? (dj.modelData.selected ? "当前 DJ" : "待命")
-                                : dj.modelData.selected ? "已断开 · 回来后自动恢复" : "已断开"
-                            font.pixelSize: Theme.sizeXs
-                            color: Theme.muted
-                        }
-                        TextButton {
-                            visible: dj.asking
-                            primary: true
-                            text: "允许"
-                            onClicked: Engine.pairBluetooth(dj.modelData.link.peer, true)
-                        }
-                        TextButton {
-                            visible: dj.asking
-                            text: "拒绝"
-                            onClicked: Engine.pairBluetooth(dj.modelData.link.peer, false)
-                        }
-                        IconButton {
-                            visible: !dj.asking && dj.modelData.known && dj.hovered
-                            iconName: "x"
-                            tip: "忘记这台 DJ 电脑（下次需重新允许）"
-                            onClicked: Engine.forgetBluetooth(dj.modelData.token)
-                        }
-                    }
-                    background: Rectangle {
-                        radius: Theme.radius
-                        color: dj.asking ? Theme.inset : dj.hovered ? Theme.hover : "transparent"
-                    }
-                }
-            }
-            // Remembered DJs that are not here now.
-            Repeater {
-                model: root.app && root.app.receiving ? root.app.awayDjs : []
-                ItemDelegate {
-                    id: away
-                    required property var modelData
-                    Layout.fillWidth: true
-                    implicitHeight: 28
-                    topPadding: 0
-                    bottomPadding: 0
-                    leftPadding: 8
-                    rightPadding: 2
-                    contentItem: RowLayout {
-                        spacing: 6
-                        Text {
-                            Layout.fillWidth: true
-                            text: away.modelData.name
-                            font.pixelSize: Theme.sizeSm
-                            color: Theme.faint
-                            elide: Text.ElideRight
-                        }
-                        Text {
-                            text: "已记住 · 不在附近"
-                            font.pixelSize: Theme.sizeXs
-                            color: Theme.faint
-                        }
-                        IconButton {
-                            visible: away.hovered
-                            iconName: "x"
-                            tip: "忘记这台 DJ 电脑"
-                            onClicked: Engine.forgetBluetooth(away.modelData.token)
-                        }
-                    }
-                    background: Rectangle {
-                        radius: Theme.radius
-                        color: away.hovered ? Theme.hover : "transparent"
-                    }
-                }
-            }
-            Text {
-                Layout.fillWidth: true
-                visible: !!root.app && (root.app.incoming || []).length === 0 && (!root.app.receiving || root.app.awayDjs.length === 0)
-                text: "还没有 DJ 电脑连上"
-                font.pixelSize: Theme.sizeSm
-                color: Theme.faint
-            }
-        }
     }
 }

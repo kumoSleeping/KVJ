@@ -9,7 +9,7 @@ import KVJ
 // once at start and every 30 minutes while 自动检测更新 is on; nothing is
 // downloaded unasked. 下载并更新 fetches the newer release, checks it and,
 // once it is ready, restarts into it after a short countdown, or, while a
-// show is on (following, sending, projecting: Engine.keepAwake), only when
+// show is on (following, projecting: Engine.keepAwake), only when
 // asked again. A build that cannot update itself (a developer's, or one in a
 // place KVJ may not write to) says why and opens the download page instead.
 Popup {
@@ -137,7 +137,7 @@ Popup {
                             ? "下载 v" + about.job.version + "　" + about.megabytes(about.job.received) + " / " + about.megabytes(about.job.total) + " MB"
                             : about.phase === "verifying" ? "校验 v" + about.job.version + "…" : "准备 v" + about.job.version + "…")
                         : about.ready ? (about.countdown > 0 ? "v" + about.job.version + " 已就绪，" + about.countdown + " 秒后重启"
-                            : about.showOn ? "v" + about.job.version + " 已就绪。正在演出：重启会中断跟随、发送和投影"
+                            : about.showOn ? "v" + about.job.version + " 已就绪。正在演出：重启会中断跟随和投影"
                             : "v" + about.job.version + " 已就绪，重启即可完成更新")
                         : about.phase === "installing" ? "正在重启…"
                         : about.phase === "failed" ? "更新失败：" + about.job.error
@@ -233,7 +233,7 @@ Popup {
             Caption { text: "日志" }
             Text {
                 Layout.fillWidth: true
-                text: "每次监听、跟随和发送都记在日志里（保留两周）。遇到问题可以把脱敏后的日志发给开发者。"
+                text: "每次监听和跟随都记在日志里（保留两周）。遇到问题可以把脱敏后的日志发给开发者。"
                 font.pixelSize: Theme.sizeXs
                 color: Theme.muted
                 wrapMode: Text.Wrap

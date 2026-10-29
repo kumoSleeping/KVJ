@@ -4,7 +4,6 @@
 //! Ported from KDJ's Live VJ (`src-tauri/src/live_vj` at 00f377a) without Tauri.
 pub mod decode;
 mod audio_input;
-mod bluetooth;
 #[cfg(target_os = "macos")]
 mod capture;
 mod diagnostics;
@@ -23,7 +22,6 @@ pub mod update;
 pub mod waveform;
 
 pub use audio_input::{InputDevice, Selection};
-pub use bluetooth::Device as BluetoothDevice;
 pub use diagnostics::{Level, LogEntry, Stage};
 pub use document::{Document, Edit, Entry, Set};
 
@@ -72,12 +70,6 @@ pub struct Match {
 #[derive(Clone, Default, Serialize)]
 pub struct View {
     pub session: String,
-    /// "vj" (recognize and project) or "send" (stream features over Bluetooth).
-    pub mode: String,
-    pub bluetooth: Option<bluetooth::LinkStatus>,
-    pub connections: bluetooth::ConnectionStatus,
-    pub send_target: Option<String>,
-    pub presentation_epoch: u64,
     pub input_device: String,
     pub input_channel_start: u16,
     pub revision: u64,
@@ -124,7 +116,6 @@ pub struct Engine {
     off: Mutex<std::collections::HashSet<String>>,
     session: Mutex<Option<Session>>,
     gate: Mutex<()>,
-    connections: bluetooth::Hub,
     reports: report::Reports,
     notify: Notify,
 }
@@ -134,7 +125,6 @@ const VIDEO: &[&str] = &["mp4", "m4v", "mkv", "mov", "webm"];
 
 impl Engine {
     pub fn new(data_dir: PathBuf, notify: Notify) -> Arc<Self> {
-        let connections = bluetooth::Hub::open(&data_dir);
         Arc::new(Self {
             data_dir,
             store: Mutex::new(None),
@@ -144,7 +134,6 @@ impl Engine {
             off: Mutex::new(Default::default()),
             session: Mutex::new(None),
             gate: Mutex::new(()),
-            connections,
             reports: report::Reports::default(),
             notify,
         })
@@ -332,11 +321,7 @@ impl Engine {
         Ok(document)
     }
     pub fn devices(&self) -> Result<Vec<InputDevice>> {
-        let mut devices = audio_input::devices()?;
-        if cfg!(any(target_os = "macos", windows)) {
-            devices.push(InputDevice::bluetooth());
-        }
-        Ok(devices)
+        audio_input::devices()
     }
     /// A stopped worker exits at its next cancellation check; wait for it.
     fn join_stopped(&self) {
@@ -356,8 +341,7 @@ impl Engine {
     /// for the entries on `track`.
     pub fn start(self: &Arc<Self>, set_id: &str, input: Selection, prepare_only: bool, track: u8) -> Result<View> {
         anyhow::ensure!(track <= document::LAST_TRACK, "轨道不存在");
-        // Bluetooth is an explicit, mutually exclusive source with nothing to open yet.
-        if !prepare_only && input.device != "bluetooth" {
+        if !prepare_only {
             input.validate()?;
         }
         let _gate = self.gate.lock().unwrap();
@@ -388,17 +372,8 @@ impl Engine {
             .map(|e| e.id.clone())
             .collect();
         let session = document::id();
-        // A DJ selected (or already streaming) before Start is the current source:
-        // its matches must be presented, not wait for the next route change.
-        let presentation_epoch = if input.device == "bluetooth" {
-            self.connections.inbox.lock().unwrap().epoch
-        } else {
-            0
-        };
         let view = View {
             session: session.clone(),
-            mode: "vj".into(),
-            presentation_epoch,
             input_device: input.device.clone(),
             input_channel_start: input.channel_start,
             set_id: set_id.into(),
@@ -444,9 +419,6 @@ impl Engine {
                 self.log(&v.session, Level::Info, Stage::Session, "会话已停止".into());
             }
             v.phase = "stopped".into();
-            if let Some(link) = &mut v.bluetooth {
-                link.state = "stopped".into();
-            }
             v.scanning = None;
             v.matched = None;
             v.candidate = None;
@@ -466,7 +438,6 @@ impl Engine {
             .unwrap()
             .since(&view.session, after_log_id);
         view.clock_ms = clock_ms();
-        view.connections = self.connections.snapshot();
         Status { view, logs }
     }
     /// Stop and wait for the worker, so `notify` is never called afterwards.
@@ -477,7 +448,6 @@ impl Engine {
             s.cancel.store(true, Ordering::Relaxed);
             let _ = s.worker.join();
         }
-        self.connections.shutdown();
     }
 }
 /// What the app calls a track: the main one, then 画面 2..4.

@@ -7,8 +7,8 @@ import KVJ
 // The window's top bar: on macOS it is the title bar itself, beside the
 // window's own keys (`inset` leaves them room) and it moves the window; where
 // the system keeps its title bar it sits under it. The name, the key of the
-// Sets' drawer and what is going on at the left; at the right the way into the
-// sender and the light or dark look. (No name: the window is KVJ.)
+// Sets' drawer and what is going on at the left; at the right the light or
+// dark look. (No name: the window is KVJ.)
 Rectangle {
     id: top
     color: Theme.raised
@@ -21,13 +21,11 @@ Rectangle {
     // What is going on, in a word or two, and whether it is live.
     property string status: ""
     property bool live: false
-    property bool canSend: true
     // The library drawer: out or not; its key comes first in the bar.
     property bool drawerOpen: false
     // 单轨 (only 画面 1) or two tracks; its key comes next.
     property bool singleTrack: false
 
-    signal send()
     signal toggleDrawer()
     signal toggleSingle()
 
@@ -117,18 +115,6 @@ Rectangle {
         }
         Item { Layout.fillWidth: true }
 
-        TextButton {
-            implicitHeight: 26
-            flat: true
-            iconName: "send"
-            text: "发送端"
-            enabled: top.canSend
-            ToolTip.visible: hovered
-            ToolTip.delay: 600
-            ToolTip.text: "这台是 DJ 电脑：收起播放器，打开只采集 Master、经蓝牙发给投影电脑的小窗"
-            onClicked: top.send()
-        }
-        Item { implicitWidth: 4 }
         // Version, updates and logs; a dot when a newer release is out or one
         // is downloaded and waits for the restart.
         IconButton {

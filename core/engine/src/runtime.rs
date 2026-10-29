@@ -343,7 +343,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
         publish(engine, session, |v| v.phase = "permission".into());
         // Opened once here (a refusal ends the session); lost later, it is
         // reopened while the session goes on.
-        let mut source = Some(super::feature_input::Input::start(engine, input)?);
+        let mut source = Some(super::feature_input::Input::start(input)?);
         let mut reopen_at = Instant::now();
         // A loopback that went quiet is reopened (no error ever comes): when it
         // was (re)opened, the next wait in seconds, and whether one was.
@@ -383,7 +383,6 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
         // When local tracking began to hold, round after round.
         let mut held_since: Option<Instant> = None;
         let mut generation = 0;
-        let mut input_epoch = 0;
         let mut features = FeatureCache(VecDeque::new());
         let mut current: Option<Evidence> = None;
         let mut estimate: Option<ClockEstimate> = None;
@@ -423,7 +422,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         current = None; estimate = None; lost = false;
                         generation = 0; search_cursor = 0; corroboration.clear(); pending.clear();
                     } else if Instant::now() >= reopen_at {
-                        match super::feature_input::Input::start(engine, input) {
+                        match super::feature_input::Input::start(input) {
                             Ok(reopened) => {
                                 source = Some(reopened);
                                 opened = Instant::now();
@@ -451,12 +450,6 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                     continue;
                 }
             };
-            let epoch = polled.epoch;
-            if input_epoch != epoch {
-                input_epoch = epoch; current = None; estimate = None; lost = false;
-                generation = 0; search_cursor = 0; last_rejection = None;
-                corroboration.clear(); candidates.clear(); pending.clear();
-            }
             if let Some(notice) = polled.notice {
                 // At most one warning every 5 s so a flaky driver cannot flush the bounded
                 // log; the gap counter keeps the exact total.
@@ -472,12 +465,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
             }
             let feature_ms = polled.feature_ms;
             let packet = polled.observation;
-            publish(engine, session, |v| v.bluetooth = polled.bluetooth);
-            let mut input = polled.status.unwrap_or_else(|| super::diagnostics::InputStatus {
-                state: InputState::Waiting, source: "蓝牙".into(), sample_rate: 8000,
-                channels: vec![], rms_dbfs: None, peak_dbfs: None, buffered_seconds: 0.,
-                packet_age_ms: None, packets: 0, gaps: 0,
-            });
+            let mut input = polled.status;
             if last_input_state != Some(input.state) {
                 log(
                     engine,
@@ -593,12 +581,9 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                 lost = true;
                 publish(engine, session, |v| v.phase = "searching".into());
             }
-            // A query of the wrong length (a bad packet from a sender) is skipped.
-            let packet = packet.filter(|o| (350. ..=3000.).contains(&o.query.duration_ms()));
             if let Some(observation) = packet {
                 let next_generation = observation.generation;
                 if next_generation != generation {
-                    if next_generation & (1 << 63) != 0 { current = None; }
                     estimate = None;
                     lost = current.is_some();
                     generation = next_generation;
@@ -1010,7 +995,6 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         lost = false;
                         candidates.clear();
                         engine.present(session, |v| {
-                            if v.presentation_epoch != epoch { return; }
                             v.phase = "matched".into();
                             v.candidate = None;
                             v.matched =
@@ -1019,7 +1003,6 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                     } else {
                         lost = current.is_some();
                         engine.present(session, |v| {
-                            if v.presentation_epoch != epoch { return; }
                             v.candidate = None;
                             if lost {
                                 v.phase = "searching".into();

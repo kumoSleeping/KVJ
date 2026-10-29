@@ -7,23 +7,22 @@ import QtQuick.Layouts
 import KVJ
 
 // The operator's one window, a player first: a top bar (in the title bar's row
-// on macOS) with the way into the sender and the light or dark look, and under
+// on macOS) with the light or dark look, and under
 // it the canvas, all on one plain ground: the board (the picture, made and
 // seen in one place, the panel of stickers, words and reactions and effects
 // out at its right when wanted), at the far right the audience's picture over
 // smart following, the Sets and their entries in a drawer over its left
 // side; across the whole foot the player's timeline, one track or two. While smart following is on it plays the
 // picture from the music (where, and how fast) and the player's own keys rest;
-// paused or stopped, the player carries on from there. The sender for the DJ's
-// computer is a small window of its own; the projection window shows only the
-// picture.
+// paused or stopped, the player carries on from there. The projection window
+// shows only the picture.
 ApplicationWindow {
     id: app
     width: Math.min(1480, Screen.desktopAvailableWidth)
     height: Math.min(900, Screen.desktopAvailableHeight)
     minimumWidth: 1180
     minimumHeight: 680
-    visible: !app.startsSending
+    visible: true
     title: "KVJ"
     color: Theme.bg
     font.pixelSize: Theme.size
@@ -60,9 +59,7 @@ ApplicationWindow {
     readonly property int followTrack: strip.followTrack
     readonly property var view: Engine.view
     readonly property string phase: view.phase || ""
-    readonly property bool running: ["indexing", "permission", "listening", "matched", "searching", "connecting", "sending"].indexOf(phase) >= 0
-    // `--send` opens straight into the sender, for the DJ's own computer.
-    readonly property bool startsSending: Qt.application.arguments.indexOf("--send") >= 0
+    readonly property bool running: ["indexing", "permission", "listening", "matched", "searching"].indexOf(phase) >= 0
     readonly property var match: Engine.matched && Engine.matched.entry ? Engine.matched : null
     property var lastMatch: null
     // Smart following is on. Its two helpers (Assistants) pause on their own:
@@ -70,7 +67,7 @@ ApplicationWindow {
     // music is. With both at work following draws the picture once it has found
     // the music; with one paused the player draws it and the other helper steers
     // the player (steer()); with both paused it only listens.
-    readonly property bool following: running && view.mode !== "send"
+    readonly property bool following: running
     property bool tempoPaused: false
     property bool jumpPaused: false
     readonly property bool followPaused: tempoPaused && jumpPaused
@@ -102,21 +99,8 @@ ApplicationWindow {
     readonly property var device: strip.device
     // Adding never waits for a Set: the first files make "Set 1".
     readonly property bool editable: !running && !Engine.importing
-    // Receiving over Bluetooth (an input among the others). This computer
-    // advertises while it is the chosen input, and otherwise too while it may be
-    // found (可被发现), so a DJ can pair or come back at any time; never while
-    // it is itself the sender.
-    readonly property bool receiving: !sender.visible && !!device && device.id === "bluetooth"
-    property bool discoverable: true
-    readonly property bool advertising: receiving || (discoverable && !sender.visible)
-    onReceivingChanged: Engine.listenBluetooth(advertising, receiving)
-    onAdvertisingChanged: Engine.listenBluetooth(advertising, receiving)
-    readonly property var incoming: (view.connections && view.connections.incoming) || []
-    readonly property var knownDjs: ((view.connections && view.connections.known) || []).filter(k => k.role === "dj")
-    // Paired DJs not connected now, so they can be forgotten from here too.
-    readonly property var awayDjs: knownDjs.filter(k => !incoming.some(p => p.token === k.token && p.link.state !== "disconnected"))
     // A recording input (a microphone) hears the room: 现场模式 starts on for it
-    // and off for captured or received audio; the operator may switch it either way.
+    // and off for captured audio; the operator may switch it either way.
     readonly property bool microphone: !!device && device.kind === "input"
     // The system title bar the top bar stands in for (main.cpp, macOS): room for
     // the window's keys at its left, and its height; 0 where the system keeps it.
@@ -134,8 +118,8 @@ ApplicationWindow {
     readonly property bool keysOn: true
     readonly property bool typing: !!activeFocusItem && typeof activeFocusItem.selectedText === "string"
     // They work from the projection window too (it takes the focus when it
-    // opens), not while the sender stands in for the player.
-    readonly property bool keysLive: keysOn && !typing && !sender.visible
+    // opens).
+    readonly property bool keysLive: keysOn && !typing
 
     // The player, for the desk and its timeline: what the picture shows, from
     // whichever leads, and the keys that move it.
@@ -426,7 +410,7 @@ ApplicationWindow {
     function chooseSet(id) {
         if (app.currentSet && app.currentSet.id === id)
             return
-        if (app.running && !sender.visible)
+        if (app.running)
             Engine.stop()
         app.setId = id
     }
@@ -454,29 +438,10 @@ ApplicationWindow {
         }
     }
 
-    // The sender takes the place of this window, which is put away (nothing
-    // is decoded or drawn here meanwhile) until the sender is closed.
-    function openSender() {
-        if (app.following)
-            return
-        transport.setPlaying(false)
-        projection.closeOutput()
-        sender.show()
-        sender.raise()
-        sender.requestActivate()
-        app.hide()
-    }
-    function leaveSender() {
-        if (app.running)
-            Engine.stop()
-        app.show()
-        app.raise()
-        app.requestActivate()
-    }
     // Development aid, through KVJ_DEV_DIR/cmd (main.cpp): drive the player
     // from a shell. "play <entry no.> <seconds>", "pause", "resume", "tempo
-    // <rate>", "fade <ms>" (0 = off), "listen", "follow", "here", "stop", "hold [tempo|jump]",
-    // "send", "back"; on the timeline "zoom <factor> <x>", "mark <x>" (x in px
+    // <rate>", "fade <ms>" (0 = off), "listen", "follow", "here", "stop", "hold [tempo|jump]";
+    // on the timeline "zoom <factor> <x>", "mark <x>" (x in px
     // along the strip), "jump"; "post <px> <py> <words>" posts a sticker of
     // words and chooses it; "nudge <±1> <ms>" holds a nudge key that long;
     // "drop" turns the entry on the screen off as the sidebar's confirmed
@@ -505,8 +470,6 @@ ApplicationWindow {
             else
                 app.tempoPaused = app.jumpPaused = !app.followPaused
             break
-        case "send": app.openSender(); break
-        case "back": sender.close(); break
         case "zoom": timeline.zoomAt(Number(w[2] || 0), Number(w[1])); break
         case "mark": timeline.setMark(Number(w[1])); break
         case "jump": timeline.jump(); break
@@ -745,7 +708,7 @@ ApplicationWindow {
     }
 
     // No screen goes dark and no computer sleeps while the picture is out or
-    // the music is heard (or sent): nobody touches the computer during a show.
+    // the music is heard: nobody touches the computer during a show.
     Binding {
         target: Engine
         property: "keepAwake"
@@ -1025,17 +988,6 @@ ApplicationWindow {
         device: desk.soundDevice
         volume: desk.soundVolume2
     }
-    SendWindow {
-        id: sender
-        visible: app.startsSending
-        running: app.running
-        inputs: app.devices
-        onLeaving: app.leaveSender()
-    }
-    Settings {
-        category: "bluetooth"
-        property alias discoverable: app.discoverable
-    }
     Settings {
         category: "player"
         property alias fade: app.fadeOn
@@ -1070,7 +1022,7 @@ ApplicationWindow {
     }
     // Effects: 1–9 and 0 (the number pad too) switch the first ten in the
     // list, , and . tune the last one; their own switch in the effects panel.
-    readonly property bool effectKeysLive: Live.keysOn && !app.typing && !sender.visible
+    readonly property bool effectKeysLive: Live.keysOn && !app.typing
     Instantiator {
         model: 10
         delegate: Shortcut {
@@ -1159,7 +1111,6 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+B"
         context: Qt.ApplicationShortcut
-        enabled: !sender.visible
         onActivated: app.libraryShown = !app.libraryShown
     }
 
@@ -1189,8 +1140,6 @@ ApplicationWindow {
             titleHeight: app.visibility === Window.FullScreen ? 0 : app.titleHeight
             // Projecting or not is told by 输出预览's light, not here.
             status: app.running ? app.phaseText(app.phase) : ""
-            canSend: !app.following
-            onSend: app.openSender()
             drawerOpen: app.libraryShown
             onToggleDrawer: app.libraryShown = !app.libraryShown
             singleTrack: app.singleTrack
@@ -1472,8 +1421,6 @@ ApplicationWindow {
         Qt.callLater(app.noteShown)
         if (timeline.tempoLinked)
             Qt.callLater(app.linkTempo)
-        if (advertising)
-            Engine.listenBluetooth(true, receiving)
         const args = Qt.application.arguments
         for (let i = 0; i + 1 < args.length; ++i)
             if (args[i] === "--add")

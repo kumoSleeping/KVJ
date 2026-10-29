@@ -61,7 +61,7 @@ Engine::Engine(QObject *parent)
     m_updatePoll.setInterval(250);
     connect(&m_updatePoll, &QTimer::timeout, this, &Engine::pollUpdate);
     if (!alone)
-        setError(QStringLiteral("另一个 KVJ 正在使用同一份 Set 数据：请只开一个，两个会互相干扰蓝牙和改动"));
+        setError(QStringLiteral("另一个 KVJ 正在使用同一份 Set 数据：请只开一个，两个会互相覆盖改动"));
 }
 
 void Engine::writeLog(const QStringList &lines)
@@ -447,72 +447,6 @@ void Engine::stop()
     call({{"cmd", "stop"}}, [this](const QJsonValue &ok) {
         m_view = ok.toObject().toVariantMap();
         emit viewChanged();
-    }, true);
-}
-
-void Engine::scanBluetooth()
-{
-    // Development aid: KVJ_FAKE_RECEIVERS='[{"id":"…","name":"…"}]' lists made-up
-    // receivers without the radio, for checking the layout.
-    const QByteArray fake = qgetenv("KVJ_FAKE_RECEIVERS");
-    if (!fake.isEmpty()) {
-        m_bluetoothDevices = QJsonDocument::fromJson(fake).array().toVariantList();
-        emit bluetoothDevicesChanged();
-        return;
-    }
-    call({{"cmd", "bluetooth_scan"}}, [this](const QJsonValue &ok) {
-        m_bluetoothDevices = ok.toArray().toVariantList();
-        emit bluetoothDevicesChanged();
-    }, true);
-}
-
-void Engine::connectBluetooth(const QVariantMap &device)
-{
-    call({{"cmd", "bluetooth_connect"}, {"device", QJsonObject::fromVariantMap(device)}}, nullptr, true);
-}
-
-void Engine::disconnectBluetooth(const QString &id)
-{
-    call({{"cmd", "bluetooth_disconnect"}, {"id", id}}, nullptr, true);
-}
-
-void Engine::selectBluetooth(const QString &id)
-{
-    call({{"cmd", "bluetooth_select"}, {"id", id.isEmpty() ? QJsonValue() : QJsonValue(id)}}, nullptr, false);
-}
-
-void Engine::listenBluetooth(bool on, bool receiving)
-{
-    // In the order asked: a quick off and on again must end listening.
-    call({{"cmd", "bluetooth_listen"}, {"on", on}, {"receiving", receiving}}, nullptr, true, {}, &m_edits);
-}
-
-void Engine::pairBluetooth(const QString &id, bool allow)
-{
-    call({{"cmd", "bluetooth_pair"}, {"id", id}, {"allow", allow}}, nullptr, false);
-}
-
-void Engine::forgetBluetooth(const QString &token)
-{
-    call({{"cmd", "bluetooth_forget"}, {"token", token}}, nullptr, true);
-}
-
-void Engine::startSending(const QString &peer, const QString &device, int channelStart)
-{
-    clearError();
-    const QJsonObject request{
-        {"cmd", "send_start"},
-        {"peer", peer},
-        {"device", device.isEmpty() ? QStringLiteral("auto") : device},
-        {"channel_start", channelStart},
-    };
-    call(request, [this](const QJsonValue &ok) {
-        m_view = ok.toObject().toVariantMap();
-        m_session = m_view.value("session").toString();
-        m_logs.clear();
-        m_logCursor = 0;
-        emit viewChanged();
-        emit logsChanged();
     }, true);
 }
 

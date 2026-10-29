@@ -1,7 +1,5 @@
 //! Headless driver for the engine: list inputs, index a folder, or follow live audio.
 //!   kvj-cli devices
-//!   kvj-cli bluetooth                               KVJ receivers advertising nearby
-//!   kvj-cli listen                                  advertise as a receiver (until interrupted)
 //!   kvj-cli prepare <folder|file>...                 index only, then exit
 //!   kvj-cli follow  <folder|file>... [--device ID] [--channel N] [--room]
 //! Data (Set document and caches) goes to $KVJ_DATA_DIR or the temp directory.
@@ -71,38 +69,7 @@ fn main() -> anyhow::Result<()> {
         }
         // The newest published release, as the app's update check sees it.
         "update" => println!("{}", serde_json::to_string_pretty(&kvj_engine::report::check_update()?)?),
-        "bluetooth" => {
-            for d in engine.bluetooth_scan()? {
-                println!("KVJ    {:<40} {}", d.id, d.name);
-            }
-        }
-        // Advertise as a receiver until interrupted, printing who connects.
-        // With `--select`, senders asking to pair are allowed and the first
-        // connected one becomes the current DJ.
-        "listen" => {
-            let select = args.iter().any(|a| a == "--select");
-            engine.bluetooth_listen(true, true)?;
-            loop {
-                std::thread::sleep(Duration::from_secs(1));
-                let c = engine.status(None).view.connections;
-                if select {
-                    for p in c.incoming.iter().filter(|p| p.link.state == "asking") {
-                        let _ = engine.bluetooth_pair(p.link.peer.as_deref().unwrap_or_default(), true);
-                    }
-                }
-                if select && c.selected.is_none() {
-                    if let Some(p) = c.incoming.iter().find(|p| p.link.state == "connected") {
-                        let _ = engine.bluetooth_select(p.link.peer.clone());
-                    }
-                }
-                let input = engine.connections_input();
-                println!("listening={} error={:?} peers={:?} input={}", c.listening, c.error,
-                    c.incoming.iter().map(|p| format!("{} {} packets={} rtt={:?} age={:?} gaps={}", p.device.name, p.link.state,
-                        p.link.packets, p.link.rtt_ms.map(|v| v.round()), p.link.data_age_ms.map(|v| v.round()), p.link.gaps)).collect::<Vec<_>>(),
-                    input);
-            }
-        }
-        _ => println!("usage: kvj-cli devices | bluetooth | update | prepare <paths>... | follow <paths>... [--device ID] [--channel N] [--room]"),
+        _ => println!("usage: kvj-cli devices | update | prepare <paths>... | follow <paths>... [--device ID] [--channel N] [--room]"),
     }
     Ok(())
 }

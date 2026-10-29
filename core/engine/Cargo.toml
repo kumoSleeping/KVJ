@@ -37,16 +37,3 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["s
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
-# Bluetooth Low Energy through WinRT (the same `windows` line CPAL already uses).
-windows = { version = "0.61", features = [
-    "Devices_Bluetooth",
-    "Devices_Bluetooth_Advertisement",
-    "Devices_Bluetooth_GenericAttributeProfile",
-    "Foundation",
-    "Foundation_Collections",
-    "Storage_Streams",
-    "Win32_System_Com",
-] }
-
-[build-dependencies]
-cc = "1.2"

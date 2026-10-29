@@ -28,7 +28,6 @@ class Engine : public QObject
     Q_PROPERTY(QVariantMap view READ view NOTIFY viewChanged)
     Q_PROPERTY(QVariantMap matched READ matched NOTIFY matchedChanged)
     Q_PROPERTY(QVariantList devices READ devices NOTIFY devicesChanged)
-    Q_PROPERTY(QVariantList bluetoothDevices READ bluetoothDevices NOTIFY bluetoothDevicesChanged)
     Q_PROPERTY(QStringList logs READ logs NOTIFY logsChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
@@ -46,8 +45,8 @@ class Engine : public QObject
     Q_PROPERTY(QVariantMap updateJob READ updateJob NOTIFY updateJobChanged)
     // What the last update did, said once after the restart ("" when nothing).
     Q_PROPERTY(QString updateNotice READ updateNotice NOTIFY updateJobChanged)
-    // The computer and its screens kept awake (Awake.h): set while projecting,
-    // following or sending.
+    // The computer and its screens kept awake (Awake.h): set while projecting
+    // or following.
     Q_PROPERTY(bool keepAwake READ keepAwake WRITE setKeepAwake NOTIFY keepAwakeChanged)
 
 public:
@@ -58,7 +57,6 @@ public:
     QVariantMap view() const { return m_view; }
     QVariantMap matched() const { return m_matched; }
     QVariantList devices() const { return m_devices; }
-    QVariantList bluetoothDevices() const { return m_bluetoothDevices; }
     QStringList logs() const { return m_logs; }
     QString error() const { return m_error; }
     bool busy() const { return m_busy > 0; }
@@ -115,18 +113,6 @@ public:
     // `track`: only that track's entries are followed; `view.track` says which.
     Q_INVOKABLE void start(const QString &setId, const QString &device, int channelStart, bool room, int track = 0);
     Q_INVOKABLE void stop();
-    // Bluetooth Low Energy: nearby KVJ receivers, advertising as one, standby
-    // connections to receivers, the current DJ, and sender-only sessions.
-    Q_INVOKABLE void scanBluetooth();
-    // `receiving`: Bluetooth is the chosen input (a remembered DJ may be chosen).
-    Q_INVOKABLE void listenBluetooth(bool on, bool receiving);
-    // Allow (and remember) or refuse a DJ asking to pair; forget a paired computer.
-    Q_INVOKABLE void pairBluetooth(const QString &id, bool allow);
-    Q_INVOKABLE void forgetBluetooth(const QString &token);
-    Q_INVOKABLE void connectBluetooth(const QVariantMap &device);
-    Q_INVOKABLE void disconnectBluetooth(const QString &id);
-    Q_INVOKABLE void selectBluetooth(const QString &id);
-    Q_INVOKABLE void startSending(const QString &peer, const QString &device, int channelStart);
     Q_INVOKABLE void clearError();
     Q_INVOKABLE static QUrl fileUrl(const QString &path) { return QUrl::fromLocalFile(path); }
     // The engine's monotonic clock; matched.clock_at_ms is on it.
@@ -143,7 +129,6 @@ signals:
     void viewChanged();
     void matchedChanged();
     void devicesChanged();
-    void bluetoothDevicesChanged();
     void logsChanged();
     void errorChanged();
     void busyChanged();
@@ -187,7 +172,6 @@ private:
     QVariantMap m_view;
     QVariantMap m_matched;
     QVariantList m_devices;
-    QVariantList m_bluetoothDevices;
     QStringList m_logs;
     QString m_error;
     int m_busy = 0;

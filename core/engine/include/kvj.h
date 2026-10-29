@@ -25,12 +25,8 @@ void kvj_engine_free(KvjEngine *engine);
  * {"cmd":"enable","set_id":"..","entry_ids":[..],"on":true} (also while following)
  * {"cmd":"start","set_id":"..","device":"auto","channel_start":0,"prepare_only":false}
  * {"cmd":"stop"} {"cmd":"status","after_log_id":null}
- * Bluetooth (BLE): {"cmd":"bluetooth_scan"} {"cmd":"bluetooth_listen","on":true,"receiving":true}
- * {"cmd":"bluetooth_pair","id":"..","allow":true} {"cmd":"bluetooth_forget","token":".."}
  * Reports and updates: {"cmd":"version"} {"cmd":"report_prepare","note":".."} → {id,body,bytes,destination}
- * {"cmd":"report_submit","id":".."} {"cmd":"update_check"} → {current,latest,newer,url,name,published_at}
- * {"cmd":"bluetooth_connect","device":{"id":"..","name":".."}} {"cmd":"bluetooth_disconnect","id":".."}
- * {"cmd":"bluetooth_select","id":".."|null} {"cmd":"send_start","peer":"<id>","device":"auto","channel_start":0}.
+ * {"cmd":"report_submit","id":".."} {"cmd":"update_check"} → {current,latest,newer,url,name,published_at}.
  * Free the reply with kvj_string_free. */
 char *kvj_call(KvjEngine *engine, const char *request);
 void kvj_string_free(char *text);

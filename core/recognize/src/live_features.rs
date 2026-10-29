@@ -44,21 +44,6 @@ impl LiveFeatures {
     pub fn memory_bytes(&self) -> usize {
         self.spectra.len() * FRAME_BYTES
     }
-    pub fn frame_count(&self) -> usize { self.spectra.len() }
-    /// Bounded receive-side window; callers reset it on transport/sequence gaps.
-    pub fn append(&mut self, chunk: Self, capacity: usize) {
-        self.spectra.extend(chunk.spectra);
-        self.peaks.extend(chunk.peaks);
-        let excess = self.spectra.len().saturating_sub(capacity);
-        self.spectra.drain(..excess);
-        self.peaks.drain(..excess);
-    }
-    pub fn recent(&self, seconds: f64) -> Option<Self> {
-        let count = ((seconds * SAMPLE_RATE as f64 - LIVE_FFT as f64) / HOP as f64).floor().max(0.) as usize + 1;
-        if count < 2 || self.spectra.len() < count { return None; }
-        let skip = self.spectra.len() - count;
-        Some(Self { spectra: self.spectra[skip..].to_vec(), peaks: self.peaks[skip..].to_vec() })
-    }
     pub fn write_to(&self, mut writer: impl Write) -> Result<()> {
         anyhow::ensure!(
             self.spectra.len() == self.peaks.len(),
@@ -256,15 +241,6 @@ impl LiveFeatureStream {
             self.next_start += HOP as u64;
         }
         Ok(())
-    }
-    /// Export each committed frame once, retaining FFT/history/look-ahead state.
-    /// The frame index is on the capture generation's 10 ms grid. Tail age maps
-    /// the last frame endpoint back to the timestamped input PCM endpoint.
-    pub fn take_committed(&mut self) -> Option<(LiveFeatures, u64, f64)> {
-        if self.frames.is_empty() { return None; }
-        let first = (self.last_end - LIVE_FFT as u64) / HOP as u64 + 1 - self.frames.len() as u64;
-        Some((LiveFeatures { spectra: self.frames.drain(..).collect(), peaks: self.peaks.drain(..).collect() },
-            first, (self.received - self.last_end) as f64 / SAMPLE_RATE as f64))
     }
     /// The timestamp excludes both the unfinished FFT and peak look-ahead.
     pub fn recent(&self, seconds: f64) -> Option<(LiveFeatures, f64)> {
