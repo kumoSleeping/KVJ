@@ -771,7 +771,8 @@ ApplicationWindow {
     function auxTiming(track) {
         const p = app.auxPlayers[track - 1]
         return { entry: p.entry, position: p.position, rate: p.rate, clockAtMs: p.clockAtMs, offsetMs: p.offsetMs,
-                 cut: p.clock.cutting }
+                 // Paused (and not followed), it cuts, as the main track does.
+                 cut: p.clock.cutting || (!p.lead && !p.clock.playing) }
     }
     Timer {
         interval: 50
@@ -789,7 +790,8 @@ ApplicationWindow {
         rate: app.aiMain ? app.match.rate : transport.rate
         clockAtMs: app.aiMain ? app.match.clock_at_ms : transport.clockAtMs
         offsetMs: app.aiMain ? strip.offsetMs : 0
-        fadeMs: app.fadeOn && !transport.cutting ? app.fadeMs : 0
+        // Paused, the picture is being set up by hand: it cuts, never dissolves.
+        fadeMs: app.fadeOn && !transport.cutting && (app.aiMain || transport.playing) ? app.fadeMs : 0
         maxHeight: desk.maxHeight
         maxFps: desk.maxFps
         auxTimings: [app.auxTiming(1), app.auxTiming(2), app.auxTiming(3)]
