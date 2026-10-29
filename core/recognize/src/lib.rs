@@ -118,6 +118,24 @@ mod tests {
         assert!(among.iter().all(|s| s.target == 0));
     }
 
+    #[test]
+    fn local_tracking_finds_the_tempo_when_the_clock_has_it_wrong() {
+        let recording = music(11, 30.);
+        let features = LiveFeatures::prepare(&recording, &|| false).unwrap();
+        // Heard at 1.00× up to 20 s; the clock says 1.06×, the place right.
+        let capture = &recording[(10. * SAMPLE_RATE as f64) as usize..(20. * SAMPLE_RATE as f64) as usize];
+        let mut stream = LiveFeatureStream::new(300);
+        stream.push(capture, &|| false).unwrap();
+        let (query, tail) = stream.recent(0.55).unwrap();
+        let end = 20. - tail - LiveFeatures::origin_seconds();
+        let hint = |rate: f64| LiveHint { offset_seconds: end - query.duration_ms() / 1000. * rate, rate };
+        let right = track_live_prepared(&query, &features, hint(1.), &|| false).unwrap();
+        assert!((right.rate - 1.).abs() < 0.015, "{right:?}");
+        let wrong = track_live_prepared(&query, &features, hint(1.06), &|| false).unwrap();
+        assert!((wrong.rate - 1.).abs() < 0.035, "a 6 % wrong clock is not kept: {wrong:?}");
+        assert!(wrong.score >= right.score - 0.1, "{wrong:?} vs {right:?}");
+    }
+
     /// A room heard through a microphone: early reflections, then a dense tail
     /// falling 60 dB in `rt60` seconds and carrying more energy than the direct sound.
     fn room(pcm: &[f32], rt60: f32) -> Vec<f32> {
