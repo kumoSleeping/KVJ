@@ -123,6 +123,7 @@ mod tests {
         let recording = music(11, 30.);
         let features = LiveFeatures::prepare(&recording, &|| false).unwrap();
         // Heard at 1.00× up to 20 s; the clock says 1.06×, the place right.
+        // Its seeds are within 1 % of the clock's tempo; refining them reaches it.
         let capture = &recording[(10. * SAMPLE_RATE as f64) as usize..(20. * SAMPLE_RATE as f64) as usize];
         let mut stream = LiveFeatureStream::new(300);
         stream.push(capture, &|| false).unwrap();
@@ -132,7 +133,7 @@ mod tests {
         let right = track_live_prepared(&query, &features, hint(1.), &|| false).unwrap();
         assert!((right.rate - 1.).abs() < 0.015, "{right:?}");
         let wrong = track_live_prepared(&query, &features, hint(1.06), &|| false).unwrap();
-        assert!((wrong.rate - 1.).abs() < 0.035, "a 6 % wrong clock is not kept: {wrong:?}");
+        assert!((wrong.rate - 1.).abs() < 0.015, "a 6 % wrong clock is not kept: {wrong:?}");
         assert!(wrong.score >= right.score - 0.1, "{wrong:?} vs {right:?}");
     }
 

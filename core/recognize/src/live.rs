@@ -343,37 +343,24 @@ pub fn recheck_live_prepared(
         .collect();
     verify_live_prepared(query, reference, &seeds, true, canceled)
 }
-/// Local tracking fitting below this also tries tempos 3 and 6 % off the hint.
-const WIDEN_BELOW: f64 = 0.9;
 pub fn track_live_prepared(
     query: &LiveFeatures,
     reference: &LiveFeatures,
     hint: LiveHint,
     canceled: &dyn Fn() -> bool,
 ) -> Result<LiveAlignment> {
-    let around = |rates: &'static [f64]| -> Vec<LiveSeed> {
-        [-0.06, 0., 0.06]
-            .into_iter()
-            .flat_map(|dt| {
-                rates.iter().map(move |dr| LiveSeed {
-                    target: 0,
-                    offset_seconds: hint.offset_seconds + dt,
-                    rate: (hint.rate + dr).clamp(0.80, 1.25),
-                    retrieval_score: 0.,
-                })
+    let seeds: Vec<_> = [-0.06, 0., 0.06]
+        .into_iter()
+        .flat_map(|dt| {
+            [-0.01, 0., 0.01].into_iter().map(move |dr| LiveSeed {
+                target: 0,
+                offset_seconds: hint.offset_seconds + dt,
+                rate: (hint.rate + dr).clamp(0.80, 1.25),
+                retrieval_score: 0.,
             })
-            .collect()
-    };
-    let mut matched = verify(query, reference, &around(&[-0.01, 0., 0.01]), 1., canceled)?;
-    // Looked for only near the clock's tempo, a wrong tempo pulls what is heard
-    // toward itself and is undone 1 % at a time (2026-10-29: 1.082× back to
-    // 1.002× took 17 s). A weak fit looks further off it too.
-    if matched.score < WIDEN_BELOW {
-        let wider = verify(query, reference, &around(&[-0.06, -0.03, 0.03, 0.06]), 1., canceled)?;
-        if wider.score > matched.score {
-            matched = wider;
-        }
-    }
+        })
+        .collect();
+    let mut matched = verify(query, reference, &seeds, 1., canceled)?;
     for dt in [-3.2, -1.6, -0.8, -0.4, 0.4, 0.8, 1.6, 3.2] {
         let rival = scores(
             query,
