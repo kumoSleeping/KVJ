@@ -116,6 +116,13 @@ const TWIN_MARGIN: f64 = 0.25;
 /// a weak passage (an electric guitar intro) fits from 0.3 to 0.7 round to
 /// round, and one low round let the later of two alike places in for 1–2 s.
 const HELD_SECONDS: f64 = 0.4;
+/// Places heard while searching are remembered this long: landing in one of
+/// two alike places, the earlier may have been heard first, before the later
+/// was confirmed (2026-10-29 20:59: 4 s before).
+const HEARD_SECONDS: f64 = 8.;
+/// And fits the audio heard now at least this well: in a weak passage a place
+/// that merely aligns by chance must not come within `TWIN_MARGIN`.
+const EARLIER_FIT: f64 = 0.5;
 /// A jump heard within this of the clock's tempo keeps that tempo: a DJ seldom
 /// jumps and changes speed at once, and one window's own tempo is noisier.
 const TEMPO_KEPT: f64 = 0.08;
@@ -464,6 +471,8 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
         let mut candidates: Vec<Candidate> = Vec::new();
         // Jumps away from the shown place, heard once, not yet confirmed.
         let mut pending: Vec<Evidence> = Vec::new();
+        // Every place heard while searching, for `HEARD_SECONDS`.
+        let mut heard: VecDeque<Evidence> = VecDeque::new();
         // When local tracking began to hold, round after round.
         let mut held_since: Option<Instant> = None;
         let mut generation = 0;
@@ -507,7 +516,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                             publish(engine, session, |v| v.phase = "searching".into());
                         }
                         current = None; estimate = None; lost = false;
-                        generation = 0; search_cursor = 0; corroboration.clear(); pending.clear();
+                        generation = 0; search_cursor = 0; corroboration.clear(); pending.clear(); heard.clear();
                     } else if Instant::now() >= reopen_at {
                         match super::feature_input::Input::start(input) {
                             Ok(reopened) => {
@@ -591,7 +600,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         publish(engine, session, |v| v.phase = "searching".into());
                     }
                     current = None; estimate = None; lost = false;
-                    generation = 0; search_cursor = 0; corroboration.clear(); pending.clear();
+                    generation = 0; search_cursor = 0; corroboration.clear(); pending.clear(); heard.clear();
                     continue;
                 }
                 // Only silence (or nothing) for 10 s since the start: DJ software
@@ -680,6 +689,7 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                     corroboration.clear();
                     candidates.clear();
                     pending.clear();
+                    heard.clear();
                     engine
                         .present(session, |v| v.candidate = None);
                 }
@@ -1047,6 +1057,14 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                     // (CONFIRM_AFTER); the picture stays meanwhile.
                     // How fast the music moved between a confirmed jump's two hearings.
                     let mut moved = None;
+                    if let Some(found) = rescued {
+                        heard.push_back(found);
+                    }
+                    while heard.front().is_some_and(|h| at.saturating_duration_since(h.at).as_secs_f64() > HEARD_SECONDS)
+                        || heard.len() > 64
+                    {
+                        heard.pop_front();
+                    }
                     let rescued = match rescued {
                         Some(found) if !vouched && current.is_some_and(|old| found.discontinuity(&old)) => {
                             pending.retain(|p| {
@@ -1067,7 +1085,41 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                             if let (Some(first), None) = (confirming, alike) {
                                 moved = Some(first.moved_to(&found));
                                 pending.clear();
-                                Some(found)
+                                // Of two alike places, the earlier: one heard
+                                // lately that fits this audio about as well.
+                                let tempo = tempo.unwrap_or(found.rate);
+                                let mut earlier: Vec<Evidence> = Vec::new();
+                                for h in &heard {
+                                    let now = Evidence {
+                                        position: h.position + at.saturating_duration_since(h.at).as_secs_f64() * tempo,
+                                        at,
+                                        rate: tempo,
+                                        ..*h
+                                    };
+                                    if h.recording == found.recording
+                                        && found.position - now.position >= 2.5
+                                        && !earlier.iter().any(|e| (e.position - now.position).abs() < 0.5)
+                                    {
+                                        earlier.push(now);
+                                    }
+                                }
+                                let mut landed = found;
+                                for place in earlier {
+                                    let Some(fit) = fit_at(set, &mut features, &query, at, &place, cancel) else { continue };
+                                    if fit >= EARLIER_FIT && found.score - fit < TWIN_MARGIN && place.position < landed.position {
+                                        landed = Evidence { score: fit, ..place };
+                                    }
+                                }
+                                if landed.position < found.position {
+                                    log(engine, session, Level::Info, Stage::Decision, format!(
+                                        "{} · {:.3} 秒听起来和更靠前的 {:.3} 秒一样（{:.3} / {:.3}），跟靠前的",
+                                        set.recordings[found.recording].entry.title, found.now(), landed.now(), found.score, landed.score
+                                    ));
+                                    if detail {
+                                        outcome = format!("改跟靠前的 {:.3} 秒（{:.3} / 新 {:.3}）", landed.now(), landed.score, found.score);
+                                    }
+                                }
+                                Some(landed)
                             } else if let Some(held) = alike {
                                 if detail {
                                     outcome = format!("两处听起来一样（当前 {held:.3} / 新 {:.3}），保留当前画面", found.score);
