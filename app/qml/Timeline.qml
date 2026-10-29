@@ -90,6 +90,12 @@ Rectangle {
         return shown.length ? shown.reduce((a, b) => b.z >= a.z ? b : a).source : ""
     }
     readonly property var inPreview: Switcher.shownSourcesOf(Switcher.preview)
+    // The same on the board (what 置顶 does and shows), ahead of the air in
+    // 确认后上屏 until ✓.
+    readonly property string onTopBoard: {
+        const shown = Switcher.preview.slots.filter(s => s.source.startsWith("track:") && Switcher.inPicture(s))
+        return shown.length ? shown.reduce((a, b) => b.z >= a.z ? b : a).source : ""
+    }
 
     readonly property bool manual: !!player && player.manual
     // The speed is the player's (对速 paused), play and seeking are (跳转 paused).

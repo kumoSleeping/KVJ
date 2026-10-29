@@ -89,7 +89,8 @@ Item {
     readonly property int rulerHeight: 16
     // The audience sees this track and nothing else.
     // Its layer is the top one the audience sees (what its 投放 does).
-    readonly property bool onTop: view.onTop === key
+    // Topmost on the board: 置顶 is ink.
+    readonly property bool onTopBoard: view.onTopBoard === key
 
     // —— The row's view: pixels a second (0 = all of it fits) and the second at the left edge ——
     property real zoom: 0
@@ -567,13 +568,13 @@ Item {
             }
             Item { Layout.preferredWidth: 4 }
             // This track's layer floated to the top on the board, and chosen
-            // there to be sized; ink while it is on top on the air.
+            // there to be sized; ink while it is on top there.
             TextButton {
                 implicitHeight: 22
                 leftPadding: 8
                 rightPadding: 10
-                outlined: !row.onTop
-                primary: row.onTop
+                outlined: !row.onTopBoard
+                primary: row.onTopBoard
                 font.pixelSize: Theme.sizeXs
                 iconName: "arrow-up-to-line"
                 text: "置顶"
