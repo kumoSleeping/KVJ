@@ -447,7 +447,20 @@ Rectangle {
                 }
             }
             // 渐变, the one dissolve: 上屏, [ / ] and every jump, by hand or
-            // by acoustic tracking, this long; 0 cuts straight.
+            // by acoustic tracking, this long; 0 cuts straight. Apart from
+            // the zoom keys, under its own mark (two pictures overlapping).
+            Item { implicitWidth: 14 }
+            IconImage {
+                Layout.preferredWidth: 15
+                Layout.preferredHeight: 15
+                source: "icons/blend.svg"
+                sourceSize: Qt.size(15, 15)
+                color: line.player && line.player.fadeMs > 0 ? Theme.body : Theme.faint
+                HoverHandler { id: blendHover }
+                ToolTip.visible: blendHover.hovered
+                ToolTip.delay: 600
+                ToolTip.text: "渐变：上屏（空格）、[ / ] 直接上屏，以及手动和声学追踪的跳转都用右边的时长；拉到 0 是直接切"
+            }
             Seek {
                 Layout.preferredWidth: 80
                 Layout.minimumWidth: 40
