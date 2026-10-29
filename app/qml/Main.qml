@@ -827,6 +827,8 @@ ApplicationWindow {
     // 双轨 brings it back where it was.
     property bool singleTrack: false
     property int soloTrack: 0
+    // The track 单轨 set aside was playing then (setSingle).
+    property bool asideWasPlaying: false
     // The track to keep: the one following follows while it runs, else the
     // one playing, else the one on top on the air when both play, else the
     // row last pressed on the timeline (the one the keys act on).
@@ -846,6 +848,8 @@ ApplicationWindow {
         if (on) {
             const keep = app.keptTrack()
             const other = 1 - keep
+            // Paused while set aside, and started again when it comes back.
+            app.asideWasPlaying = other === 1 ? aux1.playing : transport.playing
             if (other === 1 && aux1.playing)
                 aux1.toggle()
             else if (other === 0 && transport.playing && app.manualSeek) {
@@ -858,11 +862,22 @@ ApplicationWindow {
             if (!app.running)
                 strip.followTrack = keep
         } else {
-            // Back where it was, paused or playing as it was: not a track
-            // coming onto the picture, which playShown would start.
+            // Back where it was: not a track coming onto the picture, which
+            // playShown would start, but playing again if 单轨 paused it (on
+            // top, a paused one would hold the picture still).
+            const other = 1 - app.soloTrack
             app.shownBefore = null
-            Switcher.bringBack("track:" + (1 - app.soloTrack))
+            Switcher.bringBack("track:" + other)
             app.noteShown()
+            if (app.asideWasPlaying) {
+                if (other === 1 && !aux1.playing)
+                    aux1.toggle()
+                else if (other === 0 && !transport.playing && app.manualSeek && transport.entry) {
+                    transport.toggle()
+                    app.tick()
+                }
+            }
+            app.asideWasPlaying = false
         }
         app.singleTrack = on
     }
