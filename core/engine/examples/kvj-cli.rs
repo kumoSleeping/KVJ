@@ -67,9 +67,11 @@ fn main() -> anyhow::Result<()> {
             }
             engine.shutdown();
         }
+        // Entries sharing their sound with another on their track (after a follow).
+        "alike" => println!("{}", serde_json::to_string_pretty(&engine.alike()?)?),
         // The newest published release, as the app's update check sees it.
         "update" => println!("{}", serde_json::to_string_pretty(&kvj_engine::report::check_update()?)?),
-        _ => println!("usage: kvj-cli devices | update | prepare <paths>... | follow <paths>... [--device ID] [--channel N] [--room]"),
+        _ => println!("usage: kvj-cli devices | update | alike | prepare <paths>... | follow <paths>... [--device ID] [--channel N] [--room]"),
     }
     Ok(())
 }
