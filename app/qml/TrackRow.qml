@@ -547,21 +547,6 @@ Item {
                 ToolTip.delay: 600
                 ToolTip.text: "回到素材原速（也可双击速度）"
             }
-            // Who sets the speed: following, a held key, the hand; for an aux track, the main one's pace.
-            Text {
-                Layout.maximumWidth: 96
-                text: row.main ? (row.view.match ? (row.view.match.rate_confidence >= 0.7 ? "对速 · 已稳定" : "对速 · 校准中")
-                                  : row.view.player && row.view.player.aiLeads ? (row.view.player.tempoPaused ? "只跳转 · 手动速度" : "只对速 · 不跳转")
-                                  : row.bending ? (row.view.speed > row.view.tempo ? "按住加速" : "按住减速")
-                                  : row.view.manual ? "手动" : "声学追踪")
-                      : row.player && row.player.lead ? "声学追踪"
-                      : row.linked ? "同步变速"
-                      : row.player && row.player.followMain ? "跟画面 1 速度" : "手动"
-                font.pixelSize: 11
-                color: Theme.faint
-                elide: Text.ElideRight
-            }
-            Item { Layout.preferredWidth: 4 }
             // What happens after the row's last entry: two words and a
             // drawing each, one width, so nothing moves when it flips.
             TextButton {
