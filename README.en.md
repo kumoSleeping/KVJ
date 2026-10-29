@@ -21,7 +21,7 @@
 
 [中文](README.md) · **English**
 
-KVJ is live VJ software for DJs. It is a video player first: two tracks, each played, paused, jumped anywhere and set to a speed by hand, laid out on a board as the picture the audience sees. It is a smart player second: **声学追踪** (acoustic tracking) listens to what the DJ is playing, recognizes which video of the library it is, where and how fast, and plays that video in sync, jumping and changing speed with the music. Danmaku, reactions and stickers go over the picture. macOS and Windows.
+KVJ is live VJ software for DJs. It listens: **acoustic tracking** (声学追踪) knows which song the DJ is playing and where, and keeps the video with the music by itself. It is also a handy video player: two tracks, laid out on a board as the picture the audience sees, with danmaku, reactions, stickers and effects over it. macOS and Windows.
 
 ## Download & install
 
@@ -43,6 +43,19 @@ This is a preview (pre-release) build; every version is listed under [Releases](
 
 ## Features
 
+### Acoustic tracking: pictures matched to the music, by ear
+
+**Whatever the DJ plays, the picture plays.** KVJ listens to the DJ's music, finds the video that goes with it, lines it up to the second and plays it at the same speed. No watching the DJ's hands, no cue points set beforehand.
+
+- **Hears the song, finds the picture**: from half a second of sound it knows which video of the whole library it is, and where.
+- **Same speed, same beat**: the DJ speeds up or slows down, keylock on or off, and the picture keeps pace.
+- **Jumps with the DJ**: a jump within a song or to another song, and the picture is there too; it makes sure first, so it never cuts away and back.
+- **Never fooled**: repeated choruses and look-alike passages are told apart; it would rather listen a moment longer than land in the wrong place.
+- **Plug in and go**: no link to the DJ software, no MIDI, no cue points, just the sound — from the Master, the system's sound or a microphone; **room mode** hears it in a noisy room too.
+- **Take over any time**: speed and jumps each pause on their own and hand back to you; stopped, the picture carries on from the same frame.
+
+[More about acoustic tracking →](docs/acoustic-tracking.md) (Chinese)
+
 ### Player
 
 - At the left are the **library** (folders added, files never copied) and **预备** (ready: sources not on the picture yet, and pictures kept for stickers). A video dropped on a track's left half replaces what is there, on its right half it goes after it.
@@ -50,6 +63,7 @@ This is a preview (pre-release) build; every version is listed under [Releases](
 - Pressing a track only places its **cursor** and never moves the picture; **跳至** (jump) or Enter plays from it. Every jump can dissolve.
 - Speed goes from −50 % to +50 %; ← / → **nudge** the picture like a pitch bend (0.7× / 1.5× while held), ↑ / ↓ change it by 1 %.
 - Each track's own sound can be on with its own volume (a cue mix), stretched by Rubber Band with its pitch kept; or only the topmost track's is heard.
+- Built for the show: the computer and its screens stay awake, and closing the window while listening or projecting asks first; decoder failures, a sound output that will not start, a lost projector screen, a lost file and a broken sound input all recover by themselves; video is decoded by the system hardware and decoded and drawn only when needed, so the load stays low.
 
 ### Board and 投放
 
@@ -57,34 +71,21 @@ This is a preview (pre-release) build; every version is listed under [Releases](
 - The board has two modes: in **实时** (live) every change is on the air at once; in **投放** (staged) the audience keeps the picture last put out until **投放** (or Space) puts the new one out, with a dissolve if wanted, and ⌘Z **undoes** the board back to what is on the air. **输出预览** at the top right always shows what the audience sees.
 - A track's **投放画面 N** cuts that track to the top in one press; with **跳转置顶** on, a jump first puts its track on top and then plays.
 
-### 声学追踪 (acoustic tracking)
-
-- Captures the Master, the system's sound or a microphone, and recognizes which entry is playing, where and how fast — among the entries of the **followed track** only (画面 1 by default).
-- Finding: every 125 ms it takes the last 0.55 s of sound, pairs the **peaks** of its spectrum into **landmarks** and lets them vote in an **index** of the library to **search** out positions and speeds (0.80–1.25×, keylock on or off). It then **verifies** them frame by frame on how each band rises and falls, and takes a position as an **observation** only if it beats every other position clearly (the **margin**, not only the likeness), so a repeated chorus does not lock wrong.
-- Following: the picture follows not any one recognition but a **follow clock** fitted to the last 3 s of observations. **对速** (speed follow) keeps the picture's speed with the clock; once the picture is past the 2.5 s **jump threshold**, or on another entry, **跳转** (jump) moves it to where the music is — only once a second hearing half a second later agrees (**jump confirmation**), so the picture never cuts away and back. Each pauses on its own and hands its part back to the player; **listening** alone judges without moving the picture.
-- Once locked it **tracks** near the expected position only, fast and steady; when that fails it searches the whole library again.
-- The whole library is indexed ahead (about 0.6 MiB a minute, some five hours), entries off the tracks included, so placing one never waits.
-- **现场模式** (room mode) is for a microphone in a reverberant room: windows that do not overlap **corroborate** each other, so songs heard through a laptop speaker or a noisy room are still found.
-
 ### Overlay and effects
 
 - Danmaku (scrolling, top or bottom, laned as on Bilibili), large words in the middle, and Google Meet–style reactions (Noto's animated emoji; hold to send a stream, Q–P send one each).
 - Stickers of images, GIFs and words, moved, sized, turned and taken down on the board; the audience's picture follows.
 - A dozen picture effects (glitch, RGB split, zoom blur, halftone, posterize, video wall, wave, scanlines, mosaic, black and white, lens…) form an **effect chain**: they apply from the top down, each to the picture the ones above made, are reordered by dragging (kept between runs), keyed on at their best strength, and the number keys 1–0 switch the first ten. Effects touch only the picture, never the danmaku, reactions or stickers.
 
-### Two computers · Bluetooth (experimental)
+### Cameras (experimental)
 
-- An idea, partly built: hearing and showing on two computers. The DJ's computer runs only the **发送端** (sender), which turns the Master into recognition features and sends them over Bluetooth Low Energy — not the sound itself, and with no library, index or video there; the projecting computer picks **蓝牙接收** as its input. It is not planned to grow further.
-
-### Built for the show
-
-- The computer and its screens stay awake during a show, and closing the window while listening or projecting asks first.
-- Decoder failures, a sound output that will not start, a lost projector screen, a lost camera or file and a broken sound input all recover without ending tracking.
-- Video is decoded by the system hardware, a source only while it is needed, and the picture redraws only when a frame is due, so the load stays low.
+- **+ 相机** puts a camera's picture on the board as a layer like 画面 1 and 画面 2: moved, sized, masked, raised, or put back in 预备.
+- A camera that goes away for a moment keeps its place and says what is wrong, and comes back by itself; a camera the system will not give never freezes KVJ.
 
 ## Documents
 
-- [Glossary](docs/glossary.md) (Chinese): KVJ's terms, and how acoustic tracking works.
+- [Acoustic tracking](docs/acoustic-tracking.md) (Chinese): what it does, how to use it, how it works.
+- [Glossary](docs/glossary.md) (Chinese): KVJ's terms.
 - [Design principles](docs/principles.md) (Chinese): the choices that run through the whole app.
 - [Detailed guide](docs/guide.md): every detail of using it.
 
