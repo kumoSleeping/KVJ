@@ -199,6 +199,9 @@ endif()
 
 if(APPLE)
     target_sources(KVJ PRIVATE src/platform/mac/AvfDecoder.mm src/platform/mac/TitleBar.mm src/platform/mac/Awake.mm)
+    # App icon (design/icon/make.py), copied into Contents/Resources.
+    target_sources(KVJ PRIVATE resources/icon/KVJ.icns)
+    set_source_files_properties(resources/icon/KVJ.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     set_source_files_properties(src/platform/mac/AvfDecoder.mm src/platform/mac/TitleBar.mm src/platform/mac/Awake.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_link_libraries(KVJ PRIVATE
         "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework Foundation" "-framework AppKit")
@@ -208,9 +211,11 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_NAME KVJ
         MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
         MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+        MACOSX_BUNDLE_ICON_FILE KVJ.icns
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in)
 elseif(WIN32)
-    target_sources(KVJ PRIVATE src/platform/win/MfDecoder.cpp src/platform/win/TitleBar.cpp src/platform/win/Awake.cpp)
+    # KVJ.rc carries the app icon as IDI_ICON1: Explorer shows it, and Qt uses it for windows.
+    target_sources(KVJ PRIVATE src/platform/win/MfDecoder.cpp src/platform/win/TitleBar.cpp src/platform/win/Awake.cpp resources/KVJ.rc)
     target_compile_definitions(KVJ PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_link_libraries(KVJ PRIVATE mfplat mfreadwrite mfuuid d3d11 dxgi ole32 propsys)
 endif()

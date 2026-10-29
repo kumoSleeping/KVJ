@@ -1,4 +1,8 @@
 <div align="center">
+  <p>
+    <img src="docs/readme-assets/icon.png" width="88" height="88" alt="KVJ">
+  </p>
+
   <h1>
     Kumo's<br>
     <em>Video Jockey</em>
