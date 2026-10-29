@@ -1191,7 +1191,7 @@ ApplicationWindow {
                         output: desk
                         cameraIds: app.cameraIds
                         keysHost: timeline.keysHost
-                        zoomHost: topBar
+                        zoomHost: topBar.zoomSlot
                         onAddCamera: id => app.addCamera(id)
                     }
 

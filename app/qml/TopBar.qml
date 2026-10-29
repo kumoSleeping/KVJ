@@ -28,6 +28,8 @@ Rectangle {
 
     signal toggleDrawer()
     signal toggleSingle()
+    // Where the board puts its view size, beside 关于 and the look key.
+    readonly property alias zoomSlot: zoomSlot
 
     implicitHeight: unified ? Math.max(32, titleHeight) : 36
 
@@ -115,6 +117,12 @@ Rectangle {
         }
         Item { Layout.fillWidth: true }
 
+        // The board's view size (Composer puts its − bar + here).
+        Item {
+            id: zoomSlot
+            implicitWidth: childrenRect.width
+            implicitHeight: 26
+        }
         // Version, updates and logs; a dot when a newer release is out or one
         // is downloaded and waits for the restart.
         IconButton {

@@ -57,8 +57,8 @@ ColumnLayout {
     readonly property real keysInset: screen.fitX
     // The view's size: 1 = the picture as large as the room allows; less,
     // drawn smaller about the middle of that room, so a layer
-    // reaching past the picture is seen whole. Its bar is in the title bar
-    // over the board's right end (`zoomHost`).
+    // reaching past the picture is seen whole. Its bar is in the title bar's
+    // top right corner (`zoomHost`).
     property real zoom: 1
     readonly property real minZoom: 0.4
     property Item zoomHost: null
@@ -553,20 +553,13 @@ ColumnLayout {
                 }
             }
         }
-        // —— The view's size: − bar +, 复原 ——
-        // In the title bar (zoomHost), its right end over the picture's.
+        // —— The view's size: − bar + ——
+        // In the title bar's top right corner (zoomHost), beside 关于 and the
+        // light / dark key. The bar at its right end is the full size.
         Row {
             parent: composer.zoomHost
             visible: !!parent
             anchors.verticalCenter: parent ? parent.verticalCenter : undefined
-            x: {
-                const h = composer.zoomHost
-                if (!h)
-                    return 0
-                // What moves it: the board's place and size, the window's.
-                composer.x; composer.width; h.width
-                return box.mapToItem(h, screen.fitX + screen.fitWidth, 0).x - width
-            }
             spacing: 2
             IconButton {
                 anchors.verticalCenter: parent.verticalCenter
@@ -589,7 +582,7 @@ ColumnLayout {
                 onMoved: composer.setZoom(value)
                 ToolTip.visible: hovered && !pressed
                 ToolTip.delay: 600
-                ToolTip.text: "画板大小：缩小后伸出画面的部分也看得到（双击复原）"
+                ToolTip.text: "画板大小：缩小后伸出画面的部分也看得到；拉到最右是铺满（双击也是）"
                 TapHandler {
                     onDoubleTapped: composer.setZoom(1)
                 }
@@ -604,20 +597,6 @@ ColumnLayout {
                 autoRepeat: true
                 enabled: composer.zoom < 1 - 1e-6
                 onClicked: composer.setZoom(composer.zoom + 0.05)
-            }
-            TextButton {
-                anchors.verticalCenter: parent.verticalCenter
-                flat: true
-                implicitHeight: 22
-                leftPadding: 6
-                rightPadding: 6
-                font.pixelSize: Theme.sizeXs
-                text: "复原"
-                enabled: composer.zoom < 1 - 1e-6
-                onClicked: composer.setZoom(1)
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "画板回到铺满的大小"
             }
         }
 
