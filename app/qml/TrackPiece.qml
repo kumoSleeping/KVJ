@@ -1,4 +1,6 @@
 import QtQuick
+import QtQuick.Controls.Basic
+import QtQuick.Controls.impl
 import KVJ
 
 // One entry on a timeline row: its tempo a block a section with its BPM, its
@@ -177,15 +179,30 @@ Item {
     Rectangle {
         x: 6
         y: piece.tempoHeight + (piece.small ? 3 : 5)
-        width: Math.min(name.implicitWidth + 12, piece.width - 12)
+        readonly property string alike: Engine.alike[piece.entry.id] || ""
+        width: Math.min(name.implicitWidth + 12 + (alike ? 16 : 0), piece.width - 12)
         height: piece.small ? 16 : 18
         radius: 4
         visible: width > 24
         color: "#99000000"
+        // Sounds like another entry on this track: following cannot tell them apart.
+        ColorImage {
+            id: alikeMark
+            visible: parent.alike !== ""
+            x: 4
+            anchors.verticalCenter: parent.verticalCenter
+            source: "icons/circle-alert.svg"
+            sourceSize: Qt.size(12, 12)
+            color: Theme.warn
+            HoverHandler { id: alikeHover }
+            ToolTip.visible: alikeHover.hovered
+            ToolTip.delay: 200
+            ToolTip.text: parent.alike + "\n声学追踪分不清声音相同的素材，可能停在另一个上"
+        }
         Text {
             id: name
             anchors.fill: parent
-            anchors.leftMargin: 6
+            anchors.leftMargin: alikeMark.visible ? 19 : 6
             anchors.rightMargin: 6
             verticalAlignment: Text.AlignVCenter
             text: (piece.numbered ? piece.modelData.n + "  " : "") + piece.entry.title

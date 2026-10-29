@@ -73,7 +73,7 @@ fn key(set: &Set) -> Result<String> {
 /// The index on disk depends only on the files, in order, and their lengths:
 /// renaming an entry or changing how it is shown keeps it (a Set of five hours
 /// has an index of hundreds of MiB).
-fn disk_key(set: &Set) -> Result<String> {
+pub(super) fn disk_key(set: &Set) -> Result<String> {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     ("live-set-landmarks-v6", LIVE_FEATURE_REVISION).hash(&mut h);
     for e in &set.entries {

@@ -52,6 +52,9 @@ class Engine : public QObject
     // <dataDir>/logs/detail-<date>.log, with the usual lines between them.
     // Off until set (About keeps the user's choice across starts).
     Q_PROPERTY(bool detailLog READ detailLog WRITE setDetailLog NOTIFY detailLogChanged)
+    // Entries sharing their sound with another on the same track: entry id
+    // to what it shares, said in a sentence (empty: none known).
+    Q_PROPERTY(QVariantMap alike READ alike NOTIFY alikeChanged)
 
 public:
     explicit Engine(QObject *parent = nullptr);
@@ -131,6 +134,7 @@ public:
     // own parts (the pictures, the cameras) on the GUI thread.
     static void note(const QString &line);
     bool detailLog() const { return s_detail; }
+    QVariantMap alike() const { return m_alike; }
     void setDetailLog(bool on);
     // Whether 详细日志 is on, and a line for its file only (GUI thread).
     static bool detailing() { return s_detail; }
@@ -147,6 +151,7 @@ signals:
     void importingChanged();
     void keepAwakeChanged();
     void detailLogChanged();
+    void alikeChanged();
     void updateChanged();
     void updateJobChanged();
     void reportReady(const QVariantMap &preview);
@@ -170,6 +175,7 @@ private:
     // The session's log lines also go to <dataDir>/logs, a file a day, so a
     // show can be looked into afterwards.
     void writeLog(const QStringList &lines);
+    void fetchAlike();
     // Appends timed lines to <dataDir>/logs/<kind>-<date>.log.
     static void append(const QString &kind, const QStringList &lines);
     static inline bool s_detail = false;
@@ -185,6 +191,8 @@ private:
     QString m_updateNotice;
     QTimer m_updatePoll;
     QVariantMap m_document;
+    QVariantMap m_alike;
+    qint64 m_alikeRevision = -1;
     QVariantMap m_view;
     QVariantMap m_matched;
     QVariantList m_devices;

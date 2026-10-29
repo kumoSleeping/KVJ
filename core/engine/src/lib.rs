@@ -3,6 +3,7 @@
 //! app through `ffi`, or the CLI example) reads `View` and draws the picture.
 //! Ported from KDJ's Live VJ (`src-tauri/src/live_vj` at 00f377a) without Tauri.
 pub mod decode;
+mod alike;
 mod audio_input;
 #[cfg(target_os = "macos")]
 mod capture;
@@ -32,7 +33,7 @@ use serde::Serialize;
 use std::{
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         Arc, Mutex, OnceLock,
     },
     time::{Instant, SystemTime, UNIX_EPOCH},
@@ -98,6 +99,8 @@ pub struct Status {
     #[serde(flatten)]
     pub view: View,
     pub logs: Vec<LogEntry>,
+    /// Goes up when a scan for entries sharing their sound is done (`alike`).
+    pub alike_revision: u64,
 }
 struct Session {
     cancel: Arc<AtomicBool>,
@@ -120,6 +123,7 @@ pub struct Engine {
     // 详细日志: every round's evidence and timings go to the log. Off by
     // default; read every round.
     detail: AtomicBool,
+    alike_revision: AtomicU64,
     session: Mutex<Option<Session>>,
     gate: Mutex<()>,
     reports: report::Reports,
@@ -140,6 +144,7 @@ impl Engine {
             off: Mutex::new(Default::default()),
             track: AtomicU8::new(0),
             detail: AtomicBool::new(false),
+            alike_revision: AtomicU64::new(0),
             session: Mutex::new(None),
             gate: Mutex::new(()),
             reports: report::Reports::default(),
@@ -429,6 +434,28 @@ impl Engine {
     pub(crate) fn detailing(&self) -> bool {
         self.detail.load(Ordering::Relaxed)
     }
+    pub(crate) fn alike_found(&self) {
+        self.alike_revision.fetch_add(1, Ordering::Relaxed);
+    }
+    /// Entries that share their sound with another on the same track, in
+    /// every Set whose files were scanned as they are now (a scan runs once
+    /// a Set's index is ready, while following). Another file, not the same
+    /// one placed twice; on another track the same song is a second picture.
+    pub fn alike(&self) -> Result<Vec<alike::Shared>> {
+        let cache = self.data_dir.join("cache").join("live");
+        let sets = self.with_store(|s| Ok(s.doc.sets.clone()))?;
+        let mut shared = Vec::new();
+        for set in &sets {
+            let Ok(key) = index::disk_key(set) else { continue };
+            let Some(found) = alike::load(&cache, &key) else { continue };
+            let entry = |id: &str| set.entries.iter().find(|e| e.id == id);
+            shared.extend(found.into_iter().filter(|s| match (entry(&s.entry), entry(&s.other)) {
+                (Some(a), Some(b)) => a.track == b.track && a.path != b.path,
+                _ => false,
+            }));
+        }
+        Ok(shared)
+    }
     pub fn follow_track(&self, track: u8) -> Result<View> {
         anyhow::ensure!(track <= document::LAST_TRACK, "轨道不存在");
         anyhow::ensure!(self.running(), "没有在监听");
@@ -480,7 +507,7 @@ impl Engine {
             .unwrap()
             .since(&view.session, after_log_id);
         view.clock_ms = clock_ms();
-        Status { view, logs }
+        Status { view, logs, alike_revision: self.alike_revision.load(Ordering::Relaxed) }
     }
     /// Stop and wait for the worker, so `notify` is never called afterwards.
     /// Call from the host thread, never from inside `notify`.

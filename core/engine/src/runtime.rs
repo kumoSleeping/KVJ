@@ -238,7 +238,7 @@ impl ClockEstimate {
     }
 }
 /// Recording position (seconds) at the end of `query`.
-fn position(set: &PreparedSet, target: usize, query: &LiveFeatures, result: &LiveAlignment) -> f64 {
+pub(super) fn position(set: &PreparedSet, target: usize, query: &LiveFeatures, result: &LiveAlignment) -> f64 {
     let block = &set.targets[target];
     block.start
         + set.recordings[block.recording].entry.audio_offset
@@ -377,6 +377,21 @@ pub fn run(
         if prepare_only {
             publish(&engine, &session, |v| v.phase = "prepared".into());
             return Ok(());
+        }
+        // Entries sharing their sound, once per index, beside following.
+        let key = index::disk_key(&set)?;
+        if !super::alike::file(&cache, &key).exists() {
+            let (engine, ready, cancel, cache) = (engine.clone(), ready.clone(), cancel.clone(), cache.clone());
+            let _ = std::thread::Builder::new().name("kvj-alike".into()).spawn(move || {
+                let _background = super::qos::prefer_background();
+                let Some(shared) = super::alike::scan(&ready, &cancel) else { return };
+                let written = serde_json::to_vec(&shared)
+                    .map_err(anyhow::Error::from)
+                    .and_then(|bytes| Ok(fs::write(super::alike::file(&cache, &key), bytes)?));
+                if written.is_ok() {
+                    engine.alike_found();
+                }
+            });
         }
         run_inner(&engine, &session, &ready, &cancel, &input)
     }))

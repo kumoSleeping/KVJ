@@ -44,6 +44,16 @@ impl LiveFeatures {
     pub fn memory_bytes(&self) -> usize {
         self.spectra.len() * FRAME_BYTES
     }
+    /// `seconds` of these features from `from` seconds after the first stored
+    /// frame: what a live query of that audio would hold, without its noise.
+    pub fn slice(&self, from: f64, seconds: f64) -> Option<LiveFeatures> {
+        let start = (from.max(0.) * SAMPLE_RATE as f64 / HOP as f64).round() as usize;
+        let frames = ((seconds * SAMPLE_RATE as f64 - LIVE_FFT as f64) / HOP as f64).floor().max(0.) as usize + 1;
+        (frames >= 2 && start + frames <= self.spectra.len()).then(|| LiveFeatures {
+            spectra: self.spectra[start..start + frames].to_vec(),
+            peaks: self.peaks[start..start + frames].to_vec(),
+        })
+    }
     pub fn write_to(&self, mut writer: impl Write) -> Result<()> {
         anyhow::ensure!(
             self.spectra.len() == self.peaks.len(),

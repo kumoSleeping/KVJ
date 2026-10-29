@@ -73,6 +73,14 @@ Item {
     function placedTracks(url) {
         return app ? app.placedTracksOf(url) : []
     }
+    // What this file's entries share with another on their track ("": nothing).
+    function alikeOf(url) {
+        const said = []
+        for (const e of (app ? app.entriesByUrl[url] || [] : []))
+            if (Engine.alike[e.id] && said.indexOf(Engine.alike[e.id]) < 0)
+                said.push(Engine.alike[e.id])
+        return said.join("\n")
+    }
 
     // —— Choosing and dragging rows ——
     // The chosen files, URL to true, in the order chosen.

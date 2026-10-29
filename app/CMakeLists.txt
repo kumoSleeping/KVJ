@@ -75,6 +75,7 @@ qt_add_qml_module(KVJ
     RESOURCES
         qml/icons/blend.svg
         qml/icons/check.svg
+        qml/icons/circle-alert.svg
         qml/icons/link-2.svg
         qml/icons/chevron-down.svg
         qml/icons/chevron-right.svg

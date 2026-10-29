@@ -15,6 +15,8 @@
 #include <QStandardPaths>
 #include <QThreadPool>
 
+#include <algorithm>
+
 namespace {
 
 // One JSON round trip through the C ABI: {"ok": …} or {"error": "…"}.
@@ -61,6 +63,8 @@ Engine::Engine(QObject *parent)
 
     m_poll.setInterval(250);
     connect(&m_poll, &QTimer::timeout, this, &Engine::poll);
+    // Moving an entry to another track changes what counts as alike.
+    connect(this, &Engine::documentChanged, this, &Engine::fetchAlike);
     m_poll.start();
     m_updatePoll.setInterval(250);
     connect(&m_updatePoll, &QTimer::timeout, this, &Engine::pollUpdate);
@@ -103,6 +107,35 @@ void Engine::setDetailLog(bool on)
         writeLog({QStringLiteral("[info] 详细日志已开启")});
     call({{"cmd", "detail_log"}, {"on", on}}, [](const QJsonValue &) {}, false);
     emit detailLogChanged();
+}
+
+// What each entry shares, from the engine's scan, with the other's title.
+void Engine::fetchAlike()
+{
+    call({{"cmd", "alike"}}, [this](const QJsonValue &ok) {
+        QHash<QString, QString> titles;
+        for (const QVariant &set : m_document.value("sets").toList())
+            for (const QVariant &e : set.toMap().value("entries").toList())
+                titles.insert(e.toMap().value("id").toString(), e.toMap().value("title").toString());
+        const auto clock = [](double s) {
+            const int t = int(std::max(0.0, s));
+            return QStringLiteral("%1:%2").arg(t / 60).arg(t % 60, 2, 10, QLatin1Char('0'));
+        };
+        QVariantMap alike;
+        for (const QJsonValue &v : ok.toArray()) {
+            const QJsonObject s = v.toObject();
+            const QString id = s.value("entry").toString();
+            const QString line = QStringLiteral("和「%1」有一段声音相同（这里 %2 起，那里 %3 起）")
+                                     .arg(titles.value(s.value("other").toString()),
+                                          clock(s.value("at").toDouble()), clock(s.value("other_at").toDouble()));
+            const QString before = alike.value(id).toString();
+            alike.insert(id, before.isEmpty() ? line : before + QLatin1Char('\n') + line);
+        }
+        if (alike != m_alike) {
+            m_alike = alike;
+            emit alikeChanged();
+        }
+    }, true);
 }
 
 void Engine::detail(const QString &line)
@@ -528,8 +561,14 @@ void Engine::poll()
                 m_logs.removeFirst();
             emit logsChanged();
         }
+        const qint64 alikeRevision = status.value("alike_revision").toInteger();
+        if (alikeRevision != m_alikeRevision) {
+            m_alikeRevision = alikeRevision;
+            fetchAlike();
+        }
         QVariantMap view = status.toVariantMap();
         view.remove("logs");
+        view.remove("alike_revision");
         // The clock always moves; nothing else changed means nothing to redraw.
         view.remove("clock_ms");
         if (view != m_view) {

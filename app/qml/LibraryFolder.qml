@@ -118,6 +118,7 @@ Column {
                             readonly property bool video: lib.isVideo(url)
                             readonly property bool chosen: !!lib.selected[url]
                             readonly property var tracks: lib.placedTracks(url)
+                            readonly property string alike: lib.alikeOf(url)
                             width: node.width
                             height: 26
                             radius: Theme.radius
@@ -135,11 +136,28 @@ Column {
                                 Text {
                                     id: nameText
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: rowBox.width - x - tag.width - 10
+                                    width: Math.min(implicitWidth, rowBox.width - x - tag.width - 10 - (alikeMark.visible ? 20 : 0))
                                     text: entry.fileName
                                     font.pixelSize: Theme.sizeSm
                                     color: Theme.text
                                     elide: Text.ElideMiddle
+                                }
+                                // Sounds like another entry on its track: following cannot tell them apart.
+                                Item {
+                                    id: alikeMark
+                                    visible: rowBox.alike !== ""
+                                    width: visible ? 20 : 0
+                                    height: rowBox.height
+                                    ColorImage {
+                                        anchors.centerIn: parent
+                                        source: "icons/circle-alert.svg"
+                                        sourceSize: Qt.size(14, 14)
+                                        color: Theme.warn
+                                    }
+                                    HoverHandler { id: alikeHover }
+                                    ToolTip.visible: alikeHover.hovered
+                                    ToolTip.delay: 200
+                                    ToolTip.text: rowBox.alike + "\n声学追踪分不清声音相同的素材，可能停在另一个上"
                                 }
                             }
                             // On a track already: which picture it is in.
