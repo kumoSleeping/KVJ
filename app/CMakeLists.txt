@@ -74,6 +74,7 @@ qt_add_qml_module(KVJ
         qml/Composer.qml
     RESOURCES
         qml/icons/check.svg
+        qml/icons/link-2.svg
         qml/icons/chevron-down.svg
         qml/icons/chevron-right.svg
         qml/icons/crosshair.svg

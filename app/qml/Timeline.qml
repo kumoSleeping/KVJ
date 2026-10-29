@@ -1,3 +1,4 @@
+import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Controls.impl
@@ -9,7 +10,7 @@ import KVJ
 // own, alike. On top a slim bar
 // for the active row (the track row pressed last, its name inked): its
 // zoom keys − (Enter plays it from its cursor)
-// 全览 + (− = \ too), then how long a jump dissolves. Then the rows
+// 全览 + (− = \ too) and 缩放同步's link, then how long a jump dissolves. Then the rows
 // (TrackRow), each its own play bar (its name at the left; pressed, its
 // layer is chosen on the board), its own ruler and view (zoom and scroll
 // are a row's own) and its own cursor: a press on a row's timeline only
@@ -205,17 +206,23 @@ Rectangle {
         if (activeItem)
             activeItem.fit()
     }
-    // 缩放同步 (always): every track row shows the same seconds at the same
-    // scale as the one moved last (the same two videos line up, each with
-    // its own playhead). Only the active row brings the view along with its
-    // playhead.
-    readonly property bool viewsLocked: true
+    // 缩放同步 (the link key after the zoom keys): every track row shows the
+    // same seconds at the same scale as the one moved last (the same two
+    // videos line up, each with its own playhead). Only the active row brings
+    // the view along with its playhead.
+    property bool viewsLocked: true
     // Two track rows (not 单轨): the switches between them apply.
     readonly property bool dual: rows.length > 1
     readonly property bool viewsSynced: viewsLocked && dual
-    // 同步变速 (always): 画面 2 plays at 画面 1's speed; either row's speed
-    // keys change both (the host links the players).
-    readonly property bool tempoLinked: true
+    // 同步变速 (the link key on 画面 2's row): 画面 2 plays at 画面 1's speed;
+    // either row's speed keys change both (the host links the players).
+    property bool tempoLinked: true
+    // New keys: both start on once on every computer, whatever was kept.
+    Settings {
+        category: "timeline"
+        property alias viewsLink: line.viewsLocked
+        property alias tempoLink: line.tempoLinked
+    }
     function mirror(from) {
         if (!viewsLocked || !from)
             return
@@ -419,6 +426,17 @@ Rectangle {
                     autoRepeat: true
                     enabled: !!line.activeItem && line.activeItem.total > 0 && line.activeItem.pps < line.activeItem.maxScale - 1e-6
                     onClicked: line.zoomStep(1.3)
+                }
+                IconButton {
+                    visible: line.dual
+                    implicitWidth: 26
+                    implicitHeight: 26
+                    iconName: "link-2"
+                    iconSize: 15
+                    active: line.viewsLocked
+                    tip: line.viewsLocked ? "缩放同步：开（点一下关）\n画面 1 和画面 2 用同样的缩放、显示同一段时间，调一条另一条跟着变；各自播到哪里互不影响"
+                                          : "缩放同步：关（点一下开）\n开着时两条轨道用同样的缩放、显示同一段时间"
+                    onClicked: line.viewsLocked = !line.viewsLocked
                 }
             }
             // 跳转渐变: manual jumps and acoustic tracking's dissolve from the
