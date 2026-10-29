@@ -474,7 +474,8 @@ Item {
                 implicitHeight: 24
                 iconName: "link-2"
                 iconSize: 14
-                active: row.view.tempoLinked
+                // On: the link in ink, no plate; off: faint.
+                icon.color: !enabled ? Theme.faint : row.view.tempoLinked ? Theme.text : hovered ? Theme.muted : Theme.faint
                 tip: row.view.tempoLinked ? "同步变速：开（点一下关）\n" + row.name + "和画面 1 一起变速：调任一条的速度（键、滑条、复原、↑↓），两条都变；画面 1 跟随音乐时这条也跟着同样的速度"
                                           : "同步变速：关（点一下开）\n开着时" + row.name + "和画面 1 一起变速"
                 onClicked: row.view.tempoLinked = !row.view.tempoLinked

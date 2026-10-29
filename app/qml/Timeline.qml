@@ -433,7 +433,8 @@ Rectangle {
                     implicitHeight: 26
                     iconName: "link-2"
                     iconSize: 15
-                    active: line.viewsLocked
+                    // On: the link in ink, no plate; off: faint.
+                    icon.color: !enabled ? Theme.faint : line.viewsLocked ? Theme.text : hovered ? Theme.muted : Theme.faint
                     tip: line.viewsLocked ? "缩放同步：开（点一下关）\n画面 1 和画面 2 用同样的缩放、显示同一段时间，调一条另一条跟着变；各自播到哪里互不影响"
                                           : "缩放同步：关（点一下开）\n开着时两条轨道用同样的缩放、显示同一段时间"
                     onClicked: line.viewsLocked = !line.viewsLocked
