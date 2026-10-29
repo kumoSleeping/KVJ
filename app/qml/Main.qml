@@ -1192,6 +1192,7 @@ ApplicationWindow {
                         cameraIds: app.cameraIds
                         keysHost: timeline.keysHost
                         zoomHost: topBar.zoomSlot
+                        pictureTop: rightColumn.y + pgmHolder.y - y
                         onAddCamera: id => app.addCamera(id)
                     }
 
@@ -1220,8 +1221,10 @@ ApplicationWindow {
                         }
                         // The program (PGM) as the projection draws it, the
                         // stickers and effects on the air included; always
-                        // whole (声学追踪's picture gives way instead).
+                        // whole (声学追踪's picture gives way instead). The
+                        // board's picture lines up with its top.
                         Item {
+                            id: pgmHolder
                             Layout.fillWidth: true
                             Layout.preferredHeight: width / Math.max(0.2, desk.aspect)
                             Layout.minimumHeight: width / Math.max(0.2, desk.aspect)

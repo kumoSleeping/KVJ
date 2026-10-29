@@ -48,6 +48,9 @@ ColumnLayout {
     property var entry: null
     property var output: null
     property var cameraIds: []
+    // Where the picture's top edge goes, in this item's coordinates: the
+    // output monitor's top beside it, so the two line up. NaN: centred.
+    property real pictureTop: NaN
     signal addCamera(string id)
     // How wide the picture is drawn here at most: the sources' light copies are made this large.
     readonly property real pictureWidth: screen.fitWidth
@@ -423,10 +426,16 @@ ColumnLayout {
             readonly property real room: 16
             readonly property real fitWidth: Math.max(1, Math.min(box.width - 2 * room, (box.height - 2 * room) * composer.aspect))
             readonly property real fitHeight: fitWidth / Math.max(0.2, composer.aspect)
-            // Where it is at full size: in the middle of the board above the
-            // keys' strip, both ways.
+            // Where it is at full size: in the middle of the board across;
+            // its top level with the output monitor's (pictureTop) where the
+            // board has the room, else in the middle.
             readonly property real fitX: (box.width - fitWidth) / 2
-            readonly property real fitY: (box.height - fitHeight) / 2
+            readonly property real fitY: {
+                const top = composer.pictureTop - box.y
+                if (isNaN(top))
+                    return (box.height - fitHeight) / 2
+                return Math.max(room, Math.min(top, box.height - fitHeight - room))
+            }
             width: fitWidth * composer.zoom
             height: width / Math.max(0.2, composer.aspect)
             x: (box.width - width) / 2
