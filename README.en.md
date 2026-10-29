@@ -21,7 +21,7 @@
 
 [中文](README.md) · **English**
 
-KVJ is a VJ player for DJs playing live. **Acoustic tracking** (声学追踪) recognizes the song the DJ is playing and where it is, and plays the matching video in sync; the two tracks and camera pictures (experimental) can also be played by hand and laid out on a board as the picture the audience sees, with danmaku, reactions, stickers and effects over it. macOS and Windows.
+KVJ is a VJ player for DJs playing live. **Acoustic tracking** (声学追踪) compares the sound the DJ is playing with the sound of the videos on a track, quickly finds the matching video and position, and plays it in sync; the two tracks and camera pictures (experimental) can also be played by hand and laid out on a board as the picture the audience sees, with danmaku, reactions, stickers and effects over it. macOS and Windows.
 
 ## Download & install
 
@@ -42,7 +42,7 @@ This is a preview (pre-release) build; every version is listed under [Releases](
 
 ### Acoustic tracking: pictures matched to the music, by ear
 
-KVJ listens to the music the DJ is playing, recognizes which video in the library it belongs to and where it is, and plays that video from that point at the same speed. When the DJ speeds up or slows down, the picture's speed changes with it; when the DJ jumps to another part of the song or to another song, the picture jumps there too, after checking once more so that it does not cut by mistake. Repeated choruses and other similar passages are told apart. Acoustic tracking works from the sound alone: no connection to the DJ software, no MIDI and no cue points set in the videos beforehand; it can listen to the Master, the system's sound or a microphone, and room mode helps with a microphone in a noisy room. The VJ no longer has to watch the DJ and line the picture up by hand, and speed and jumps can each be paused to take control back at any time.
+KVJ listens to the sound the DJ is playing and compares it with the sound of the videos on the followed track, quickly finding the matching video, position and speed, and plays that video from that point at the same speed. It does not identify songs; it compares the sound itself, so the videos need to carry the same version of the sound the DJ plays. When the DJ speeds up or slows down, the picture's speed changes with it; when the DJ jumps to another part of the song or to another song, the picture jumps there too, after checking once more so that it does not cut by mistake. Repeated choruses and other similar passages are told apart. Acoustic tracking works from the sound alone: no connection to the DJ software, no MIDI and no cue points set in the videos beforehand; it can listen to the Master, the system's sound or a microphone, and room mode helps with a microphone in a noisy room. The VJ no longer has to watch the DJ and line the picture up by hand, and speed and jumps can each be paused to take control back at any time.
 
 [About acoustic tracking →](docs/acoustic-tracking.md) (Chinese)
 
