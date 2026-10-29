@@ -144,8 +144,9 @@ ApplicationWindow {
     // The main track's, for the player (see isMain).
     readonly property var playingEntries: (playingSet ? playingSet.entries : entries).filter(app.isMain)
     readonly property bool parked: !!playingSet && !!currentSet && playingSet.id !== currentSet.id
-    // Every jump, by hand or by following, can dissolve.
-    property bool fadeOn: false
+    // Every jump, by hand or by following, dissolves for fadeMs (跳转渐变,
+    // the timeline's slider); 0 cuts straight.
+    readonly property bool fadeOn: fadeMs > 0
     // At the end of the Set's last entry: start over from its first entry, or
     // stop on the last frame.
     property bool loopOn: false
@@ -457,7 +458,7 @@ ApplicationWindow {
         case "pause": transport.setPlaying(false); break
         case "resume": transport.setPlaying(true); break
         case "tempo": transport.setTempo(Number(w[1])); break
-        case "fade": app.fadeOn = Number(w[1]) > 0; if (app.fadeOn) app.fadeMs = Number(w[1]); break
+        case "fade": app.fadeMs = Math.max(0, Number(w[1]) || 0); break
         case "listen": app.listen(); break
         case "follow": app.follow(); break
         case "here": app.jumpToMatch(); break
@@ -998,7 +999,6 @@ ApplicationWindow {
     }
     Settings {
         category: "player"
-        property alias fade: app.fadeOn
         property alias fadeMs: app.fadeMs
         property alias loop: app.loopOn
     }

@@ -1,4 +1,3 @@
-import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Controls.impl
@@ -10,7 +9,7 @@ import KVJ
 // own, alike. On top a slim bar
 // for the active row (the track row pressed last, its name inked): its
 // zoom keys − (Enter plays it from its cursor)
-// 全览 + (− = \ too), then the switches and how jumps look. Then the rows
+// 全览 + (− = \ too), then how long a jump dissolves. Then the rows
 // (TrackRow), each its own play bar (its name at the left; pressed, its
 // layer is chosen on the board), its own ruler and view (zoom and scroll
 // are a row's own) and its own cursor: a press on a row's timeline only
@@ -166,9 +165,9 @@ Rectangle {
     onSetIdChanged: Qt.callLater(() => line.activeKey = line.states[line.setId + "|active"] || "")
 
     // The keys, on the active row: Enter plays it from its cursor, − = \ zoom it.
-    // Enter and a row's 跳至: played from its cursor and, with
-    // 跳转置顶 on, its layer floated to the top on the air first.
-    property bool jumpRaises: false
+    // Enter and a row's 跳至: played from its cursor, its layer floated to
+    // the top on the air first (跳转置顶, always).
+    readonly property bool jumpRaises: true
     function jumpRow(r) {
         if (!r || !r.canJump)
             return
@@ -206,22 +205,17 @@ Rectangle {
         if (activeItem)
             activeItem.fit()
     }
-    // 缩放同步: every track row shows the same seconds at the same scale as the
-    // one moved last (the same two videos line up, each with its own
-    // playhead). Only the active row brings the view along with its playhead.
-    property bool viewsLocked: false
+    // 缩放同步 (always): every track row shows the same seconds at the same
+    // scale as the one moved last (the same two videos line up, each with
+    // its own playhead). Only the active row brings the view along with its
+    // playhead.
+    readonly property bool viewsLocked: true
     // Two track rows (not 单轨): the switches between them apply.
     readonly property bool dual: rows.length > 1
     readonly property bool viewsSynced: viewsLocked && dual
-    // 同步变速: 画面 2 plays at 画面 1's speed; either row's speed keys
-    // change both (the host links the players).
-    property bool tempoLinked: false
-    Settings {
-        category: "timeline"
-        property alias viewsLocked: line.viewsLocked
-        property alias tempoLinked: line.tempoLinked
-        property alias jumpRaises: line.jumpRaises
-    }
+    // 同步变速 (always): 画面 2 plays at 画面 1's speed; either row's speed
+    // keys change both (the host links the players).
+    readonly property bool tempoLinked: true
     function mirror(from) {
         if (!viewsLocked || !from)
             return
@@ -427,52 +421,22 @@ Rectangle {
                     onClicked: line.zoomStep(1.3)
                 }
             }
-            Toggle {
-                visible: line.dual
-                text: "缩放同步"
-                checked: line.viewsLocked
-                onToggled: line.viewsLocked = checked
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "画面 1 和画面 2 用同样的缩放、显示同一段时间，调一条另一条跟着变；各自播到哪里互不影响。\n同一段视频放在两条轨道上时，上下完全对齐"
-            }
-            Toggle {
-                visible: line.dual
-                text: "同步变速"
-                checked: line.tempoLinked
-                onToggled: line.tempoLinked = checked
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "画面 2 和画面 1 一起变速：调任一条的速度（键、滑条、复原、↑↓），两条都变；画面 1 跟随音乐时画面 2 也跟着同样的速度"
-            }
-            Toggle {
-                text: "跳转置顶"
-                checked: line.jumpRaises
-                onToggled: line.jumpRaises = checked
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "开着时，回车和轨道上的「跳至」会先把这条轨道的画面升到最上层投给观众（保留它的大小和位置），再从光标处播放"
-            }
-            Item { implicitWidth: 6 }
-            Toggle {
-                text: "跳转渐变"
-                checked: !!line.player && line.player.fadeOn
-                onToggled: line.player.fadeOn = checked
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "手动跳转和声学追踪的跳转都从上一个画面溶过去；关掉是直接切"
-            }
+            // 跳转渐变: manual jumps and acoustic tracking's dissolve from the
+            // last picture, this long; 0 cuts straight.
             Seek {
                 Layout.preferredWidth: 80
                 Layout.minimumWidth: 40
                 implicitHeight: 24
-                from: 100
+                from: 0
                 to: 2000
                 stepSize: 50
                 snapMode: Slider.SnapAlways
                 value: line.player ? line.player.fadeMs : 400
-                enabled: !!line.player && line.player.fadeOn
+                enabled: !!line.player
                 onMoved: line.player.fadeMs = value
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                ToolTip.text: "跳转渐变：手动跳转和声学追踪的跳转从上一个画面溶过去的时长；拉到 0 是直接切"
             }
             Text {
                 Layout.preferredWidth: 40
@@ -480,7 +444,7 @@ Rectangle {
                 text: ((line.player ? line.player.fadeMs : 400) / 1000).toFixed(2) + " s"
                 font.pixelSize: Theme.sizeXs
                 font.features: { "tnum": 1 }
-                color: line.player && line.player.fadeOn ? Theme.body : Theme.faint
+                color: line.player && line.player.fadeMs > 0 ? Theme.body : Theme.faint
             }
         }
 

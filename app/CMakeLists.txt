@@ -100,6 +100,7 @@ qt_add_qml_module(KVJ
         qml/icons/sparkles.svg
         qml/icons/pause.svg
         qml/icons/play.svg
+        qml/icons/play-from.svg
         qml/icons/plus.svg
         qml/icons/refresh.svg
         qml/icons/send.svg

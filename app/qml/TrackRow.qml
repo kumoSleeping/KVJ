@@ -379,12 +379,6 @@ Item {
         PopMenu {
             id: trackMenu
             PopAction {
-                enabled: !!row.player && !row.main && !row.view.tempoLinked
-                text: row.player && row.player.followMain ? "不再跟随画面 1 的速度" : "跟随画面 1 的速度"
-                onTriggered: row.player.followMain = !row.player.followMain
-            }
-            MenuSeparator {}
-            PopAction {
                 enabled: !row.view.running && row.clips.length > 0
                 text: row.view.running ? "清空轨道（先停止监听）" : "清空轨道（素材回到媒体库）"
                 risky: true
@@ -602,42 +596,39 @@ Item {
                 ToolTip.text: "快切（" + (row.track === 0 ? "[" : "]") + "）：" + row.name + " 浮到最上层投给观众，保留它在画板上的大小和位置（在画外时铺满画面）；其它画面留在下面。用画板的渐变设置"
             }
         }
-        // In the middle of the keys line: play, the cursor and the keys that
-        // play from it. Centred on the row, kept clear of the keys at either side.
+        // Play and the keys that play from somewhere, right before the speed
+        // keys, kept clear of the time at the left.
         Row {
             id: middle
             visible: !row.camera
             readonly property real leftEnd: timeText.x + timeText.width + 12
-            readonly property real rightStart: speedDown.x - 12
-            x: Math.max(leftEnd, Math.min((bar.width - width) / 2, rightStart - width))
+            readonly property real rightStart: speedDown.x - 10
+            x: Math.max(leftEnd, rightStart - width)
             height: row.barHeight
-            spacing: 6
-            // Play / pause: a round key, ink while it plays.
-            IconButton {
-                anchors.verticalCenter: parent.verticalCenter
+            spacing: 4
+            // Play / pause: ink while it plays.
+            PlayKey {
                 id: playKey
-                implicitWidth: 28
-                implicitHeight: 28
-                iconSize: 15
                 iconName: row.playing ? "pause" : "play"
+                lit: row.playing
                 enabled: row.canPlay
-                icon.color: !enabled ? Theme.faint : row.playing ? Theme.bg : Theme.text
-                background: Rectangle {
-                    radius: 14
-                    color: row.playing ? (playKey.hovered ? Theme.body : Theme.text)
-                         : playKey.down ? Theme.selected : playKey.hovered && playKey.enabled ? Theme.hover : Theme.inset
-                    Behavior on color { ColorAnimation { duration: 90 } }
-                }
                 tip: (row.playing ? "暂停" : "播放") + row.name
                 onClicked: row.togglePlay()
+            }
+            // 跳至: played from the cursor (the key's line), its layer on top.
+            PlayKey {
+                iconName: "play-from"
+                enabled: row.canJump
+                tip: "跳至：从光标处播放" + row.name + "，并把它升到最上层（选中的轨道也可按回车）"
+                onClicked: row.view.jumpRow(row)
             }
             // To the other track's time, both playing: the same videos line
             // up, the timeline as one.
             TextButton {
                 anchors.verticalCenter: parent.verticalCenter
-                implicitHeight: 20
-                leftPadding: 6
-                rightPadding: 6
+                implicitHeight: 24
+                leftPadding: 7
+                rightPadding: 7
                 outlined: true
                 font.pixelSize: 11
                 text: "同步播放"
@@ -647,20 +638,6 @@ Item {
                 ToolTip.visible: hovered
                 ToolTip.delay: 600
                 ToolTip.text: row.other ? row.name + " 跳到" + row.other.name + "正在播放的时间，两条一起播放" : ""
-            }
-            TextButton {
-                anchors.verticalCenter: parent.verticalCenter
-                implicitHeight: 20
-                leftPadding: 6
-                rightPadding: 6
-                outlined: true
-                font.pixelSize: 11
-                text: "跳至"
-                enabled: row.canJump
-                onClicked: row.view.jumpRow(row)
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                ToolTip.text: "从光标处播放" + row.name + "（选中的轨道也可按回车）"
             }
         }
 
@@ -1187,5 +1164,21 @@ Item {
         color: "transparent"
         border.width: 2
         border.color: Theme.text
+    }
+
+    // A play key of the row: a rounded rectangle, ink while `lit`.
+    component PlayKey: IconButton {
+        property bool lit: false
+        anchors.verticalCenter: parent.verticalCenter
+        implicitWidth: 32
+        implicitHeight: 24
+        iconSize: 14
+        icon.color: !enabled ? Theme.faint : lit ? Theme.bg : Theme.text
+        background: Rectangle {
+            radius: Theme.radius
+            color: parent.lit ? (parent.hovered ? Theme.body : Theme.text)
+                 : parent.down ? Theme.selected : parent.hovered && parent.enabled ? Theme.hover : Theme.inset
+            Behavior on color { ColorAnimation { duration: 90 } }
+        }
     }
 }
