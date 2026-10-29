@@ -196,13 +196,7 @@ Item {
                         }
                         onReleased: mode = ""
                         onCanceled: mode = ""
-                        onDoubleClicked: {
-                            if (rail.editing)
-                                return
-                            Live.focused = fx.key
-                            Live.setLevel(fx.key, 0)
-                            Live.switchEffect(fx.key, true)
-                        }
+                        // A second quick press is a second switch, never a double-click.
                         // The wheel up and down scrolls a rail that does not fit;
                         // otherwise (and sideways) it sets the strength.
                         onWheel: wheel => {
