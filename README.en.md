@@ -21,7 +21,7 @@
 
 [中文](README.md) · **English**
 
-KVJ is live VJ software for DJs. **Acoustic tracking** (声学追踪) recognizes the song the DJ is playing and where it is, and plays the matching video in sync; the two tracks and cameras (experimental) can also be played by hand and laid out on a board as the picture the audience sees, with danmaku, reactions, stickers and effects over it. macOS and Windows.
+KVJ is live VJ software for DJs. **Acoustic tracking** (声学追踪) recognizes the song the DJ is playing and where it is, and plays the matching video in sync; the two tracks and camera pictures (experimental) can also be played by hand and laid out on a board as the picture the audience sees, with danmaku, reactions, stickers and effects over it. macOS and Windows.
 
 ## Download & install
 
