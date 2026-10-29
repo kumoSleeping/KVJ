@@ -80,6 +80,8 @@ private:
     void tickOutgoing(double nowMs, int *wait);
     void replaceStalled();
     void noteError(const QString &error);
+    // 详细日志: once a second, how closely the shown frames kept to the clock.
+    void noteTiming(double nowMs, double target);
 
     QString m_source;
     DecodeOptions m_options;
@@ -94,6 +96,12 @@ private:
     double m_lastTarget = 0;
     double m_lastTickAt = -1;
     double m_lastRate = 1;
+    // 详细日志's second so far: frames shown, their lag behind the clock, jumps.
+    double m_timingFrom = -1;
+    int m_timingFrames = 0;
+    int m_timingJumps = 0;
+    double m_timingLag = 0;
+    double m_timingWorst = 0;
     // A jump happened; the first frame after it dissolves in.
     bool m_jumped = false;
     bool m_fadeNext = false;

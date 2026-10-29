@@ -48,6 +48,10 @@ class Engine : public QObject
     // The computer and its screens kept awake (Awake.h): set while projecting
     // or following.
     Q_PROPERTY(bool keepAwake READ keepAwake WRITE setKeepAwake NOTIFY keepAwakeChanged)
+    // 详细日志: every recognition round and the pictures' timing go to
+    // <dataDir>/logs/detail-<date>.log, with the usual lines between them.
+    // Off at every start.
+    Q_PROPERTY(bool detailLog READ detailLog WRITE setDetailLog NOTIFY detailLogChanged)
 
 public:
     explicit Engine(QObject *parent = nullptr);
@@ -126,6 +130,11 @@ public:
     // build, having no console, also needs) and the console, from the app's
     // own parts (the pictures, the cameras) on the GUI thread.
     static void note(const QString &line);
+    bool detailLog() const { return s_detail; }
+    void setDetailLog(bool on);
+    // Whether 详细日志 is on, and a line for its file only (GUI thread).
+    static bool detailing() { return s_detail; }
+    static void detail(const QString &line);
 
 signals:
     void documentChanged();
@@ -137,6 +146,7 @@ signals:
     void busyChanged();
     void importingChanged();
     void keepAwakeChanged();
+    void detailLogChanged();
     void updateChanged();
     void updateJobChanged();
     void reportReady(const QVariantMap &preview);
@@ -160,6 +170,9 @@ private:
     // The session's log lines also go to <dataDir>/logs, a file a day, so a
     // show can be looked into afterwards.
     void writeLog(const QStringList &lines);
+    // Appends timed lines to <dataDir>/logs/<kind>-<date>.log.
+    static void append(const QString &kind, const QStringList &lines);
+    static inline bool s_detail = false;
     static void onEvent(void *user, const char *json);
 
     KvjEngine *m_engine = nullptr;

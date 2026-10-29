@@ -59,6 +59,8 @@ enum Request {
     Stop,
     /// While following, listen to another track.
     FollowTrack { track: u8 },
+    /// 详细日志: every round's evidence and timings go to the log.
+    DetailLog { on: bool },
     Status { after_log_id: Option<u64> },
     Version,
     ReportPrepare { note: String },
@@ -89,6 +91,7 @@ impl KvjEngine {
             }
             Request::Stop => json!(e.stop()),
             Request::FollowTrack { track } => json!(e.follow_track(track)?),
+            Request::DetailLog { on } => json!(e.detail_log(on)),
             Request::Status { after_log_id } => json!(e.status(after_log_id)),
             Request::Version => json!(crate::report::VERSION),
             Request::ReportPrepare { note } => json!(e.report_prepare(&note)?),

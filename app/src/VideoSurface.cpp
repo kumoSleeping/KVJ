@@ -237,6 +237,35 @@ void VideoSurface::noteError(const QString &error)
     setError(error);
 }
 
+void VideoSurface::noteTiming(double nowMs, double target)
+{
+    if (!Engine::detailing()) {
+        m_timingFrom = -1;
+        return;
+    }
+    if (m_timingFrom < 0 || nowMs - m_timingFrom > 5000) {
+        m_timingFrom = nowMs;
+        m_timingFrames = m_timingJumps = 0;
+        m_timingLag = m_timingWorst = 0;
+        return;
+    }
+    if (nowMs - m_timingFrom < 1000)
+        return;
+    // Lag: the clock's time minus the shown frame's (positive: the picture is behind).
+    Engine::detail(QStringLiteral("picture: %1 · 时钟 %2 s · %3× · %4 秒内 %5 帧 · 落后 均 %6 / 最大 %7 ms · 跳转 %8")
+                       .arg(QFileInfo(m_source).fileName())
+                       .arg(target, 0, 'f', 3)
+                       .arg(m_rate, 0, 'f', 3)
+                       .arg((nowMs - m_timingFrom) / 1000.0, 0, 'f', 1)
+                       .arg(m_timingFrames)
+                       .arg(m_timingFrames ? m_timingLag / m_timingFrames : 0.0, 0, 'f', 1)
+                       .arg(m_timingWorst, 0, 'f', 1)
+                       .arg(m_timingJumps));
+    m_timingFrom = nowMs;
+    m_timingFrames = m_timingJumps = 0;
+    m_timingLag = m_timingWorst = 0;
+}
+
 void VideoSurface::tick()
 {
     if (!m_player || m_idle)
@@ -247,6 +276,7 @@ void VideoSurface::tick()
     const double target = m_position + (now - m_clockAtMs + m_offsetMs) / 1000.0 * m_rate;
     if (m_lastTickAt >= 0 && std::abs(target - (m_lastTarget + (now - m_lastTickAt) / 1000.0 * m_rate)) > kJump) {
         m_jumped = true;
+        ++m_timingJumps;
         if (fadeable() && !withinBudget()) {
             // No room for a second decoder: the jump cuts.
             dropOutgoing();
@@ -266,6 +296,13 @@ void VideoSurface::tick()
         const double since = frame.pts - m_lastPts;
         if (m_lastPts < 0 || since < 0 || since >= minimum || since > 0.5) {
             m_lastPts = frame.pts;
+            if (Engine::detailing()) {
+                const double lag = (target - frame.pts) * 1000.0;
+                ++m_timingFrames;
+                m_timingLag += lag;
+                if (std::abs(lag) > std::abs(m_timingWorst))
+                    m_timingWorst = lag;
+            }
             m_pending = std::move(frame.image);
             m_newFrame = true;
             m_fadeNext = m_jumped && m_fadeMs > 0;
@@ -288,6 +325,7 @@ void VideoSurface::tick()
         emit sourceInfoChanged();
     }
     noteError(m_player->error());
+    noteTiming(now, target);
     // Sleep until the next decoded frame is due (in wall time), polling briefly
     // while the decoder catches up.
     const double ahead = m_player->untilNext(target);

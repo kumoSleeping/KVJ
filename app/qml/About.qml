@@ -255,6 +255,15 @@ Popup {
                     }
                 }
             }
+            // Off at every start: it writes a few lines a second.
+            Toggle {
+                text: "详细日志"
+                checked: Engine.detailLog
+                onToggled: Engine.detailLog = checked
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: "记下声学追踪每一轮的得分和耗时，以及画面跟时钟差多少，写进日志文件夹里的 detail-日期.log。每次启动都是关着的"
+            }
         }
     }
 }

@@ -598,6 +598,10 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                 if audible {
                     let query = observation.query;
                     let at = observation.at;
+                    // 详细日志: this round's evidence, logged at its end.
+                    let detail = engine.detailing();
+                    let mut bins: Vec<String> = Vec::new();
+                    let mut outcome = String::new();
                     let mut scanned = Vec::new();
                     let mut retrieval_ms = 0.;
                     let mut verify_ms = 0.;
@@ -666,6 +670,14 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                             .zip(current)
                             .map(|(new, old)| (new.now() - old.now()) * 1000.),
                     };
+                    let local_note = if detail {
+                        scanned.first().map(|r| match tracking_status.error_ms {
+                            Some(error) => format!("{} · 偏差 {error:+.1} ms · {:.1} ms", r.reason, r.elapsed_ms),
+                            None => format!("{} · {:.1} ms", r.reason, r.elapsed_ms),
+                        })
+                    } else {
+                        None
+                    };
                     scanned.clear();
                     let mut rescued = None;
                     // Room mode's corroboration already heard it agree over 3 s.
@@ -726,6 +738,14 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                                 index.search_slice_at_rate_among(&query, rate, &allowed, &canceled)?
                             };
                             retrieval_ms += started.elapsed().as_secs_f64() * 1000.;
+                            if detail {
+                                bins.push(format!(
+                                    "{rate:.3}× {} 个种子{} {:.1} ms",
+                                    seeds.len(),
+                                    seeds.first().map_or_else(String::new, |s| format!("（首 {:.3}）", s.retrieval_score)),
+                                    started.elapsed().as_secs_f64() * 1000.
+                                ));
+                            }
                             tracing::debug!(target: "kvj_probe", scan = scan + 1,
                             query_ms = query.duration_ms(), preferred = rate, seed_count = seeds.len(),
                             leading = ?seeds.first(), retrieval_ms, "retrieval");
@@ -966,6 +986,16 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         let clock = estimate.get_or_insert_with(|| ClockEstimate::new(chosen));
                         let old_rate = clock.rate;
                         let (position, rate, rate_confidence) = clock.observe(chosen);
+                        if detail {
+                            outcome = format!(
+                                "采用{}{}：{} · 观测 {:.3} 秒 {:.3}× → 时钟 {:.3} 秒 {:.3}×（差 {:+.1} ms）· 速度置信 {:.2}",
+                                if local.is_some() { "本地" } else if vouched { "现场印证" } else { "检索" },
+                                if jumped { "（跳转）" } else { "" },
+                                set.recordings[chosen.recording].entry.title,
+                                chosen.position, chosen.rate, position, rate,
+                                (chosen.position - position) * 1000., rate_confidence
+                            );
+                        }
                         chosen.position = position;
                         chosen.rate = rate;
                         tracking_status.rate = Some(rate);
@@ -1003,6 +1033,15 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         });
                     } else {
                         lost = current.is_some();
+                        if detail {
+                            outcome = if pending.last().is_some_and(|p| p.at == at) {
+                                format!("新位置待印证（{} 个）", pending.len())
+                            } else if current.is_some() {
+                                "未采用，保留当前画面".into()
+                            } else {
+                                "未采用".into()
+                            };
+                        }
                         engine.present(session, |v| {
                             v.candidate = None;
                             if lost {
@@ -1016,6 +1055,25 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
                         rescue_ran, lock_revision, query_ms = query.duration_ms(), feature_ms, retrieval_ms, verify_ms, round_ms = elapsed,
                         data_age_ms = at.elapsed().as_secs_f64() * 1000., capture_clock_ms = clock_ms() - at.elapsed().as_secs_f64() * 1000.,
                         position = current.map(|c| c.position), rate = current.map(|c| c.rate), "round");
+                    if detail {
+                        let mut line = format!("轮 {scan} · {}", outcome);
+                        if let Some(note) = &local_note {
+                            line += &format!(" · 本地：{note}");
+                        }
+                        if rescue_ran {
+                            line += &format!(" · 检索 {} 档：{} · 校验 {} 个", bins.len(), bins.join(" / "), scanned.len());
+                        }
+                        line += &format!(
+                            " · 特征 {feature_ms:.1} / 检索 {retrieval_ms:.1} / 校验 {verify_ms:.1} / 本轮 {elapsed:.1} ms · 查询 {:.0} ms · 证据龄 {:.1} ms",
+                            query.duration_ms(), at.elapsed().as_secs_f64() * 1000.
+                        );
+                        log(engine, session, Level::Detail, Stage::Scan, line);
+                        for r in &scanned {
+                            log(engine, session, Level::Detail, Stage::Scan, format!(
+                                "轮 {scan} 候选：{} @{:.1} s · {} · {:.1} ms", r.title, r.block_start, r.reason, r.elapsed_ms
+                            ));
+                        }
+                    }
 
                     publish(engine, session, |v| {
                         v.scan = scan;

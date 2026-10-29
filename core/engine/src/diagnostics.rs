@@ -3,11 +3,15 @@ use super::now_ms;
 use serde::Serialize;
 use std::collections::VecDeque;
 
-const LOG_LIMIT: usize = 300;
+// Room for a few seconds of 详细日志 (a line per round and per verified
+// candidate) between two polls.
+const LOG_LIMIT: usize = 2000;
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Level {
+    /// 详细日志 only: every round's evidence and timings.
+    Detail,
     Info,
     Warn,
     Error,

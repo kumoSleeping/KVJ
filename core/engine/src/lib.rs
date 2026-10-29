@@ -117,6 +117,9 @@ pub struct Engine {
     // The track the running session listens to; read every round, so it can
     // change while following (`follow_track`).
     track: AtomicU8,
+    // 详细日志: every round's evidence and timings go to the log. Off by
+    // default; read every round.
+    detail: AtomicBool,
     session: Mutex<Option<Session>>,
     gate: Mutex<()>,
     reports: report::Reports,
@@ -136,6 +139,7 @@ impl Engine {
             prepared: Mutex::new(None),
             off: Mutex::new(Default::default()),
             track: AtomicU8::new(0),
+            detail: AtomicBool::new(false),
             session: Mutex::new(None),
             gate: Mutex::new(()),
             reports: report::Reports::default(),
@@ -417,6 +421,14 @@ impl Engine {
     /// While following: listen to `track` from the next round on, the input
     /// left open (every track of the Set is indexed). What the other track
     /// found is let go.
+    /// Turns 详细日志 on or off, for the running session and the next ones.
+    pub fn detail_log(&self, on: bool) -> bool {
+        self.detail.store(on, Ordering::Relaxed);
+        on
+    }
+    pub(crate) fn detailing(&self) -> bool {
+        self.detail.load(Ordering::Relaxed)
+    }
     pub fn follow_track(&self, track: u8) -> Result<View> {
         anyhow::ensure!(track <= document::LAST_TRACK, "轨道不存在");
         anyhow::ensure!(self.running(), "没有在监听");

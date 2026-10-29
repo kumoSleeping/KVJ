@@ -44,6 +44,10 @@ Engine::Engine(QObject *parent)
     const QStringList old = logs.entryList({QStringLiteral("kvj-*.log")}, QDir::Files, QDir::Name | QDir::Reversed);
     for (int i = 14; i < old.size(); ++i)
         QFile::remove(logs.filePath(old.at(i)));
+    // 详细日志 files are large: a week of them.
+    const QStringList detailed = logs.entryList({QStringLiteral("detail-*.log")}, QDir::Files, QDir::Name | QDir::Reversed);
+    for (int i = 7; i < detailed.size(); ++i)
+        QFile::remove(logs.filePath(detailed.at(i)));
     m_engine = kvj_engine_new(QDir::toNativeSeparators(m_dataDir).toUtf8().constData(), &Engine::onEvent, this);
     if (m_engine)
         m_version = roundTrip(m_engine, {{"cmd", "version"}}).value("ok").toString();
@@ -66,16 +70,45 @@ Engine::Engine(QObject *parent)
 
 void Engine::writeLog(const QStringList &lines)
 {
-    const QDir dir(QDir(m_dataDir).filePath(QStringLiteral("logs")));
+    append(QStringLiteral("kvj"), lines);
+    if (s_detail)
+        append(QStringLiteral("detail"), lines);
+}
+
+void Engine::append(const QString &kind, const QStringList &lines)
+{
+    if (lines.isEmpty())
+        return;
+    const QDir dir(QDir(defaultDataDir()).filePath(QStringLiteral("logs")));
     if (!dir.exists() && !QDir().mkpath(dir.path()))
         return;
     const QDateTime now = QDateTime::currentDateTime();
-    QFile file(dir.filePath(QStringLiteral("kvj-%1.log").arg(now.toString(QStringLiteral("yyyy-MM-dd")))));
+    QFile file(dir.filePath(QStringLiteral("%1-%2.log").arg(kind, now.toString(QStringLiteral("yyyy-MM-dd")))));
     if (!file.open(QIODevice::Append | QIODevice::Text))
         return;
     const QString at = now.toString(QStringLiteral("HH:mm:ss.zzz "));
     for (const QString &line : lines)
         file.write((at + line + QLatin1Char('\n')).toUtf8());
+}
+
+void Engine::setDetailLog(bool on)
+{
+    if (s_detail == on)
+        return;
+    // The mark goes into the detail file on both sides of it.
+    if (!on)
+        writeLog({QStringLiteral("[info] 详细日志已关闭")});
+    s_detail = on;
+    if (on)
+        writeLog({QStringLiteral("[info] 详细日志已开启")});
+    call({{"cmd", "detail_log"}, {"on", on}}, [](const QJsonValue &) {}, false);
+    emit detailLogChanged();
+}
+
+void Engine::detail(const QString &line)
+{
+    if (s_detail)
+        append(QStringLiteral("detail"), {QStringLiteral("[detail] ") + line});
 }
 
 Engine::~Engine()
@@ -98,13 +131,10 @@ QString Engine::defaultDataDir()
 void Engine::note(const QString &line)
 {
     qInfo().noquote() << line;
-    const QDir dir(QDir(defaultDataDir()).filePath(QStringLiteral("logs")));
-    if (!dir.exists() && !QDir().mkpath(dir.path()))
-        return;
-    const QDateTime now = QDateTime::currentDateTime();
-    QFile file(dir.filePath(QStringLiteral("kvj-%1.log").arg(now.toString(QStringLiteral("yyyy-MM-dd")))));
-    if (file.open(QIODevice::Append | QIODevice::Text))
-        file.write((now.toString(QStringLiteral("HH:mm:ss.zzz ")) + QStringLiteral("[info] ") + line + QLatin1Char('\n')).toUtf8());
+    const QStringList lines{QStringLiteral("[info] ") + line};
+    append(QStringLiteral("kvj"), lines);
+    if (s_detail)
+        append(QStringLiteral("detail"), lines);
 }
 
 double Engine::clockMs()
@@ -477,15 +507,23 @@ void Engine::poll()
         const QJsonObject status = ok.toObject();
         const QJsonArray logs = status.value("logs").toArray();
         if (!logs.isEmpty()) {
-            QStringList lines;
+            // 详细日志's lines go to its file only, between the usual ones.
+            QStringList lines, all;
             for (const QJsonValue &entry : logs) {
                 const QJsonObject log = entry.toObject();
                 const QString message = log.value("message").toString();
-                m_logs.append(message);
-                lines.append(QStringLiteral("[%1] %2").arg(log.value("level").toString(), message));
+                const QString level = log.value("level").toString();
+                const QString line = QStringLiteral("[%1] %2").arg(level, message);
                 m_logCursor = log.value("id").toInteger();
+                all.append(line);
+                if (level == QLatin1String("detail"))
+                    continue;
+                m_logs.append(message);
+                lines.append(line);
             }
-            writeLog(lines);
+            append(QStringLiteral("kvj"), lines);
+            if (s_detail)
+                append(QStringLiteral("detail"), all);
             while (m_logs.size() > 200)
                 m_logs.removeFirst();
             emit logsChanged();
