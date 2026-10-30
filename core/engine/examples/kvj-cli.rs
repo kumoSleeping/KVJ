@@ -2,6 +2,8 @@
 //!   kvj-cli devices
 //!   kvj-cli prepare <folder|file>...                 index only, then exit
 //!   kvj-cli follow  <folder|file>... [--device ID] [--channel N] [--room]
+//!   kvj-cli alike                                    entries sharing their sound with another
+//!   kvj-cli update                                   the newest release, as the update check sees it
 //! Data (Set document and caches) goes to $KVJ_DATA_DIR or the temp directory.
 use kvj_engine::{Edit, Engine, Selection};
 use std::{path::PathBuf, time::Duration};

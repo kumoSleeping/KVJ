@@ -36,7 +36,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Rust tests
-        run: cargo test -p kvj-recognize -p kvj-engine --release
+        run: cargo test --release
 
       - uses: jurplel/install-qt-action@v4
         with:

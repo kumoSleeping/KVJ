@@ -328,7 +328,7 @@ Needs Rust (stable), CMake ≥ 3.22, Ninja and Qt 6.8 with Qt Shader Tools and Q
 Image Formats.
 
 ```sh
-cargo test -p kvj-recognize -p kvj-engine
+cargo test --release
 cmake -S app -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<Qt>/6.8.3/<platform>
 cmake --build build
 cmake --install build --prefix dist   # bundles Qt next to the app

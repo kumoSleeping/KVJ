@@ -87,13 +87,15 @@ KVJ listens to the sound the DJ is playing and compares it with the sound of the
 Needs Rust (stable), CMake ≥ 3.22, Ninja and Qt 6.8 with Qt Shader Tools and Qt Image Formats.
 
 ```sh
-cargo test -p kvj-recognize -p kvj-engine
+cargo test --release
 cmake -S app -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<Qt>/6.8.3/<platform>
 cmake --build build
 cmake --install build --prefix dist   # bundles Qt next to the app
 ```
 
 On Windows run these from a Visual Studio developer prompt.
+
+[Testing (in Chinese) →](docs/testing.md)
 
 ## License
 

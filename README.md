@@ -87,13 +87,15 @@ KVJ 会听 DJ 正在播放的声音，和追踪的轨道上各段视频自带的
 需要 Rust（stable）、CMake ≥ 3.22、Ninja，以及带 Qt Shader Tools 和 Qt Image Formats 的 Qt 6.8。
 
 ```sh
-cargo test -p kvj-recognize -p kvj-engine
+cargo test --release
 cmake -S app -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<Qt>/6.8.3/<platform>
 cmake --build build
 cmake --install build --prefix dist   # 把 Qt 一起打包到应用旁
 ```
 
 Windows 上请在 Visual Studio 开发者命令提示符中运行以上命令。
+
+[测试说明 →](docs/testing.md)
 
 ## 许可证
 
