@@ -23,13 +23,13 @@
 
 ---
 
-[中文](README.md) · **English**
+[中文](README.md)
 
-KVJ is a VJ player for DJs playing live. **Acoustic tracking** (声学追踪) compares the sound the DJ is playing with the sound of the videos on a track, quickly finds the matching video and position, and plays it in sync; there is also a simple, handy way to set the speed and jump by hand. The two tracks and camera pictures (experimental) are laid out on a board as the picture the audience sees, with danmaku, reactions, stickers and effects over it. macOS and Windows.
+KVJ is a VJ player for DJs playing live. **Acoustic tracking** (声学追踪) compares the sound the DJ is playing with the sound of the videos on a track, quickly finds the matching video and position, and plays it in sync; the speed and jumps can also be set by hand. The two tracks and camera pictures (experimental) are laid out on a board as the picture the audience sees, with danmaku, reactions, stickers and effects over it. macOS and Windows.
 
 ## Download & install
 
-This is a preview (pre-release) build; every version is listed under [Releases](https://github.com/kumoSleeping/KVJ/releases).
+These are the latest version's packages; every version is listed under [Releases](https://github.com/kumoSleeping/KVJ/releases).
 
 <!-- release-package-size-badges:start -->
 <p>
@@ -44,30 +44,28 @@ This is a preview (pre-release) build; every version is listed under [Releases](
 
 ## Features
 
-### Acoustic tracking: pictures matched to the music, by ear
+### Acoustic tracking
 
-KVJ listens to the sound the DJ is playing and compares it with the sound of the videos on the followed track, quickly finding the matching video, position and speed, and plays that video from that point at the same speed. It does not identify songs; it compares the sound itself, so the videos need to carry the same version of the sound the DJ plays. When the DJ speeds up or slows down, the picture's speed changes with it; when the DJ jumps to another part of the song or to another song, the picture jumps there too, after checking once more so that it does not cut by mistake. Repeated choruses and other similar passages are told apart. Acoustic tracking works from the sound alone: no connection to the DJ software, no MIDI and no cue points set in the videos beforehand; it can listen to the Master, the system's sound or a microphone, and room mode helps with a microphone in a noisy room. The VJ no longer has to watch the DJ and line the picture up by hand, and speed and jumps can each be paused to take control back at any time.
+KVJ listens to the sound the DJ is playing and compares it with the sound of the videos on the followed track, quickly finding the matching video, position and speed, and plays that video from that point at the same speed. It does not identify songs; it compares the sound itself, so the videos need to carry the same version of the sound the DJ plays. When the DJ speeds up or slows down, the picture's speed changes with it; when the DJ jumps to another part of the song or to another song, the picture jumps there too, after checking once more so that it does not cut by mistake. Repeated choruses and other similar passages are told apart. Acoustic tracking works from the sound alone: no connection to the DJ software, no MIDI and no cue points set in the videos beforehand; it can listen to the Master, the system's sound or a microphone, and choosing a microphone turns on room mode, made for noisy rooms. The VJ no longer has to watch the DJ and line the picture up by hand, and speed and jumps can each be paused to take control back at any time.
 
 [About acoustic tracking →](docs/acoustic-tracking.md) (Chinese)
 
 ### Player
 
-- At the left are the **library** (folders added, files never copied) and **预备** (ready: sources not on the picture yet, and pictures kept for stickers). A video dropped on a track's left half replaces what is there, on its right half it goes after it.
+- At the left, **预备** (ready: sources not on the picture yet, and pictures kept for stickers) is above the **library** (folders added, files never copied); ⌘B (Ctrl+B on Windows) puts this column away or brings it back. A video dropped on a track's left half replaces what is there, on its right half it goes after it.
 - Two tracks at the foot, **画面 1** and **画面 2**, are laid out much as in a video editor, with frame strips, KDJ's whole-track preview waveform and BPM sections. Each has its own time, zoom and speed, and they can **play in sync**, **change speed together** and **zoom together**, or one alone is shown (single track).
-- Pressing a track only places its **cursor** and never moves the picture; **跳至** (jump) or Enter plays from it. Every jump can dissolve.
+- Pressing a track only places its **cursor** and never moves the picture; **跳至** (jump) or Enter plays from it and raises that track to the top of the audience's picture. Jumps can **dissolve**; the length is set above the timeline, and 0 is a straight cut.
 - Speed goes from −50 % to +50 %; ← / → **nudge** the picture like a pitch bend (0.7× / 1.5× while held), ↑ / ↓ change it by 1 %.
 - Each track's own sound can be on with its own volume (a cue mix), stretched by Rubber Band with its pitch kept; or only the topmost track's is heard.
 - The computer and its screens stay awake, and closing the window while listening or projecting asks first; decoder failures, a sound output that will not start, a lost projector screen, a lost file and a broken sound input all recover by themselves; video is decoded by the system hardware and decoded and drawn only when needed, so the load stays low.
 
 [Design principles →](docs/principles.md) (Chinese)
 
-[Detailed guide →](docs/guide.md)
-
 ### Board and going on air
 
 - The **board** in the middle shows the audience's picture, and the picture is arranged there too. 画面 1, 画面 2 and cameras are **layers** that can be moved, sized, raised, filled or fitted, rounded, masked to a circle, feathered and cut by **split lines**. Around the picture is the **offstage** area, which the audience does not see.
-- The lock key under the board switches between two ways of working. Unlocked is **实时** (live): every change is on the air at once. Locked is **确认后上屏** (confirm first): the audience keeps the picture last put on the air until the ✓ key (or Space) puts the new one out, with a dissolve if wanted, and ⌘Z **undoes** the board back to what is on the air. **输出预览** at the top right always shows what the audience sees.
-- A track's lightning key (**快切**, quick cut) puts that track on top for the audience in one press; with **跳转置顶** on, a jump first puts its track on top and then plays.
+- The lock key under the board switches between two ways of working. Unlocked is **实时** (live): every change is on the air at once. Locked is **确认后上屏** (confirm first): the audience keeps the picture last put on the air until the ✓ key (or Space) puts the new one out, with a dissolve if wanted, and ⌘Z (Ctrl+Z on Windows) **undoes** the board back to what is on the air. **输出预览** at the top right always shows what the audience sees.
+- A track's **置顶** (raise) floats its layer to the top of the board and selects it, to size and place it. [ or ] (**快切**, quick cut) puts 画面 1 or 画面 2 on top for the audience at once, without ✓ even when confirming first.
 
 [Glossary →](docs/glossary.md) (Chinese)
 
