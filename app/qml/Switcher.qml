@@ -348,6 +348,9 @@ QtObject {
     // A source put away for a while (the second track switched off): its
     // slots in both layouts are kept, with their lines, and leave the
     // board; bringBack() puts them where they were. Kept between runs.
+    // Given `under` (the track 单轨 kept), it comes back just below that
+    // one's slot, the rest of the order as it was: a paused track coming
+    // back over the one playing would hold the picture still.
     property var aside: ({})
     function setAside(id) {
         const pre = preview.slots.find(s => s.source === id)
@@ -360,7 +363,7 @@ QtObject {
         store.aside = JSON.stringify(aside)
         rename({ [id]: "" })
     }
-    function bringBack(id) {
+    function bringBack(id, under) {
         const kept = aside[id]
         if (!kept)
             return
@@ -370,8 +373,18 @@ QtObject {
         store.aside = JSON.stringify(aside)
         const put = (layout, s) => {
             const out = copy(layout)
-            if (s && !out.slots.some(o => o.source === id))
-                out.slots.push(slot(s, s.z))
+            if (!s || out.slots.some(o => o.source === id))
+                return out
+            const back = slot(s, s.z)
+            const over = under ? out.slots.find(o => o.source === under) : null
+            if (over && back.z >= over.z) {
+                // Its place, and that one with all above it one up.
+                back.z = over.z
+                for (const o of out.slots)
+                    if (o.z >= back.z)
+                        o.z += 1
+            }
+            out.slots.push(back)
             return out
         }
         const air = put(program, kept.program)

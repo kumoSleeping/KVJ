@@ -869,12 +869,13 @@ ApplicationWindow {
             if (!app.running)
                 strip.followTrack = keep
         } else {
-            // Back where it was: not a track coming onto the picture, which
-            // playShown would start, but playing again if 单轨 paused it (on
-            // top, a paused one would hold the picture still).
+            // Back where it was, but under the track kept, which stays the
+            // picture whether the other plays or not: not a track coming onto
+            // the picture, which playShown would start; playing again if 单轨
+            // paused it.
             const other = 1 - app.soloTrack
             app.shownBefore = null
-            Switcher.bringBack("track:" + other)
+            Switcher.bringBack("track:" + other, "track:" + app.soloTrack)
             app.noteShown()
             if (app.asideWasPlaying) {
                 if (other === 1 && !aux1.playing)
