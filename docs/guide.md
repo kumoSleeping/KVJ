@@ -15,22 +15,11 @@ music. Live words and emoji go over the picture. macOS and Windows.
 - `app` — Qt 6 Quick shell: control window, projection window, system video
   decoding (VideoToolbox / Media Foundation) and the overlay.
 
-## Two computers
-
-The DJ's computer runs only the sender: **发送端** at the top right of the
-window (or `KVJ --send`) puts the player away and opens a small window that
-captures the Master, turns it into recognition features and streams them over
-Bluetooth to the projecting computer; closing it brings the player back. Nothing
-else runs there — no Set, index or video — so it stays light next to the DJ
-software. The projecting
-computer picks **蓝牙接收** as its input and
-chooses the current DJ among the connected ones. Pair the two computers in the system's Bluetooth settings first.
-
 ## One window
 
 Everything is in one window, and nothing in it appears or moves when following
-starts. The top bar (the title bar itself on macOS) holds **发送端** and the
-light / dark switch at the right. The library is in a drawer over the left
+starts. The top bar (the title bar itself on macOS) holds the light / dark switch
+at the right. The library is in a drawer over the left
 side of the canvas, put away at every start: the small key at the canvas's top
 left (where the drawer's own head has it), or Ctrl+B (⌘B on macOS), brings it
 out, and so do files dragged onto that key or to the canvas's left edge, to be
@@ -156,8 +145,8 @@ leads), the crosshair (跳至此处), the input, which track is followed, and th
 two helpers as small keys, **对速** with its swinging dot and **跳转** with its
 ring and a line to the jump threshold; a press pauses or resumes one, and the
 pointer over one tells how it is doing. ⋯ opens the rest: the channels,
-现场模式, 画面偏移, both helpers in full with the threshold, the Bluetooth DJs
-and the last error (a dot on ⋯ says a DJ asks to pair). Following works on one
+现场模式, 画面偏移, both helpers in full with the threshold, and the last
+error. Following works on one
 track at a time, the main one by default; only tracks with an entry that has
 sound are offered (a camera, a stream or a track of silent entries is not),
 and the choice is fixed while listening. While following runs, its small
