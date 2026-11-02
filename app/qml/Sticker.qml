@@ -1,8 +1,9 @@
 import QtQuick
+import KVJ
 
-// One sticker: an image (animated when it is a GIF or WebP) or words, centred at
-// (px, py) of `area`, `size` of its height tall and turned by `angle` degrees.
-// The preview loads it small.
+// One sticker: an image (animated when it is a GIF or WebP within limits,
+// Motion.plays) or words, centred at (px, py) of `area`, `size` of its height
+// tall and turned by `angle` degrees. The preview loads it small.
 Item {
     id: root
 
@@ -17,7 +18,8 @@ Item {
     property bool lite: false
     readonly property real tall: size * (area ? area.height : 0)
     readonly property bool words: kind === "text"
-    readonly property bool moving: !words && /\.(gif|webp)$/i.test(source)
+    // (Still until the file is read: Motion.revision then says to ask again.)
+    readonly property bool moving: !words && Motion.revision >= 0 && Motion.plays(source)
     readonly property Item shown: words ? label : moving ? motion : still
 
     width: shown.implicitHeight > 0 && !words ? tall * shown.implicitWidth / shown.implicitHeight : words ? label.implicitWidth : tall
@@ -48,6 +50,17 @@ Item {
         source: visible ? root.source : ""
         fillMode: Image.PreserveAspectFit
         smooth: true
+        // Round and round, whatever loop count the file gives: a GIF without
+        // one plays once and would stand on its last frame; and when it is
+        // loaded again (hidden, shown). Started a moment later, never from
+        // inside the stop (a broken file stops again).
+        onPlayingChanged: if (!playing) again.restart()
+        onStatusChanged: if (status === AnimatedImage.Ready) again.restart()
+        Timer {
+            id: again
+            interval: 50
+            onTriggered: if (!motion.playing && motion.visible && motion.status === AnimatedImage.Ready && motion.frameCount > 1) motion.playing = true
+        }
     }
     Text {
         id: label

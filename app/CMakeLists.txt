@@ -152,6 +152,7 @@ qt_add_qml_module(KVJ
         src/PreviewSurface.h src/PreviewSurface.cpp
         src/CameraSurface.h src/CameraSurface.cpp
         src/Cameras.h src/Cameras.cpp
+        src/Motion.h src/Motion.cpp
         src/FilmStrip.h src/FilmStrip.cpp
         src/WaveStrip.h src/WaveStrip.cpp
         src/FrameNode.h

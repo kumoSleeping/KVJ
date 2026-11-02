@@ -384,7 +384,7 @@ Item {
                     Item {
                         id: kept
                         required property var modelData
-                        readonly property bool moving: modelData.kind === "image" && /\.(gif|webp)$/i.test(modelData.source)
+                        readonly property bool moving: modelData.kind === "image" && Motion.revision >= 0 && Motion.plays(modelData.source)
                         width: tiles.tile
                         height: Math.round(width * 9 / 16) + 18
                         Rectangle {
@@ -412,6 +412,7 @@ Item {
                                 active: kept.moving && keptArea.containsMouse
                                 sourceComponent: AnimatedImage {
                                     source: kept.modelData.source
+                                    cache: false
                                     fillMode: Image.PreserveAspectFit
                                 }
                             }
