@@ -292,7 +292,7 @@ QtObject {
     readonly property var effects: [
         { key: "mosaic", name: "马赛克", preset: 0.35 },
         { key: "rgb", name: "RGB 分离", moving: true, preset: 0.4 },
-        { key: "tiles", name: "多画面", preset: 0.3 },
+        { key: "tiles", name: "多画面", steps: true, preset: 0.3 },
         { key: "lens", name: "鱼眼透镜", preset: 0.5 },
         { key: "zoom", name: "放射模糊", preset: 0.35 },
         { key: "wave", name: "水波", moving: true, preset: 0.5 },
@@ -377,13 +377,16 @@ QtObject {
     readonly property bool effectsMoving: effects.some(e => (e.moving || rhythmOf(e.key) > 0) && amount(e.key) > 0)
 
     // —— Rhythm ——
-    // How often an effect moves, in beats of the music. A moving one (RGB
-    // 分离, 水波, 故障, 扫描线) goes through its motion once a period; a still
-    // one comes on at the start of each period and goes off at its middle (按拍
-    // 开关): a hard cut on the beat reads as the beat across a dark room, where
-    // a pulse fading out would blur it, the slow ones most. 不跟拍 keeps the
-    // effect's own pace (a still one stays on), as it always was. Set with the
-    // controller's knobs (below); not kept between runs.
+    // How often an effect hits, in beats of the music; up the knob, more and
+    // faster. 不跟拍 (the knob at its foot) leaves the effect as it always was.
+    // With a rhythm, a still effect comes on at the start of each period and
+    // goes off at its middle (按拍开关: a hard cut on the beat reads across a
+    // dark room), coming on a little stronger than set and settling; a moving
+    // one (RGB 分离, 水波, 故障, 扫描线) keeps its own motion and hits hard at
+    // the start of each period (wider, taller, more torn), so 2 小节 already
+    // moves more than 不跟拍 and 1/8 拍 most. 多画面 steps instead, a period
+    // each, 1×1, 2×2 … up to the grid its strength sets and back down. Set with the controller's knobs
+    // (below); not kept between runs.
     readonly property var rhythms: [
         { beats: 0, name: "不跟拍" },
         { beats: 8, name: "2 小节" },
@@ -391,19 +394,59 @@ QtObject {
         { beats: 2, name: "2 拍" },
         { beats: 1, name: "1 拍" },
         { beats: 0.5, name: "1/2 拍" },
-        { beats: 0.25, name: "1/4 拍" }
+        { beats: 0.25, name: "1/4 拍" },
+        { beats: 0.125, name: "1/8 拍" }
     ]
     // { key: index into rhythms }
     property var rhythm: ({})
     function rhythmOf(key) {
         return rhythm[key] || 0
     }
+    // Each rhythm's grid: { d (beats a period), from (the beat it counts
+    // from), shift, at }. A change of rhythm (or of where bars start) never
+    // jumps: the period goes on from where it was, `shift` periods off the
+    // new grid, and that is made up at half the pace, so the effect runs
+    // between half and one and a half times as fast for up to a period and
+    // is then on the beat again (`at`: the new grid's count at the change).
+    property var grids: ({})
+    function gridRaw(g, t) {
+        return (beatAt(t) - g.from) / g.d
+    }
+    function gridAt(g, t) {
+        const raw = gridRaw(g, t)
+        const left = Math.max(0, Math.abs(g.shift) - 0.5 * (raw - g.at))
+        return raw + (g.shift < 0 ? -left : left)
+    }
+    function regrid(key, d) {
+        const t = Date.now()
+        const next = Object.assign({}, grids)
+        if (!d) {
+            delete next[key]
+        } else {
+            const g = { d: d, from: d >= 2 ? barAt % d : 0, shift: 0, at: 0 }
+            g.at = gridRaw(g, t)
+            const old = grids[key]
+            if (old) {
+                let shift = gridAt(old, t) - g.at
+                shift -= Math.round(shift)
+                g.shift = shift
+            }
+            next[key] = g
+        }
+        grids = next
+    }
     function setRhythm(key, i) {
+        i = Math.max(0, Math.min(rhythms.length - 1, i))
         if (kind(key) < 0 || rhythmOf(key) === i)
             return
+        regrid(key, rhythms[i].beats)
         const next = Object.assign({}, rhythm)
-        next[key] = Math.max(0, Math.min(rhythms.length - 1, i))
+        next[key] = i
         rhythm = next
+    }
+    function resetRhythms() {
+        grids = {}
+        rhythm = {}
     }
     readonly property bool effectsSynced: active.some(k => rhythmOf(k) > 0)
     function moves(key) {
@@ -415,9 +458,9 @@ QtObject {
     // (t − beatT0) · beatRate (t in Date.now() ms), so the projection and each
     // preview, drawing on clocks of their own, agree. hearBeat() steers it to
     // the music ten times a second while an effect keeps a rhythm: to the
-    // music's beats where they are known, gently (a difference is made up in
-    // a second or so, never by a jump, once locked), else at the last tempo
-    // heard, 120 BPM to begin with.
+    // music's beats where they are known, never by a jump (a difference is
+    // made up at up to half the tempo again, half a beat in a second at 120
+    // BPM), else at the last tempo heard, 120 BPM to begin with.
     property real beatT0: epoch
     property real beatB0: 0
     property real beatRate: 2
@@ -432,17 +475,18 @@ QtObject {
     // How many of `key`'s periods have gone by at t (only its fraction and
     // its whole count's changes matter), a bar or longer starting on a bar.
     function periodsAt(key, t) {
-        const d = rhythms[rhythmOf(key)].beats
-        if (!d)
+        const g = grids[key]
+        if (!g)
             return 0
-        const from = d >= 2 ? barAt % d : 0
-        const p = (beatAt(t) - from) / d
-        // Small enough for the shader's floats to keep the fraction fine.
-        return p - Math.floor(p / 256) * 256
+        const p = gridAt(g, t)
+        // Small enough for the shader's floats to keep the fraction fine, and
+        // a whole number of 多画面's round trips (2, 4, 6, 8 or 10 periods).
+        return p - Math.floor(p / 240) * 240
     }
     // A still effect with a rhythm shows in the first half of each period.
     function shownAt(key, t) {
-        if (rhythmOf(key) === 0 || moves(key))
+        const i = kind(key)
+        if (rhythmOf(key) === 0 || moves(key) || (i >= 0 && effects[i].steps))
             return true
         const p = periodsAt(key, t)
         return p - Math.floor(p) < 0.5
@@ -453,39 +497,47 @@ QtObject {
         const now = beatAt(t)
         if (heard && heard.bpm > 0 && speed > 0)
             bpm = Math.max(40, Math.min(300, heard.bpm * speed))
-        const base = bpm / 60
+        let base = bpm / 60
+        beatB0 = now
+        beatT0 = t
         if (heard && heard.beat !== undefined && speed > 0) {
+            // The beats' own pace just here: the section's tempo is the
+            // song's, a little off where it speeds up or slows down.
+            if (heard.beatsPerSecond > 0)
+                base = Math.max(0.5, Math.min(5, heard.beatsPerSecond * speed))
             // To the nearest beat: which beat it is says nothing.
             let e = heard.beat - now
             e -= Math.round(e)
-            if (!beatLocked) {
-                beatB0 = now + e
-                beatRate = base
-                beatLocked = true
-            } else {
-                beatB0 = now
-                beatRate = base + Math.max(-0.25 * base, Math.min(0.25 * base, e / 0.8))
-            }
+            beatLocked = true
+            beatRate = base + Math.max(-0.5 * base, Math.min(0.5 * base, e / 0.5))
             if (heard.bar >= 0) {
                 const heardBeat = Math.round(heard.beat)
                 const mine = Math.round(now + e - (heard.beat - heardBeat))
-                barAt = ((heard.bar + mine - heardBeat) % 4 + 4) % 4
+                const bar = ((heard.bar + mine - heardBeat) % 4 + 4) % 4
+                if (bar !== barAt) {
+                    barAt = bar
+                    // Bars start elsewhere: the bar-long grids move there smoothly.
+                    for (const k in grids)
+                        if (grids[k].d >= 2)
+                            regrid(k, grids[k].d)
+                }
             }
         } else {
             beatLocked = false
-            beatB0 = now
             beatRate = base
         }
-        beatT0 = t
     }
 
     // —— The controller ——
     // A Korg nanoKONTROL2 in its CC mode, as it comes (any channel). Its eight
     // strips work the first eight effects of the rail (TRACK ▶ the ninth on,
     // TRACK ◀ back): the fader the strength (at the foot: off), the knob the
-    // rhythm. A fader or knob takes over only once it reaches the value the
-    // effect has (pick-up), so nothing jumps after a number key, the mouse, a
-    // reorder or the other page. S switches the effect as its number key does,
+    // rhythm. A fader never jumps an effect that is on: after a number key,
+    // the mouse, a reorder or the other page, while it stands elsewhere, the
+    // effect follows its moves scaled so that the two meet at the end of its
+    // travel (and at once where they cross), then goes with it. An effect that
+    // is off the fader takes at once. A knob always takes at once: a change of
+    // rhythm never jumps (grids). S switches the effect as its number key does,
     // M held flips it (off while held, or on at its best strength) and R puts
     // its rhythm back to 不跟拍. Play, following and the projection are never
     // on it.
@@ -501,9 +553,9 @@ QtObject {
     // into rhythms), -1 until it is first moved: the device tells nothing more.
     property var faders: [-1, -1, -1, -1, -1, -1, -1, -1]
     property var knobs: [-1, -1, -1, -1, -1, -1, -1, -1]
-    // Per strip: the effect its fader and knob last worked, whether they have
-    // taken over, and what they last set.
-    property var strips: [0, 1, 2, 3, 4, 5, 6, 7].map(() => ({ faderKey: "", faderOn: false, faderSet: -1, knobKey: "", knobOn: false, knobSet: -1, held: null }))
+    // Per strip: the effect its fader last worked, whether it has taken
+    // over, what it last set, and the effect M holds flipped.
+    property var strips: [0, 1, 2, 3, 4, 5, 6, 7].map(() => ({ faderKey: "", faderOn: false, faderSet: -1, held: null }))
     function moveFader(strip, v) {
         const key = stripKey(strip)
         const s = strips[strip]
@@ -516,12 +568,23 @@ QtObject {
             s.faderKey = key
             s.faderOn = false
         }
-        if (!s.faderOn)
-            s.faderOn = Math.abs(v - now) <= 0.03 || (was >= 0 && (was - now) * (v - now) <= 0)
-        if (!s.faderOn)
-            return
+        let to = v
+        if (!s.faderOn) {
+            if (now <= 0 || Math.abs(v - now) <= 0.03 || (was >= 0 && (was - now) * (v - now) <= 0)) {
+                s.faderOn = true
+            } else if (was >= 0 && v !== was) {
+                // Elsewhere still: the same share of the way left, so that
+                // the effect and the fader meet at the end of the travel.
+                to = v > was ? now + (v - was) * (1 - now) / Math.max(1e-6, 1 - was)
+                             : now - (was - v) * now / Math.max(1e-6, was)
+                s.faderOn = Math.abs(v - to) <= 0.03
+            } else {
+                // Its first move since it was plugged in: only where it stands.
+                return
+            }
+        }
         focused = key
-        setLevel(key, v)
+        setLevel(key, to)
         s.faderSet = amount(key)
     }
     // A knob's place among the rhythms, held at a border until well past it.
@@ -531,28 +594,14 @@ QtObject {
         if (before < 0 || i === before)
             return i
         const lo = i * 128 / n, hi = (i + 1) * 128 / n
-        return (i > before && v < lo + 2) || (i < before && v > hi - 2) ? before : i
+        return (i > before && v < lo + 3) || (i < before && v > hi - 3) ? before : i
     }
     function turnKnob(strip, v) {
         const key = stripKey(strip)
-        const s = strips[strip]
-        const was = knobs[strip]
-        const at = knobRhythm(v, was)
+        const at = knobRhythm(v, knobs[strip])
         knobs = knobs.map((k, i) => i === strip ? at : k)
-        if (!key)
-            return
-        const now = rhythmOf(key)
-        if (s.knobKey !== key || now !== s.knobSet) {
-            s.knobKey = key
-            s.knobOn = false
-        }
-        // An effect still at 不跟拍 takes the knob at once: nothing jumps.
-        if (!s.knobOn)
-            s.knobOn = now === 0 || at === now || (was >= 0 && (was - now) * (at - now) <= 0)
-        if (!s.knobOn)
-            return
-        setRhythm(key, at)
-        s.knobSet = rhythmOf(key)
+        if (key)
+            setRhythm(key, at)
     }
     function pressStrip(strip, row, ons, offs, down) {
         const key = stripKey(strip)
@@ -587,10 +636,8 @@ QtObject {
         function onDevicesChanged() {
             live.faders = live.faders.map(() => -1)
             live.knobs = live.knobs.map(() => -1)
-            for (const s of live.strips) {
+            for (const s of live.strips)
                 s.faderOn = false
-                s.knobOn = false
-            }
         }
         function onControl(channel, number, value, ons, offs) {
             const c = live.cc

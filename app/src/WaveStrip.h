@@ -140,9 +140,10 @@ private:
 };
 
 // Where the music is in its beats, for effects that move on the beat
-// (Live.qml): at(path, seconds) gives {bpm, beat, bar} there, `beat` counting
-// the file's beats (3.25: a quarter past its fourth) and `bar` which of every
-// four starts a bar (-1 unknown). Without beats to go by there (silence, a
+// (Live.qml): at(path, seconds) gives {bpm, beat, beatsPerSecond, bar}
+// there, `beat` counting the file's beats (3.25: a quarter past its fourth),
+// `beatsPerSecond` how fast they go just there (the section's `bpm` is the
+// song's) and `bar` which of every four starts a bar (-1 unknown). Without beats to go by there (silence, a
 // beat V4 missed, not analysed yet) only {bpm}, or nothing.
 class Beats : public QObject
 {

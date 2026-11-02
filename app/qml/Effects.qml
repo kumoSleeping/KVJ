@@ -13,8 +13,8 @@ import KVJ
 // double-click brings back the best strength. The ⋯ key at the foot holds
 // 全关, the order (dragging the keys while it is on), the kept strengths and
 // the controller. With a nanoKONTROL2 plugged in (Live: the controller), the
-// eight keys its strips work have a line at their left; a fader that has not
-// taken over yet shows where it stands as an amber tick at the foot. An
+// eight keys its strips work have a line at their left; a fader not yet
+// level with its effect shows where it stands as an amber tick at the foot. An
 // effect keeping a rhythm has a dot at its lower right, lit for the first
 // half of each period.
 Item {
@@ -265,7 +265,7 @@ Item {
                         ToolTip.delay: mode === "tune" ? 0 : 500
                         ToolTip.text: fx.name + " · " + (fx.on ? Math.round(fx.level * 100) + "%" : "关")
                                       + (fx.rhythm > 0 ? " · " + Live.rhythms[fx.rhythm].name + "（" + Math.round(Live.bpm) + " BPM）" : "")
-                                      + (fx.fader >= 0 && Math.abs(fx.fader - fx.level) > 0.03 ? " · 推子在 " + Math.round(fx.fader * 100) + "%，推过当前值接管" : "")
+                                      + (fx.fader >= 0 && Math.abs(fx.fader - fx.level) > 0.03 ? " · 推子在 " + Math.round(fx.fader * 100) + "%，推动时逐渐对齐" : "")
                     }
                 }
             }
@@ -317,7 +317,7 @@ Item {
         PopAction {
             text: "节奏全部恢复不跟拍"
             enabled: Object.keys(Live.rhythm).some(k => Live.rhythm[k] > 0)
-            onTriggered: Live.rhythm = {}
+            onTriggered: Live.resetRhythms()
         }
         PopAction {
             text: !Midi.enabled ? "使用 nanoKONTROL2" : Midi.connected ? "停用 nanoKONTROL2（已连接）" : "停用 nanoKONTROL2（未连接）"

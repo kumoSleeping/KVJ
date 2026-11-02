@@ -384,6 +384,7 @@ QVariantMap Beats::at(const QString &path, double seconds) const
             if (bpm <= 0)
                 bpm = perSecond * 60;
             out.insert(QStringLiteral("beat"), mk + (seconds - mt) * perSecond);
+            out.insert(QStringLiteral("beatsPerSecond"), perSecond);
             out.insert(QStringLiteral("bar"), grid->bar);
         }
     }

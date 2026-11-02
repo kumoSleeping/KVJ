@@ -35,6 +35,51 @@ Item {
         onTriggered: stage.now = Date.now()
     }
 
+    // The effects' shader drawn once, out of sight (two nearly transparent
+    // pixels under the picture), for a moment after the stage first shows.
+    // The first time after an update the system compiles it, which froze the
+    // picture for about 0.1 s (M1, measured) the first time an effect came on;
+    // on Windows it is compiled at every start. Here that happens while the
+    // window opens instead.
+    property bool warmed: false
+    readonly property bool warming: shown && !warmed && GraphicsInfo.api !== GraphicsInfo.Software
+    Timer {
+        running: stage.warming
+        interval: 1500
+        onTriggered: stage.warmed = true
+    }
+    Loader {
+        active: stage.warming
+        width: 2
+        height: 2
+        sourceComponent: Item {
+            Rectangle {
+                id: ink
+                width: 2
+                height: 2
+                color: "black"
+            }
+            ShaderEffectSource {
+                id: inkSource
+                sourceItem: ink
+                hideSource: true
+                visible: false
+            }
+            ShaderEffect {
+                anchors.fill: parent
+                opacity: 0.01
+                fragmentShader: "qrc:/qt/qml/KVJ/shaders/effects.frag.qsb"
+                property var source: inkSource
+                property real time: 0
+                property real aspect: 1
+                property real kind: 99
+                property real amount: 0
+                property real synced: 0
+                property real beat: 0
+                property real shown: 1
+            }
+        }
+    }
     Item {
         id: picture
         anchors.fill: parent

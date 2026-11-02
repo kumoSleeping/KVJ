@@ -457,7 +457,8 @@ ApplicationWindow {
     // "single 0|1" switches 单轨 on or off; "zoom <0.4–1>" sizes the board's view;
     // "dragsim X Y | off" shows the track rows as a drag at (X, Y) would.
     // "cc <number> <value>" acts as the controller's control change would,
-    // "rhythm <key> <0–6>" sets an effect's rhythm, "midi" answers the
+    // "rhythm <key> <0–7>" sets an effect's rhythm, "knobsweep" turns strip
+    // 1's knob through every step and answers the largest jump of its period, "midi" answers the
     // controller's and the beat clock's state, "beats <seconds> <path>" where
     // the beats are there (Beats.at), "music <seconds> <path> | off" has the
     // beat clock hear that file as if it played from there.
@@ -515,6 +516,29 @@ ApplicationWindow {
             break
         }
         case "rhythm": Live.setRhythm(w[1], Number(w[2] || 0)); break
+        case "knobsweep": {
+            // Turns strip 1's knob from the foot to the top and back as fast as
+            // it can go, and answers the largest jump its effect's period
+            // made at any step (0: none).
+            const key = Live.stripKey(0)
+            let worst = 0
+            const values = []
+            for (let v = 0; v <= 127; v += 3) values.push(v)
+            for (let v = 127; v >= 0; v -= 5) values.push(v)
+            for (const v of values) {
+                const t = Date.now()
+                const g = Live.grids[key]
+                const before = g ? Live.gridAt(g, t) : null
+                Live.turnKnob(0, v)
+                const h = Live.grids[key]
+                if (before !== null && h) {
+                    let jump = Live.gridAt(h, t) - before
+                    jump -= Math.round(jump)
+                    worst = Math.max(worst, Math.abs(jump))
+                }
+            }
+            return JSON.stringify({ key: key, steps: values.length, worstJump: Math.round(worst * 1e6) / 1e6, rhythm: Live.rhythmOf(key) })
+        }
         case "beats": return JSON.stringify(Beats.at(w.slice(2).join(" "), Number(w[1])))
         case "music": app.devMusic = w[1] === "off" ? null : { at: Number(w[1]), path: w.slice(2).join(" "), since: Date.now() }; break
         case "midi":
@@ -523,7 +547,7 @@ ApplicationWindow {
                 const mine = Live.beatAt(Date.now())
                 let e = heard.beat - mine
                 e -= Math.round(e)
-                return JSON.stringify({ bpm: Live.bpm, rate: Live.beatRate * 60, locked: Live.beatLocked, error: Math.round(e * 1000) / 1000 })
+                return JSON.stringify({ bpm: Live.bpm, rate: Live.beatRate * 60, locked: Live.beatLocked, synced: Live.effectsSynced, error: Math.round(e * 1000) / 1000 })
             }
             return JSON.stringify({ enabled: Midi.enabled, devices: Midi.devices, daw: Midi.dawMode, page: Live.midiPage,
                                     faders: Live.faders, knobs: Live.knobs, level: Live.level, rhythm: Live.rhythm,
