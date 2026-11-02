@@ -2,7 +2,8 @@
 //! one song gives way to the next in a long mix. KDJ's V4 analysis (`v4`) finds
 //! the beats and fits constant-tempo regions to them; on a mix that is many
 //! more regions than songs (fills and transitions make 3–8 s pieces with a
-//! wrong tempo), so `sections` tidies them into what a VJ cuts by. Cached on
+//! wrong tempo), so `sections` tidies them into what a VJ cuts by. The beats
+//! themselves are kept as well, for effects that move on the beat. Cached on
 //! disk like the waveform.
 mod dsp;
 mod v4;
@@ -16,7 +17,7 @@ use std::{
 };
 
 /// Bumped whenever the analysis or the tidying changes what a file gives.
-const REVISION: u32 = 1;
+const REVISION: u32 = 2;
 /// Slower than this V4 has locked onto a bar-long pattern, not the beat.
 const SLOWEST_BPM: f64 = 60.;
 /// No beats for longer than this is a section of its own.
@@ -41,6 +42,13 @@ pub struct Section {
 pub struct Tempo {
     pub duration: f64,
     pub sections: Vec<Section>,
+    /// Every beat V4 heard, in seconds (to the millisecond); none in silence.
+    #[serde(default)]
+    pub beats: Vec<f64>,
+    /// Which of every four beats starts a bar (`beats[bar]`, `beats[bar + 4]`,
+    /// …), when the accents tell; only a guess over a long mix.
+    #[serde(default)]
+    pub bar: Option<usize>,
 }
 
 /// The tempo sections of `path`, from `cache_dir` when made before. `None` when cancelled.
@@ -68,7 +76,9 @@ pub fn analyse(path: &Path, cancelled: &(dyn Fn() -> bool + Sync)) -> Result<Opt
         return Ok(None);
     };
     let regions: Vec<_> = analysis.segments.iter().map(|s| (s.start_seconds, s.end_seconds, s.bpm, s.confidence)).collect();
-    Ok(Some(Tempo { duration: analysis.duration, sections: sections(&regions, analysis.duration) }))
+    let beats = analysis.beats.iter().map(|t| (t * 1000.).round() / 1000.).collect();
+    let bar = analysis.downbeats.first().and_then(|first| analysis.beats.iter().position(|b| b == first)).map(|i| i % 4);
+    Ok(Some(Tempo { duration: analysis.duration, sections: sections(&regions, analysis.duration), beats, bar }))
 }
 
 /// A section being built: the tempo is the mean over the parts that agreed on it.
@@ -266,6 +276,64 @@ mod tests {
         // Short pieces that close are one tempo measured roughly.
         let regions = [(0., 12., 178.2, 0.4), (12., 24., 180.1, 0.4)];
         assert_eq!(sections(&regions, 24.).len(), 1);
+    }
+
+    #[test]
+    fn the_beats_are_kept() {
+        // 30 s of kicks at 125 BPM.
+        const SR: u32 = 22050;
+        let path = std::env::temp_dir().join(format!("kvj-tempo-beats-{}.wav", std::process::id()));
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(path.clone());
+        let samples = SR * 30;
+        let bytes = samples * 2;
+        let mut wav = Vec::with_capacity(bytes as usize + 44);
+        wav.extend(b"RIFF");
+        wav.extend((bytes + 36).to_le_bytes());
+        wav.extend(b"WAVEfmt ");
+        wav.extend(16u32.to_le_bytes());
+        wav.extend(1u16.to_le_bytes());
+        wav.extend(1u16.to_le_bytes());
+        wav.extend(SR.to_le_bytes());
+        wav.extend((SR * 2).to_le_bytes());
+        wav.extend(2u16.to_le_bytes());
+        wav.extend(16u16.to_le_bytes());
+        wav.extend(b"data");
+        wav.extend(bytes.to_le_bytes());
+        let period = 60. / 125.;
+        let start = 0.2;
+        for n in 0..samples {
+            let t = n as f64 / SR as f64;
+            let beat = ((t - start) / period).floor();
+            let age = t - start - beat * period;
+            // A kick with a body, as the bass of a real track has.
+            let v = if t >= start && age < 0.2 {
+                (-age * 15.).exp() * (std::f64::consts::TAU * 60. * age).sin() * 0.5
+            } else {
+                0.
+            };
+            wav.extend(((v * 32767.) as i16).to_le_bytes());
+        }
+        std::fs::write(&path, wav).unwrap();
+        let tempo = analyse(&path, &|| false).unwrap().unwrap();
+        assert!(tempo.beats.len() > 50, "{}", tempo.beats.len());
+        let near = tempo.beats.iter().filter(|&&b| {
+            let phase = (b - start).rem_euclid(period);
+            phase.min(period - phase) < 0.03
+        });
+        assert!(near.count() as f64 > tempo.beats.len() as f64 * 0.9);
+        assert!(tempo.beats.iter().all(|b| ((b * 1000.).round() - b * 1000.).abs() < 1e-6));
+        // Which of every four starts a bar, when the accents tell (equal
+        // kicks do not).
+        assert!(tempo.bar.is_none_or(|bar| bar < 4));
+        // An older cache without them still reads.
+        let old: Tempo = serde_json::from_str(r#"{"duration":1.0,"sections":[]}"#).unwrap();
+        assert!(old.beats.is_empty() && old.bar.is_none());
     }
 
     #[test]

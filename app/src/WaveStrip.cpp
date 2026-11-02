@@ -100,6 +100,18 @@ QVariantList WaveCache::tempo(const QString &path)
     return {};
 }
 
+std::shared_ptr<const WaveCache::Grid> WaveCache::grid(const QString &path)
+{
+    QMutexLocker lock(&m_mutex);
+    if (const auto found = m_grids.constFind(path); found != m_grids.constEnd())
+        return found.value();
+    if (!path.isEmpty() && !m_tempi.contains(path) && !m_tempoFailed.contains(path) && !m_tempoQueue.contains(path)) {
+        m_tempoQueue.append(path);
+        m_wake.wakeAll();
+    }
+    return {};
+}
+
 bool WaveCache::findingTempo(const QString &path)
 {
     QMutexLocker lock(&m_mutex);
@@ -130,17 +142,34 @@ void WaveCache::run()
                 kvj_string_free(json);
                 return;
             }
-            const QVariantList sections =
-                json ? QJsonDocument::fromJson(json).object().value(QStringLiteral("sections")).toArray().toVariantList()
-                     : QVariantList();
+            const QJsonObject tempo = json ? QJsonDocument::fromJson(json).object() : QJsonObject();
             kvj_string_free(json);
+            const QVariantList sections = tempo.value(QStringLiteral("sections")).toArray().toVariantList();
+            auto grid = std::make_shared<Grid>();
+            for (const QVariant &v : sections) {
+                const QVariantMap section = v.toMap();
+                grid->sections.push_back({section.value(QStringLiteral("start")).toDouble(),
+                                          section.value(QStringLiteral("end")).toDouble(),
+                                          section.value(QStringLiteral("bpm")).toDouble()});
+            }
+            const QJsonArray beats = tempo.value(QStringLiteral("beats")).toArray();
+            grid->beats.reserve(size_t(beats.size()));
+            for (const QJsonValue &beat : beats) {
+                // Strictly in order, for the search in Beats::at.
+                if (grid->beats.empty() || beat.toDouble() > grid->beats.back())
+                    grid->beats.push_back(beat.toDouble());
+            }
+            const QJsonValue bar = tempo.value(QStringLiteral("bar"));
+            grid->bar = bar.isDouble() ? int(bar.toDouble()) % 4 : -1;
             {
                 QMutexLocker lock(&m_mutex);
                 m_tempoQueue.removeAll(path);
-                if (sections.isEmpty())
+                if (sections.isEmpty()) {
                     m_tempoFailed.insert(path);
-                else
+                } else {
                     m_tempi.insert(path, sections);
+                    m_grids.insert(path, grid);
+                }
             }
             emit ready(path);
             continue;
@@ -297,4 +326,68 @@ void WaveStrip::paint(QPainter *painter)
         painter->drawRect(QRectF(p, mid - half, 1, half * 2));
     }
     painter->restore();
+}
+
+Beats::Beats(QObject *parent)
+    : QObject(parent)
+{
+}
+
+QVariantMap Beats::at(const QString &path, double seconds) const
+{
+    const auto grid = WaveCache::instance()->grid(path);
+    if (!grid)
+        return {};
+    double bpm = 0;
+    for (const auto &section : grid->sections) {
+        if (seconds >= section.start && seconds < section.end) {
+            bpm = section.bpm;
+            break;
+        }
+    }
+    QVariantMap out;
+    const auto &beats = grid->beats;
+    const auto next = std::upper_bound(beats.begin(), beats.end(), seconds);
+    if (next != beats.begin() && next != beats.end()) {
+        const int i = int(next - beats.begin()) - 1;
+        // The beats must fit the section's tempo (V4 may hear only every other
+        // one in a half-time stretch the sections read at the song's tempo);
+        // without a tempo, a plausible one of their own.
+        const double expected = bpm > 0 ? 60 / bpm : beats[i + 1] - beats[i];
+        const auto fits = [&](int k) {
+            const double gap = beats[k + 1] - beats[k];
+            return std::abs(gap / expected - 1) < 0.3 && gap > 0.2 && gap < 1.5;
+        };
+        if (fits(i)) {
+            // A straight line through up to four beats either side that keep
+            // the tempo: each beat as heard is some milliseconds early or late,
+            // and the clock steering by them should not wobble with that.
+            int lo = i, hi = i + 1;
+            while (lo > 0 && i - lo < 3 && fits(lo - 1))
+                --lo;
+            while (hi + 1 < int(beats.size()) && hi - i < 4 && fits(hi))
+                ++hi;
+            double mt = 0, mk = 0;
+            for (int k = lo; k <= hi; ++k) {
+                mt += beats[k];
+                mk += k;
+            }
+            const int n = hi - lo + 1;
+            mt /= n;
+            mk /= n;
+            double tt = 0, tk = 0;
+            for (int k = lo; k <= hi; ++k) {
+                tt += (beats[k] - mt) * (beats[k] - mt);
+                tk += (beats[k] - mt) * (k - mk);
+            }
+            const double perSecond = tk / tt;
+            if (bpm <= 0)
+                bpm = perSecond * 60;
+            out.insert(QStringLiteral("beat"), mk + (seconds - mt) * perSecond);
+            out.insert(QStringLiteral("bar"), grid->bar);
+        }
+    }
+    if (bpm > 0)
+        out.insert(QStringLiteral("bpm"), bpm);
+    return out;
 }

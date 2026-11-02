@@ -153,6 +153,7 @@ qt_add_qml_module(KVJ
         src/CameraSurface.h src/CameraSurface.cpp
         src/Cameras.h src/Cameras.cpp
         src/Motion.h src/Motion.cpp
+        src/Midi.h src/Midi.cpp
         src/FilmStrip.h src/FilmStrip.cpp
         src/WaveStrip.h src/WaveStrip.cpp
         src/FrameNode.h
@@ -200,13 +201,14 @@ elseif(WIN32)
 endif()
 
 if(APPLE)
-    target_sources(KVJ PRIVATE src/platform/mac/AvfDecoder.mm src/platform/mac/TitleBar.mm src/platform/mac/Awake.mm src/platform/mac/Ending.mm)
+    target_sources(KVJ PRIVATE src/platform/mac/AvfDecoder.mm src/platform/mac/TitleBar.mm src/platform/mac/Awake.mm src/platform/mac/Ending.mm src/platform/mac/MidiPort.mm)
     # App icon (design/icon/make.py), copied into Contents/Resources.
     target_sources(KVJ PRIVATE resources/icon/KVJ.icns)
     set_source_files_properties(resources/icon/KVJ.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    set_source_files_properties(src/platform/mac/AvfDecoder.mm src/platform/mac/TitleBar.mm src/platform/mac/Awake.mm src/platform/mac/Ending.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    set_source_files_properties(src/platform/mac/AvfDecoder.mm src/platform/mac/TitleBar.mm src/platform/mac/Awake.mm src/platform/mac/Ending.mm src/platform/mac/MidiPort.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_link_libraries(KVJ PRIVATE
-        "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework Foundation" "-framework AppKit")
+        "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework Foundation" "-framework AppKit"
+        "-framework CoreMIDI")
     set_target_properties(KVJ PROPERTIES
         OUTPUT_NAME KVJ
         MACOSX_BUNDLE_GUI_IDENTIFIER com.kumo.kvj
@@ -217,9 +219,9 @@ if(APPLE)
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in)
 elseif(WIN32)
     # KVJ.rc carries the app icon as IDI_ICON1: Explorer shows it, and Qt uses it for windows.
-    target_sources(KVJ PRIVATE src/platform/win/MfDecoder.cpp src/platform/win/TitleBar.cpp src/platform/win/Awake.cpp src/platform/win/Ending.cpp resources/KVJ.rc)
+    target_sources(KVJ PRIVATE src/platform/win/MfDecoder.cpp src/platform/win/TitleBar.cpp src/platform/win/Awake.cpp src/platform/win/Ending.cpp src/platform/win/MidiPort.cpp resources/KVJ.rc)
     target_compile_definitions(KVJ PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
-    target_link_libraries(KVJ PRIVATE mfplat mfreadwrite mfuuid d3d11 dxgi ole32 propsys)
+    target_link_libraries(KVJ PRIVATE mfplat mfreadwrite mfuuid d3d11 dxgi ole32 propsys winmm)
 endif()
 
 # Headless decoder/player check (not shipped).

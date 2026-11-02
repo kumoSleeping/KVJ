@@ -4,7 +4,9 @@
 // order the desk lists them, each reading the picture the one before made, so
 // the order changes the look (a mosaic of a wall of screens, or a wall of
 // mosaics). All sizes are fractions of the picture, so the small preview looks
-// like the projection.
+// like the projection. With a rhythm (`synced`), a moving effect runs on
+// `beat`, the periods of its rhythm gone by, instead of its own pace, and a
+// still one passes the picture through while `shown` is 0.
 
 layout(location = 0) in vec2 qt_TexCoord0;
 layout(location = 0) out vec4 fragColor;
@@ -16,6 +18,9 @@ layout(std140, binding = 0) uniform buf {
     float aspect; // width / height
     float kind;
     float amount;
+    float synced;
+    float beat;
+    float shown;
 };
 layout(binding = 1) uniform sampler2D source;
 
@@ -36,6 +41,12 @@ void main()
     vec2 uv = qt_TexCoord0;
     int k = int(kind + 0.5);
     vec3 color;
+    bool onBeat = synced > 0.5;
+
+    if (shown < 0.5) {
+        fragColor = vec4(texture(source, uv).rgb, 1.0) * qt_Opacity;
+        return;
+    }
 
     if (k == 0) {
         // Mosaic.
@@ -43,8 +54,9 @@ void main()
         vec2 grid = vec2(across, across / aspect);
         color = texture(source, (floor(uv * grid) + 0.5) / grid).rgb;
     } else if (k == 1) {
-        // RGB split, jittering a little while it is on.
-        color = split(uv, vec2(amount * 0.018 * (1.0 + 0.3 * sin(time * 7.0)), 0.0));
+        // RGB split, jittering a little while it is on (a swing a period on the beat).
+        float swing = onBeat ? sin(beat * 6.2832) : sin(time * 7.0);
+        color = split(uv, vec2(amount * 0.018 * (1.0 + 0.3 * swing), 0.0));
     } else if (k == 2) {
         // A wall of screens: 2×2 from the first step up to 6×6, with thin bezels.
         float n = 1.0 + ceil(amount * 5.0);
@@ -67,15 +79,17 @@ void main()
         }
         color /= 12.0;
     } else if (k == 5) {
-        // Water.
-        uv.x += sin(uv.y * 11.0 + time * 2.2) * 0.018 * amount;
-        uv.y += sin(uv.x * 8.0 + time * 1.7) * 0.012 * amount;
+        // Water (a ripple a period on the beat).
+        float a = onBeat ? beat * 6.2832 : time * 2.2;
+        float b = onBeat ? beat * 6.2832 + 1.3 : time * 1.7;
+        uv.x += sin(uv.y * 11.0 + a) * 0.018 * amount;
+        uv.y += sin(uv.x * 8.0 + b) * 0.012 * amount;
         color = texture(source, uv).rgb;
     } else if (k == 6) {
-        // Bands torn sideways, a new tear about twelve times a second; torn
-        // bands split their colours.
+        // Bands torn sideways, a new tear about twelve times a second (a period
+        // on the beat); torn bands split their colours.
         float tear = 0.0;
-        float slot = floor(time * 12.0);
+        float slot = onBeat ? floor(beat) : floor(time * 12.0);
         float band = floor(uv.y * 22.0);
         if (hash(vec2(band, slot)) < amount * 0.55) {
             tear = hash(vec2(band, slot + 7.0)) - 0.5;
@@ -83,10 +97,12 @@ void main()
         }
         color = split(uv, vec2(abs(tear) * 0.03 * amount, 0.0));
     } else if (k == 7) {
-        // Scan lines with a rolling bar and a little noise.
+        // Scan lines with a rolling bar (once down the picture a period on the
+        // beat) and a little noise.
         color = texture(source, uv).rgb;
         float line = 0.5 + 0.5 * sin(uv.y * 240.0 * 6.2832);
-        float roll = smoothstep(0.0, 0.08, fract(uv.y - time * 0.12)) * (1.0 - smoothstep(0.08, 0.18, fract(uv.y - time * 0.12)));
+        float at = fract(uv.y - (onBeat ? fract(beat) : time * 0.12));
+        float roll = smoothstep(0.0, 0.08, at) * (1.0 - smoothstep(0.08, 0.18, at));
         color *= 1.0 - amount * 0.55 * line;
         color += amount * (0.07 * roll + 0.06 * (hash(uv * 512.0 + fract(time) * 37.0) - 0.5));
     } else if (k == 8) {

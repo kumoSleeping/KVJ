@@ -81,6 +81,11 @@ Item {
                 property real aspect: stage.width / Math.max(1, stage.height)
                 property real kind: Live.kind(pass.modelData)
                 property real amount: Live.amount(pass.modelData)
+                // Its rhythm (Live.rhythms): a moving effect goes through its
+                // motion once a period, a still one shows for half of each.
+                property real synced: Live.rhythmOf(pass.modelData) > 0 ? 1 : 0
+                property real beat: synced ? Live.periodsAt(pass.modelData, stage.now) : 0
+                property real shown: synced ? (Live.shownAt(pass.modelData, stage.now) ? 1 : 0) : 1
             }
             ShaderEffectSource {
                 id: output

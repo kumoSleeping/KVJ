@@ -236,7 +236,30 @@ whose rows show their key; the effects are the column at the window's right edge
 5 % weaker or stronger. An effect tuned that way and then switched off keeps that
 strength as its own (a dot on its key); 重置 gives every effect back the strength
 it came with. The effects panel's own 快捷键 turns these keys off. Effects touch
-only the video, never the words or stickers. Danmaku keeps out of each other's way
+only the video, never the words or stickers.
+
+A Korg nanoKONTROL2 works the effects too (macOS and Windows; only devices of
+that name are opened, so a DJ controller on the same computer never moves the
+picture). It must be in CC mode: unplug it, hold SET MARKER and CYCLE, plug it
+back in (it keeps that mode). Its eight strips work the first eight effects of
+the rail, marked by a line at their left; TRACK ▶ moves them to the ninth on,
+TRACK ◀ back. A fader sets the strength (at the foot the effect is off). A knob
+sets the rhythm, in seven steps from 不跟拍 through 2 小节, 1 小节, 2 拍, 1 拍
+and 1/2 拍 to 1/4 拍: a moving effect (RGB split, wave, glitch, scanlines) goes
+through its motion once a period, a still one comes on at the start of each
+period and goes off at its middle; a dot at the key's lower right blinks with
+it. A fader or knob takes over only once it reaches the value the effect has
+(pick-up): after a number key, the mouse, a reorder or the other page an amber
+tick at the key's foot shows where the fader stands until it is pushed past
+the effect's strength. S switches the strip's effect as its number key does, M
+held flips it until let go, R puts its rhythm back to 不跟拍; nothing on the
+controller plays, follows or projects. The beat comes from the beats KVJ finds
+in each entry's sound (the same analysis as the timeline's BPM lane, cached):
+while following hears the music, from where it hears it; else from where the
+main player plays; else the clock runs on at the last tempo. Unplugging the
+controller leaves every effect as it is; the ⋯ menu turns the controller off
+(kept between runs) and puts every rhythm back to 不跟拍. The ⋯ key shows an
+amber dot while the controller is in a DAW mode. Danmaku keeps out of each other's way
 as on Bilibili: every scrolling line crosses in the same seven seconds (a long
 one moves faster) on the topmost lane of the upper three quarters where the line
 before it has come fully in and will be gone before this one catches it; top and

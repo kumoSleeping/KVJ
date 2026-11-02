@@ -11,7 +11,12 @@ import KVJ
 // best at, or off, and dragged on up or down switches the others it passes
 // the same way; dragged sideways (or the wheel) it sets the strength; a
 // double-click brings back the best strength. The ⋯ key at the foot holds
-// 全关, the order (dragging the keys while it is on) and the kept strengths.
+// 全关, the order (dragging the keys while it is on), the kept strengths and
+// the controller. With a nanoKONTROL2 plugged in (Live: the controller), the
+// eight keys its strips work have a line at their left; a fader that has not
+// taken over yet shows where it stands as an amber tick at the foot. An
+// effect keeping a rhythm has a dot at its lower right, lit for the first
+// half of each period.
 Item {
     id: rail
 
@@ -30,6 +35,13 @@ Item {
     onMaxScrollChanged: scroll = Math.min(scroll, maxScroll)
     function scrollBy(dy) {
         scroll = Math.max(0, Math.min(maxScroll, scroll - dy))
+    }
+
+    // The clock the rhythm dots blink on, running only while one does.
+    property real now: Date.now()
+    FrameAnimation {
+        running: Live.effectsSynced && rail.visible
+        onTriggered: rail.now = Date.now()
     }
 
     implicitWidth: 40
@@ -61,6 +73,10 @@ Item {
                     readonly property real level: Live.level[key] || 0
                     readonly property bool on: level > 0
                     readonly property bool focused: Live.focused === key
+                    // The controller's strip working it, or -1.
+                    readonly property int strip: Midi.connected && index >= Live.midiPage * 8 && index < Live.midiPage * 8 + 8 ? index - Live.midiPage * 8 : -1
+                    readonly property real fader: strip >= 0 ? Live.faders[strip] : -1
+                    readonly property int rhythm: Live.rhythmOf(key)
                     width: rail.key
                     height: rail.key
                     radius: Theme.radius - 1
@@ -105,6 +121,38 @@ Item {
                         font.features: { "tnum": 1 }
                         font.weight: fx.focused ? Font.Bold : Font.Normal
                         color: fx.level > 0.15 ? Theme.faint : Theme.muted
+                    }
+                    // Worked by a strip of the controller.
+                    Rectangle {
+                        visible: fx.strip >= 0
+                        x: 0
+                        y: 8
+                        width: 2
+                        height: parent.height - 16
+                        radius: 1
+                        color: fx.level > 0.02 ? Theme.bg : Theme.muted
+                    }
+                    // Its fader, not yet taken over: where it stands.
+                    Rectangle {
+                        visible: fx.fader >= 0 && Math.abs(fx.fader - fx.level) > 0.03 && !rail.editing
+                        x: Math.round(fx.fader * (parent.width - width))
+                        y: parent.height - height
+                        width: 3
+                        height: 5
+                        radius: 1
+                        color: Theme.warn
+                    }
+                    // Its rhythm: lit for the first half of each period while on.
+                    Rectangle {
+                        visible: fx.rhythm > 0
+                        readonly property real period: fx.on ? Live.periodsAt(fx.key, rail.now) : 0
+                        x: parent.width - 7
+                        y: parent.height - 7
+                        width: 4
+                        height: 4
+                        radius: 2
+                        color: fx.level > 0.85 ? Theme.bg : Theme.text
+                        opacity: fx.on && period - Math.floor(period) < 0.5 ? 1 : 0.3
                     }
                     // A strength of its own was kept (see Live.tune).
                     Rectangle {
@@ -216,6 +264,8 @@ Item {
                         ToolTip.visible: (containsMouse && !rail.editing && mode !== "sweep") || mode === "tune"
                         ToolTip.delay: mode === "tune" ? 0 : 500
                         ToolTip.text: fx.name + " · " + (fx.on ? Math.round(fx.level * 100) + "%" : "关")
+                                      + (fx.rhythm > 0 ? " · " + Live.rhythms[fx.rhythm].name + "（" + Math.round(Live.bpm) + " BPM）" : "")
+                                      + (fx.fader >= 0 && Math.abs(fx.fader - fx.level) > 0.03 ? " · 推子在 " + Math.round(fx.fader * 100) + "%，推过当前值接管" : "")
                     }
                 }
             }
@@ -231,11 +281,14 @@ Item {
         implicitHeight: 24
         iconName: rail.editing ? "check" : "ellipsis"
         active: rail.editing || fxMenu.visible
-        tip: rail.editing ? "完成排序" : rail.software ? "这台电脑以软件方式绘制，效果不会出现" : "效果：全关、排序、强度"
+        tip: rail.editing ? "完成排序" : rail.software ? "这台电脑以软件方式绘制，效果不会出现"
+           : Midi.dawMode ? "nanoKONTROL2 在 DAW 模式：拔下，按住 SET MARKER 和 CYCLE 再插上，换成 CC 模式"
+           : "效果：全关、排序、强度、控制器"
         onClicked: rail.editing ? rail.editing = false : fxMenu.popup(menuKey, -fxMenu.implicitWidth - 4, menuKey.height - fxMenu.implicitHeight)
-        // This computer draws in software: no effects show.
+        // This computer draws in software (no effects show), or the
+        // controller is not in CC mode.
         Rectangle {
-            visible: rail.software
+            visible: rail.software || Midi.dawMode
             x: parent.width - 8
             y: 2
             width: 6
@@ -260,6 +313,15 @@ Item {
             text: "强度恢复默认推荐"
             enabled: Live.customized
             onTriggered: Live.resetPresets()
+        }
+        PopAction {
+            text: "节奏全部恢复不跟拍"
+            enabled: Object.keys(Live.rhythm).some(k => Live.rhythm[k] > 0)
+            onTriggered: Live.rhythm = {}
+        }
+        PopAction {
+            text: !Midi.enabled ? "使用 nanoKONTROL2" : Midi.connected ? "停用 nanoKONTROL2（已连接）" : "停用 nanoKONTROL2（未连接）"
+            onTriggered: Live.setMidi(!Midi.enabled)
         }
     }
 
