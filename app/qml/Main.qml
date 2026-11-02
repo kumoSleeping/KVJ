@@ -1463,14 +1463,23 @@ ApplicationWindow {
         app.oneLibrary()
     }
 
-    // Closing the window (its key, Cmd+W, Alt+F4, quitting) during a show is
-    // asked first: it would stop following and take the picture away.
+    // Closing the window (its key, Cmd+W, Alt+F4) or quitting (Cmd+Q, the
+    // Dock's 退出) is always asked first: a key hit by mistake must not end a
+    // show, and during one it would stop following and take the picture away.
+    // Not asked: an update restarting KVJ, or the computer logging out,
+    // restarting or shutting down (Engine.quitUnasked), which a question
+    // would hold up or cancel.
     property bool quitting: false
+    // How the window was last shown (maximised, full screen…), to bring it back
+    // as it was when minimised.
+    property int shownAs: Window.Windowed
+    onVisibilityChanged: if (visibility !== Window.Minimized && visibility !== Window.Hidden) shownAs = visibility
     MessageDialog {
         id: quitDialog
         title: "退出 KVJ？"
         text: projection.visible ? "投屏正在进行，退出会收起投屏画面" + (app.running ? "并停止跟随。" : "。")
-                                 : "跟随正在进行，退出会停止它。"
+            : app.running ? "跟随正在进行，退出会停止它。"
+            : "确定要退出 KVJ 吗？"
         buttons: MessageDialog.Ok | MessageDialog.Cancel
         onAccepted: {
             app.quitting = true
@@ -1491,8 +1500,13 @@ ApplicationWindow {
         function onCloseAsked() { hideDialog.open() }
     }
     onClosing: close => {
-        if (!app.quitting && app.visible && (app.running || projection.visible)) {
+        if (!app.quitting && app.visible && !Engine.quitUnasked()) {
             close.accepted = false
+            // The question is seen, the window minimised or behind others too.
+            if (app.visibility === Window.Minimized)
+                app.visibility = app.shownAs
+            app.raise()
+            app.requestActivate()
             quitDialog.open()
             return
         }

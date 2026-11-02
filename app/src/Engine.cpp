@@ -1,6 +1,7 @@
 #include "Engine.h"
 
 #include "Awake.h"
+#include "Ending.h"
 #include "kvj.h"
 
 #include <QCoreApplication>
@@ -304,8 +305,14 @@ void Engine::installUpdate()
             return;
         }
         // The updater waits for this process to end before it touches anything.
+        m_updateQuit = true;
         QCoreApplication::quit();
     });
+}
+
+bool Engine::quitUnasked() const
+{
+    return m_updateQuit || sessionEnding();
 }
 
 void Engine::settleUpdate()

@@ -1,3 +1,4 @@
+#include "Ending.h"
 #include "Engine.h"
 #include "TitleBar.h"
 
@@ -213,6 +214,7 @@ int main(int argc, char *argv[])
     QGuiApplication::setApplicationName(QStringLiteral("KVJ"));
     QGuiApplication::setApplicationDisplayName(QStringLiteral("KVJ"));
     QQuickStyle::setStyle(QStringLiteral("Basic"));
+    watchSessionEnd();
     keepQtLogs();
 
     QQmlApplicationEngine engine;
@@ -245,7 +247,9 @@ int main(int argc, char *argv[])
         QTimer::singleShot(2500, &app, [snapshot] {
             if (QQuickWindow *window = shownWindow())
                 window->grabWindow().save(snapshot);
-            QCoreApplication::quit();
+            // exit, not quit: quitting closes the windows, and closing the
+            // main window asks first (Main.qml).
+            QCoreApplication::exit(0);
         });
     }
     // Development aid: KVJ_DEV_DIR=<dir> lets a shell on this computer see the

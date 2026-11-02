@@ -88,6 +88,9 @@ public:
     // show is interrupted unasked.
     Q_INVOKABLE void installUpdate();
     Q_INVOKABLE void dismissUpdateNotice();
+    // KVJ quits without asking first: for an update (installUpdate), or the
+    // computer logging out, restarting or shutting down (Ending.h).
+    Q_INVOKABLE bool quitUnasked() const;
     // Called once the window is up: an updater waiting for this version to
     // start is told it did, and updateNotice says what the last update did.
     void settleUpdate();
@@ -201,6 +204,7 @@ private:
     int m_busy = 0;
     bool m_importing = false;
     bool m_keepAwake = false;
+    bool m_updateQuit = false;
     qint64 m_logCursor = 0;
     QString m_session;
     QTimer m_poll;
