@@ -33,7 +33,11 @@ public:
         : m_table(table)
     {
         m_thread = std::thread([this] {
-            run();
+            // Whatever goes wrong here ends only the controller.
+            try {
+                run();
+            } catch (...) {
+            }
             m_exited.set_value();
         });
     }

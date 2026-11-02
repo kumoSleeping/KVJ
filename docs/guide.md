@@ -238,9 +238,11 @@ strength as its own (a dot on its key); 重置 gives every effect back the stren
 it came with. The effects panel's own 快捷键 turns these keys off. Effects touch
 only the video, never the words or stickers.
 
-A Korg nanoKONTROL2 works the effects too (macOS and Windows; only devices of
-that name are opened, so a DJ controller on the same computer never moves the
-picture). It must be in CC mode: unplug it, hold SET MARKER and CYCLE, plug it
+A Korg nanoKONTROL2 works the effects too (only devices of that name are
+opened, so a DJ controller on the same computer never moves the picture). It
+is on by default on macOS; on Windows turn it on in the effects' ⋯ menu (使用
+nanoKONTROL2), since there pulling a MIDI device out may bring an app using
+WinMM down under Windows 11's new MIDI service. It must be in CC mode: unplug it, hold SET MARKER and CYCLE, plug it
 back in (it keeps that mode). Its eight strips work the first eight effects of
 the rail, marked by a line at their left; TRACK ▶ moves them to the ninth on,
 TRACK ◀ back. A fader sets the strength (at the foot the effect is off). A knob
@@ -259,7 +261,12 @@ while following hears the music, from where it hears it; else from where the
 main player plays; else the clock runs on at the last tempo. Unplugging the
 controller leaves every effect as it is; the ⋯ menu turns the controller off
 (kept between runs) and puts every rhythm back to 不跟拍. The ⋯ key shows an
-amber dot while the controller is in a DAW mode. Danmaku keeps out of each other's way
+amber dot while the controller is in a DAW mode.
+
+Planned, later: any MIDI controller, not only the nanoKONTROL2, with bindings
+of one's own (MIDI learn, as in djay: press 学习, touch a control on the
+screen, move a fader or press a key). Until then the nanoKONTROL2's factory
+CC numbers are the only mapping. Danmaku keeps out of each other's way
 as on Bilibili: every scrolling line crosses in the same seven seconds (a long
 one moves faster) on the topmost lane of the upper three quarters where the line
 before it has come fully in and will be gone before this one catches it; top and

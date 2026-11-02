@@ -31,8 +31,14 @@ void Midi::setEnabled(bool on)
     if (m_enabled == on)
         return;
     m_enabled = on;
-    if (on && !m_port)
-        m_port = openMidiPort(m_table);
+    if (on && !m_port) {
+        // A thread that cannot be made leaves only the controller unused.
+        try {
+            m_port = openMidiPort(m_table);
+        } catch (...) {
+            m_port = nullptr;
+        }
+    }
     if (m_port)
         m_port->setEnabled(on);
     if (on) {

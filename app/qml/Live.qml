@@ -633,7 +633,9 @@ QtObject {
         category: "effects"
         property string order: ""
         property string presets: "{}"
-        property bool midi: true
+        // Off on Windows until turned on: there WinMM, under Windows 11's new
+        // MIDI service, may bring the app down when a device is pulled out.
+        property bool midi: Qt.platform.os !== "windows"
     }
 
     function kind(key) {
