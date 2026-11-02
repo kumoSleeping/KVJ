@@ -260,7 +260,7 @@ Item {
                             id: thumb
                             width: parent.width
                             height: Math.round(width * 9 / 16)
-                            radius: Theme.radius
+                            // Square, as the picture in it is drawn.
                             color: srcTile.usable ? "black" : Theme.inset
                             clip: true
                             opacity: lib.composer.layerCarried === srcTile.sid ? 0.4 : 1
@@ -309,17 +309,23 @@ Item {
                                 }
                             }
                         }
-                        // On the picture: an ink edge (thicker while chosen there).
+                        // On the picture: an ink edge on the tile's own edge, no
+                        // frame around it (thicker while chosen there), and a
+                        // white line inside it, seen on a dark picture too.
                         Rectangle {
                             visible: srcTile.shown
-                            x: -2
-                            y: -2
-                            width: thumb.width + 4
-                            height: thumb.height + 4
-                            radius: Theme.radius + 2
+                            width: thumb.width
+                            height: thumb.height
                             color: "transparent"
                             border.width: srcTile.chosen ? 2 : 1.5
                             border.color: Theme.text
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: parent.border.width
+                                color: "transparent"
+                                border.width: 1
+                                border.color: "white"
+                            }
                         }
                         Text {
                             y: thumb.height + 3
@@ -391,7 +397,6 @@ Item {
                             id: keptBox
                             width: parent.width
                             height: Math.round(width * 9 / 16)
-                            radius: Theme.radius
                             color: keptArea.containsMouse ? Theme.hover : Theme.inset
                             opacity: lib.composer.carrying && lib.composer.carrying.id === kept.modelData.id ? 0.4 : 1
                             Image {
