@@ -539,7 +539,14 @@ ApplicationWindow {
             }
             return JSON.stringify({ key: key, steps: values.length, worstJump: Math.round(worst * 1e6) / 1e6, rhythm: Live.rhythmOf(key) })
         }
-        case "beats": return JSON.stringify(Beats.at(w.slice(2).join(" "), Number(w[1])))
+        case "beats": {
+            // Only the timeline asks for a file's beats: ask as one of its strips would.
+            const path = w.slice(2).join(" ")
+            if (!app.devStrips[path])
+                app.devStrips[path] = Qt.createQmlObject("import KVJ; WaveStrip {}", app)
+            app.devStrips[path].source = path
+            return JSON.stringify(Beats.at(path, Number(w[1])))
+        }
         case "music": app.devMusic = w[1] === "off" ? null : { at: Number(w[1]), path: w.slice(2).join(" "), since: Date.now() }; break
         case "midi":
             if (app.devMusic) {
@@ -552,7 +559,8 @@ ApplicationWindow {
             return JSON.stringify({ enabled: Midi.enabled, devices: Midi.devices, daw: Midi.dawMode, page: Live.midiPage,
                                     faders: Live.faders, knobs: Live.knobs, level: Live.level, rhythm: Live.rhythm,
                                     bpm: Math.round(Live.bpm * 10) / 10, locked: Live.beatLocked, bar: Live.barAt,
-                                    beat: Math.round(Live.beatAt(Date.now()) * 100) / 100 })
+                                    beat: Math.round(Live.beatAt(Date.now()) * 100) / 100,
+                                    played: Object.keys(Live.rhythm).filter(k => Live.rhythm[k] > 0).map(k => k + " " + Live.rhythmName(k)) })
         default: return "unknown"
         }
         app.tick()
@@ -562,6 +570,7 @@ ApplicationWindow {
     // The last value each "cc" dev command gave; the music "music" plays.
     property var devCc: ({})
     property var devMusic: null
+    property var devStrips: ({})
 
     // Files into the Set shown: into its library (the drawer's keys and
     // drops), or placed on a track (dropped on the timeline; `track` set).
@@ -1141,30 +1150,50 @@ ApplicationWindow {
         enabled: app.effectKeysLive
         onActivated: Live.tune(-0.05)
     }
-    // The beat effects with a rhythm keep (Live.hearBeat): where following
-    // hears the music, else where the main player plays (its picture's own
-    // sound), else none (the clock runs on at the last tempo). Only while an
-    // effect keeps a rhythm.
+    // The beat effects with a rhythm keep (Live.hearBeat): that of the video
+    // the picture shows (画面 1), where its own clock has it (the timing the
+    // projection's picture runs on; while following leads, following has
+    // brought it to the DJ's place), never anything following or acoustic
+    // tracking says. Paused or without a video, none (the clock runs on at
+    // the last tempo). It only reads, ten times a second while an effect
+    // keeps a rhythm; nothing of playing or following waits for it. With 详细
+    // 日志 on, a line every two seconds says what it went by.
     Timer {
         interval: 100
         repeat: true
         running: Live.effectsSynced
-        onTriggered: app.hearBeat()
-    }
-    function hearBeat() {
-        const m = app.match
-        if (app.devMusic) {
-            const d = app.devMusic
-            Live.hearBeat(Beats.at(d.path, d.at + (Date.now() - d.since) / 1000), 1)
-        } else if (m && app.phase === "matched" && m.rate > 0 && m.entry.path) {
-            const at = m.position + (Engine.clockMs() - m.clock_at_ms + strip.offsetMs) / 1000 * m.rate
-            Live.hearBeat(Beats.at(m.entry.path, at), m.rate)
-        } else if (transport.playing && transport.entry && !transport.entry.silent && transport.entry.path) {
-            Live.hearBeat(Beats.at(transport.entry.path, transport.now()), transport.speed)
-        } else {
-            Live.hearBeat(null, 0)
+        property int count: 0
+        onTriggered: {
+            app.hearBeat()
+            if (Engine.detailLog && ++count % 20 === 0)
+                Engine.writeDetail("拍钟 " + JSON.stringify(app.beatStatus))
         }
     }
+    function hearBeat() {
+        if (app.devMusic) {
+            const d = app.devMusic
+            Live.hearBeat(Beats.at(d.path, d.at + (Date.now() - d.since) / 1000), 1, "画面")
+            return
+        }
+        const e = projection.entry
+        if (e && !e.silent && e.path && projection.rate > 0) {
+            const at = projection.position + (Engine.clockMs() - projection.clockAtMs + projection.offsetMs) / 1000 * projection.rate
+            Live.hearBeat(Beats.at(e.path, at), projection.rate, "画面")
+        } else {
+            Live.hearBeat(null, 0, "空跑")
+        }
+    }
+    // The beat clock's state, for status.json (main.cpp) and the detail log.
+    readonly property var beatStatus: ({
+        synced: Live.effectsSynced,
+        source: Live.beatSource,
+        locked: Live.beatLocked,
+        beats: Live.beatHeard,
+        bar: Live.barKnown,
+        bpm: Math.round(Live.bpm * 10) / 10,
+        error: Math.round(Live.beatError * 1000) / 1000,
+        entry: app.shownEntry ? app.shownEntry.title : ""
+    })
     Shortcut {
         sequences: ["."]
         context: Qt.ApplicationShortcut

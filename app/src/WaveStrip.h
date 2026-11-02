@@ -60,7 +60,8 @@ public:
     QVariantList tempo(const QString &path);
     // Being looked for: not known yet, and the file has not turned out to have no audio.
     bool findingTempo(const QString &path);
-    // Its beats once the tempo is known (null meanwhile; asks as tempo() does).
+    // Its beats once the tempo is known, or null. Never asks for them: only
+    // the timeline does, so effects add no work to the thread.
     std::shared_ptr<const Grid> grid(const QString &path);
 
 signals:
@@ -143,8 +144,9 @@ private:
 // (Live.qml): at(path, seconds) gives {bpm, beat, beatsPerSecond, bar}
 // there, `beat` counting the file's beats (3.25: a quarter past its fourth),
 // `beatsPerSecond` how fast they go just there (the section's `bpm` is the
-// song's) and `bar` which of every four starts a bar (-1 unknown). Without beats to go by there (silence, a
-// beat V4 missed, not analysed yet) only {bpm}, or nothing.
+// song's) and `bar` which of every four starts a bar (-1 unknown). Without
+// beats to go by there (silence, a beat V4 missed, a cache from before beats
+// were kept) only {bpm}; not analysed yet, nothing.
 class Beats : public QObject
 {
     Q_OBJECT

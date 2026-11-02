@@ -162,6 +162,7 @@ Window {
         id: stage
         anchors.fill: parent
         entry: root.entry
+        warmUp: false
         // The main track: the player's or following's.
         VideoSurface {
             id: surface

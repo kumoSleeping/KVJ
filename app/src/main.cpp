@@ -287,6 +287,7 @@ int main(int argc, char *argv[])
                     {"fade_ms", window->property("fadeOn").toBool() ? window->property("fadeMs").toInt() : 0},
                     {"visible", window->isVisible()},
                 });
+                status.insert("beat", QJsonObject::fromVariantMap(window->property("beatStatus").toMap()));
                 status.insert("title_bar", QJsonObject{
                     {"height", window->property("titleHeight").toDouble()},
                     {"reaches_content", window->property("titleReachesContent").toBool()},

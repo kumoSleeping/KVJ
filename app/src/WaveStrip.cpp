@@ -103,13 +103,7 @@ QVariantList WaveCache::tempo(const QString &path)
 std::shared_ptr<const WaveCache::Grid> WaveCache::grid(const QString &path)
 {
     QMutexLocker lock(&m_mutex);
-    if (const auto found = m_grids.constFind(path); found != m_grids.constEnd())
-        return found.value();
-    if (!path.isEmpty() && !m_tempi.contains(path) && !m_tempoFailed.contains(path) && !m_tempoQueue.contains(path)) {
-        m_tempoQueue.append(path);
-        m_wake.wakeAll();
-    }
-    return {};
+    return m_grids.value(path);
 }
 
 bool WaveCache::findingTempo(const QString &path)

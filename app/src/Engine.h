@@ -142,6 +142,8 @@ public:
     // Whether 详细日志 is on, and a line for its file only (GUI thread).
     static bool detailing() { return s_detail; }
     static void detail(const QString &line);
+    // The same from QML (nothing is written while 详细日志 is off).
+    Q_INVOKABLE void writeDetail(const QString &line) { detail(line); }
 
 signals:
     void documentChanged();

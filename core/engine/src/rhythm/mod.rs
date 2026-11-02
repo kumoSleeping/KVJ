@@ -18,6 +18,8 @@ use std::{
 
 /// Bumped whenever the analysis or the tidying changes what a file gives.
 const REVISION: u32 = 2;
+/// The first revision still read, its sections being as good.
+const OLDEST_REVISION: u32 = 1;
 /// Slower than this V4 has locked onto a bar-long pattern, not the beat.
 const SLOWEST_BPM: f64 = 60.;
 /// No beats for longer than this is a section of its own.
@@ -53,10 +55,20 @@ pub struct Tempo {
 
 /// The tempo sections of `path`, from `cache_dir` when made before. `None` when cancelled.
 pub fn load(path: &Path, cache_dir: &Path, cancelled: &(dyn Fn() -> bool + Sync)) -> Result<Option<Tempo>> {
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    ("kvj-tempo", REVISION, v4::REVISION, path, super::index::signature(path)?).hash(&mut h);
-    let file = cache_dir.join(format!("{:016x}.kbpm", h.finish()));
+    let signature = super::index::signature(path)?;
+    let cached = |revision: u32| {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        ("kvj-tempo", revision, v4::REVISION, path, &signature).hash(&mut h);
+        cache_dir.join(format!("{:016x}.kbpm", h.finish()))
+    };
+    let file = cached(REVISION);
     if let Some(tempo) = fs::read(&file).ok().and_then(|data| serde_json::from_slice(&data).ok()) {
+        return Ok(Some(tempo));
+    }
+    // One made before the beats were kept is used as it is (sections, no
+    // beats): never analysed again only for the beats, which effects can do
+    // without, so that nothing is taken from playing and following.
+    if let Some(tempo) = fs::read(cached(OLDEST_REVISION)).ok().and_then(|data| serde_json::from_slice(&data).ok()) {
         return Ok(Some(tempo));
     }
     let Some(tempo) = analyse(path, cancelled)? else {
@@ -334,6 +346,24 @@ mod tests {
         // An older cache without them still reads.
         let old: Tempo = serde_json::from_str(r#"{"duration":1.0,"sections":[]}"#).unwrap();
         assert!(old.beats.is_empty() && old.bar.is_none());
+    }
+
+    #[test]
+    fn an_older_cache_is_used_and_nothing_analysed_again() {
+        let dir = std::env::temp_dir().join(format!("kvj-tempo-old-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        // Not audio at all: analysing it would fail.
+        let media = dir.join("a.mp4");
+        fs::write(&media, b"not a film").unwrap();
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        ("kvj-tempo", OLDEST_REVISION, v4::REVISION, media.as_path(), super::super::index::signature(&media).unwrap()).hash(&mut h);
+        let old = r#"{"duration":30.0,"sections":[{"start":0.0,"end":30.0,"bpm":128.0,"confidence":0.5}]}"#;
+        fs::write(dir.join(format!("{:016x}.kbpm", h.finish())), old).unwrap();
+        let tempo = load(&media, &dir, &|| false).unwrap().unwrap();
+        assert_eq!(tempo.sections[0].bpm, Some(128.));
+        assert!(tempo.beats.is_empty());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

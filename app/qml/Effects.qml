@@ -264,10 +264,76 @@ Item {
                         ToolTip.visible: (containsMouse && !rail.editing && mode !== "sweep") || mode === "tune"
                         ToolTip.delay: mode === "tune" ? 0 : 500
                         ToolTip.text: fx.name + " · " + (fx.on ? Math.round(fx.level * 100) + "%" : "关")
-                                      + (fx.rhythm > 0 ? " · " + Live.rhythms[fx.rhythm].name + "（" + Math.round(Live.bpm) + " BPM）" : "")
+                                      + (fx.rhythm > 0 ? " · " + Live.rhythmName(fx.key) + " · " + Math.round(Live.bpm) + " BPM" : "")
                                       + (fx.fader >= 0 && Math.abs(fx.fader - fx.level) > 0.03 ? " · 推子在 " + Math.round(fx.fader * 100) + "%，推动时逐渐对齐" : "")
                     }
                 }
+            }
+        }
+    }
+
+    // What a fader or knob of the controller just set, beside its key for a
+    // moment: "故障 · 45%", or "故障 · 1/4 拍 · 168 BPM" with what the beat goes
+    // by when it is not the picture's own (空跑, 无拍点, 小节未知). On this
+    // window only, never on the projection.
+    property string hintKey: ""
+    property string hintControl: ""
+    Connections {
+        target: Live
+        function onTouched(key, control) {
+            rail.hintKey = key
+            rail.hintControl = control
+            hint.opacity = 1
+            hintFade.restart()
+        }
+    }
+    Timer {
+        id: hintFade
+        interval: 1000
+        onTriggered: hint.opacity = 0
+    }
+    Rectangle {
+        id: hint
+        readonly property int place: Live.order.indexOf(rail.hintKey)
+        visible: opacity > 0 && place >= 0
+        opacity: 0
+        Behavior on opacity { NumberAnimation { duration: 250 } }
+        z: 100
+        x: -width - 6
+        y: Math.max(0, Math.min(rail.height - height, place * (rail.key + rail.gap) - rail.scroll + (rail.key - height) / 2))
+        width: hintText.implicitWidth + 16
+        height: hintText.implicitHeight + 10
+        radius: Theme.radius
+        color: Theme.raised
+        border.width: 1
+        border.color: Theme.line
+        Text {
+            id: hintText
+            anchors.centerIn: parent
+            font.pixelSize: Theme.sizeSm
+            font.features: { "tnum": 1 }
+            color: Theme.text
+            text: {
+                const key = rail.hintKey
+                if (!key)
+                    return ""
+                const name = rail.nameOf(key)
+                if (rail.hintControl === "fader") {
+                    const level = Live.level[key] || 0
+                    return name + " · " + (level > 0 ? Math.round(level * 100) + "%" : "关")
+                }
+                const i = Live.rhythmOf(key)
+                if (!i)
+                    return name + " · " + Live.rhythms[0].name
+                const notes = []
+                if (Live.beatSource === "空跑")
+                    notes.push("空跑")
+                else if (!Live.beatHeard)
+                    notes.push("无拍点")
+                if (Live.rhythms[i].beats >= 2 && Live.beatHeard && !Live.barKnown)
+                    notes.push("小节未知")
+                return name + " · " + Live.rhythmName(key) + " · " + Math.round(Live.bpm) + " BPM"
+                        + (notes.length ? "（" + notes.join("，") + "）" : "")
             }
         }
     }

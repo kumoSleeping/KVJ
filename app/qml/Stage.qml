@@ -41,8 +41,11 @@ Item {
     // picture for about 0.1 s (M1, measured) the first time an effect came on;
     // on Windows it is compiled at every start. Here that happens while the
     // window opens instead.
+    // Not in the projection window: nothing of the effects may hold it up as
+    // it opens (on the Mac the main window's warming has done it for all).
+    property bool warmUp: true
     property bool warmed: false
-    readonly property bool warming: shown && !warmed && GraphicsInfo.api !== GraphicsInfo.Software
+    readonly property bool warming: warmUp && shown && !warmed && GraphicsInfo.api !== GraphicsInfo.Software
     Timer {
         running: stage.warming
         interval: 1500
