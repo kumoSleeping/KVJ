@@ -56,10 +56,12 @@ float fbm(vec2 p)
 }
 
 // Rain on glass, one layer of it: a drop in some cells of a grid (as many as
-// `density`), running down its cell fast and then slow, wavering, with a
-// trail of small drops left above it. Gives how far to look aside through
-// the water (xy, in the cell's units) and how much water there is (z).
-// After the idea of BigWings' "Heartfelt" (Shadertoy); written anew.
+// `density`), running down its cell fast and then slow, wavering; a tear,
+// narrow above and round below, drawn out the more it runs, its outline
+// stirred by noise, with a thin streak of water left above it and small
+// drops along that. Gives how far to look aside through the water (xy, in
+// the cell's units) and how much water there is (z). After the idea of
+// BigWings' "Heartfelt" (Shadertoy); written anew.
 vec3 rainLayer(vec2 p, float t, float density)
 {
     vec2 cell = vec2(1.0, 2.0);
@@ -71,18 +73,30 @@ vec3 rainLayer(vec2 p, float t, float density)
     float phase = fract(t * (0.12 + 0.2 * hash(id + 3.3)) + n * 7.0);
     // Down the cell, slower as it goes, and back to the top.
     float y = -0.42 + 0.84 * (1.0 - (1.0 - phase) * (1.0 - phase));
-    float x = (hash(id + 7.1) - 0.5) * 0.5 + sin(phase * 13.0 + n * 40.0) * 0.06 * (1.0 - phase);
+    float speed = 2.0 * (1.0 - phase);
+    float wobble = 0.06 * (1.0 - phase);
+    float x = (hash(id + 7.1) - 0.5) * 0.5 + sin(phase * 13.0 + n * 40.0) * wobble;
     vec2 to = (st - vec2(x, y)) * vec2(1.0, 2.0);
-    float r = 0.16 + 0.08 * hash(id + 5.9);
-    float drop = smoothstep(r, r * 0.55, length(to));
-    // The trail: small drops above it, fewer further up.
-    float above = st.y - y;
-    vec2 tr = vec2(st.x - x, (fract(st.y * 7.0 + 0.5) - 0.5) / 3.5);
-    float trail = smoothstep(0.06, 0.025, length(tr * vec2(1.0, 2.0)))
-                * step(0.0, -above) * smoothstep(-0.5, -0.05, above);
-    trail *= smoothstep(-0.02, 0.0, -above);
-    vec2 aside = to / r * drop + tr / 0.06 * trail * 0.5;
-    return vec3(aside, max(drop, trail * 0.8));
+    float r = 0.13 + 0.07 * hash(id + 5.9);
+    // A tear: drawn out upwards (behind it) and narrowed there, the more
+    // the faster it runs; its rim stirred.
+    float behind = max(-to.y, 0.0);
+    vec2 shape = vec2(to.x * (1.0 + behind / r * (0.5 + speed * 0.3)), to.y / (1.0 + (to.y < 0.0 ? 0.3 + speed * 0.4 : 0.0)));
+    float angle = atan(shape.y, shape.x);
+    float rim = r * (1.0 + 0.12 * (noise(vec2(angle * 2.0 + n * 9.0, t * 0.5 + n)) - 0.5));
+    float drop = smoothstep(rim, rim * 0.6, length(shape));
+    // The streak above: a thin line where it came down, wavering, fading
+    // further up, with small drops of different sizes along it.
+    float above = y - st.y;
+    float path = x + sin(st.y * 18.0 + n * 30.0) * 0.015;
+    float streak = smoothstep(0.03, 0.008, abs(st.x - path)) * step(0.0, above) * (1.0 - smoothstep(0.0, 0.45, above)) * 0.12;
+    float row = floor(st.y * 9.0);
+    vec2 tr = vec2(st.x - path, (fract(st.y * 9.0) - 0.5) / 9.0);
+    float size = (0.012 + 0.03 * hash(vec2(row, n))) * step(0.45, hash(vec2(row, n + 2.0)));
+    float bead = smoothstep(size, size * 0.4, length(tr * vec2(1.0, 1.3))) * step(0.0, above) * (1.0 - smoothstep(0.05, 0.5, above));
+    float trail = max(streak, bead);
+    vec2 aside = shape / r * drop + tr / max(size, 1e-3) * bead * 0.4;
+    return vec3(aside, max(drop, trail));
 }
 
 // Picture coordinates about the centre with square units, and back.
@@ -238,14 +252,26 @@ void main()
         float density = 0.1 + 0.85 * a;
         vec3 big = rainLayer(p * 6.0, time, density);
         vec3 small = rainLayer(p * 12.0 + vec2(3.7, 1.1), time * 1.3, density * 0.9);
-        // Still drops beading on the pane, coming and going.
-        vec2 g = p * 28.0;
+        // Still drops beading on the pane, coming and going: two in a cell,
+        // not round, flattened a little, of all sizes, run together where
+        // they touch.
+        vec2 g = p * 24.0;
         vec2 gid = floor(g);
-        vec2 gst = fract(g) - 0.5 - (vec2(hash(gid + 1.0), hash(gid + 2.0)) - 0.5) * 0.5;
-        float gr = 0.08 + 0.12 * hash(gid + 3.0);
-        float bead = smoothstep(gr, gr * 0.5, length(gst)) * step(hash(gid), density * 0.6)
-                   * smoothstep(0.0, 0.3, sin(time * 0.6 + hash(gid + 4.0) * 6.2832));
-        vec2 aside = big.xy * 0.06 + small.xy * 0.03 + gst / gr * bead * 0.012;
+        vec2 gst = fract(g) - 0.5;
+        vec2 c1 = (vec2(hash(gid + 1.0), hash(gid + 2.0)) - 0.5) * 0.5;
+        vec2 c2 = c1 + (vec2(hash(gid + 5.0), hash(gid + 6.0)) - 0.5) * 0.45;
+        float r1 = 0.06 + 0.14 * hash(gid + 3.0), r2 = 0.04 + 0.1 * hash(gid + 7.0);
+        vec2 o1 = (gst - c1) * vec2(1.0, 1.2), o2 = (gst - c2) * vec2(1.0, 1.25);
+        float wob = 0.25 * (noise(gst * 9.0 + gid * 3.1) - 0.5);
+        float d1 = length(o1) - r1 * (1.0 + wob), d2 = length(o2) - r2 * (1.0 - wob);
+        float k = 0.06;
+        float h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
+        float dd = mix(d2, d1, h) - k * h * (1.0 - h);
+        float on = step(hash(gid), density * 0.6) * smoothstep(0.0, 0.3, sin(time * 0.6 + hash(gid + 4.0) * 6.2832));
+        float bead = (1.0 - smoothstep(-0.03, 0.005, dd)) * on;
+        vec2 gc = mix(c2, c1, h);
+        float gr = mix(r2, r1, h);
+        vec2 aside = big.xy * 0.06 + small.xy * 0.03 + (gst - gc) / gr * bead * 0.012;
         float water = max(max(big.z, small.z), bead);
         aside.x /= aspect;
         // The wet glass a little misted (five looks), clear through the water.
@@ -295,36 +321,57 @@ void main()
         color = texture(source, uv).rgb;
         color = mix(color, 1.0 - color, a);
     } else if (k == 21) {
-        // Fire all round the picture's edge: flames from four octaves of
-        // noise, warped by more of it so they curl, licking inwards, white
-        // and yellow at the heart through orange and red to dark red, with a
-        // glow. Strength: how high and fierce. Only near the edge is it
-        // worked out.
-        color = texture(source, uv).rgb;
+        // Fire all round the picture's edge. Each edge burns on its own:
+        // flames from four octaves of noise warped by more of it, tongues of
+        // all heights, brightest and thickest at the edge, thinning inwards.
+        // Fire rises: the foot's flames climb highest and fastest, the
+        // sides' lean upwards as they go, the top's curl in only a little.
+        // Embers drift up from it, and the picture near it shimmers in the
+        // heat. White and yellow at the heart, through orange and red to dark
+        // red. Strength: how high and fierce. Only near the edge is it worked
+        // out.
         vec2 q = toSquare(uv);
         vec2 room = vec2(aspect, 1.0) * 0.5 - abs(q);
-        float d = min(room.x, room.y);
         float high = 0.06 + 0.24 * a;
-        if (d < high * 1.7) {
-            // Each edge burns on its own, the nearer side and the nearer top
-            // or foot: where they meet at a corner the two fires mingle.
+        float d = min(room.x, room.y);
+        float near = exp(-d / (high * 1.2));
+        // Heat haze.
+        vec2 haze = (vec2(noise(uv * 40.0 + vec2(0.0, time * 4.0)), noise(uv * 40.0 + vec2(7.0, time * 4.0))) - 0.5) * 0.008 * near * (0.4 + 0.6 * a);
+        color = texture(source, uv + haze).rgb;
+        if (d < high * 2.2) {
             float heat = 0.0;
             for (int e = 0; e < 2; ++e) {
                 float inward = e == 0 ? room.x : room.y;
-                if (inward > high * 1.7)
+                // The foot burns highest, the top lowest.
+                float reach = e == 0 ? high * 1.05 : (q.y > 0.0 ? high * 1.5 : high * 0.6);
+                if (inward > reach * 1.6)
                     continue;
                 float along = e == 0 ? q.y + 10.0 * sign(q.x) : q.x + 20.0 * sign(q.y);
-                vec2 f = vec2(along * 9.0, inward * 4.5 - time * 2.6);
+                // Rising: up the sides, inwards (up) from the foot, slowly
+                // inwards from the top.
+                float rise = e == 0 ? 0.0 : (q.y > 0.0 ? 3.2 : 1.2);
+                vec2 f = vec2(along * 8.0 + (e == 0 ? time * 2.2 : 0.0), inward * 4.5 / (reach / high) - time * (rise + 1.0));
                 vec2 warp = vec2(fbm(f * 0.7 + vec2(0.0, time * 0.5)), fbm(f * 0.7 + vec2(5.2, -time * 0.4)));
-                float flame = fbm(f + warp * 1.6);
-                heat = max(heat, clamp(flame * 1.6 - inward / high * 1.1 + 0.15 * a, 0.0, 1.0));
+                float flame = fbm(f + warp * 1.7);
+                // Tongues of all heights along the edge.
+                float tall = 0.35 + 1.1 * noise(vec2(along * 2.5 + time * 0.4, float(e) * 3.0));
+                float h = flame * 1.8 - inward / (reach * tall) * 1.25 + exp(-inward / 0.012) * 0.3 * noise(vec2(along * 6.0 - time, 4.0));
+                heat = max(heat, clamp(h, 0.0, 1.0) * (0.65 + 0.45 * noise(vec2(along * 3.0 - time * 0.6, 1.0 + float(e)))));
             }
+            heat = clamp(heat, 0.0, 1.0);
             vec3 fire = heat < 0.3 ? mix(vec3(0.0), vec3(0.5, 0.03, 0.0), heat / 0.3)
                       : heat < 0.55 ? mix(vec3(0.5, 0.03, 0.0), vec3(1.0, 0.3, 0.02), (heat - 0.3) / 0.25)
                       : heat < 0.8 ? mix(vec3(1.0, 0.3, 0.02), vec3(1.0, 0.8, 0.15), (heat - 0.55) / 0.25)
-                      : mix(vec3(1.0, 0.8, 0.15), vec3(1.0, 1.0, 0.9), (heat - 0.8) / 0.2);
-            float body = smoothstep(0.05, 0.35, heat);
-            color = mix(color, fire, body) + vec3(1.0, 0.35, 0.05) * exp(-d / (high * 0.9)) * 0.25 * (0.4 + 0.6 * a);
+                      : mix(vec3(1.0, 0.8, 0.15), vec3(1.0, 0.95, 0.6), (heat - 0.8) / 0.2);
+            float body = smoothstep(0.08, 0.4, heat);
+            color = mix(color, fire, body) + vec3(1.0, 0.35, 0.05) * near * 0.22 * (0.4 + 0.6 * a);
+            // Embers: sparks drifting up and away, flickering.
+            vec2 e = q * 32.0 + vec2(0.0, time * 6.0);
+            vec2 eid = floor(e);
+            vec2 est = fract(e) - 0.5 - (vec2(hash(eid + 1.3), hash(eid + 2.9)) - 0.5) * 0.6;
+            float spark = step(hash(eid), 0.06 + 0.1 * a) * smoothstep(0.2, 0.02, length(est))
+                        * (0.5 + 0.5 * sin(time * 20.0 + hash(eid) * 50.0)) * smoothstep(high * 2.2, high * 0.3, d);
+            color += vec3(1.0, 0.6, 0.15) * spark * 1.4;
         }
     } else if (k == 22) {
         // Flash to black (Live lowers `amount` as it fades).
