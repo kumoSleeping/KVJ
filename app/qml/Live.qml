@@ -310,7 +310,6 @@ QtObject {
         { key: "shake", name: "抖动", moving: true, preset: 0.4 },
         { key: "zoom", name: "放射模糊", preset: 0.35 },
         { key: "ghost", name: "灵魂出窍", moving: true, preset: 0.5 },
-        { key: "splash", name: "溅射", moving: true, preset: 0.5 },
         { key: "mosaic", name: "马赛克", preset: 0.35 },
         { key: "glitch", name: "故障", moving: true, preset: 0.35 },
         { key: "rgb", name: "RGB 分离", moving: true, preset: 0.4 },
@@ -487,16 +486,16 @@ QtObject {
     readonly property var defaultLayout: [
         "mono", "flash",
         "invert", "strobe",
-        "hue", "splash",
+        "hue", "punch",
         "duotone", "glitch",
         "rgb", "mosaic",
         "vhs", "tiles",
         "mirror", "ghost",
         "edge", "shake",
         "lens", "zoom",
-        "punch", "twirl",
-        "halftone", "scan",
-        "flashBlack", "threshold"
+        "twirl", "halftone",
+        "scan", "flashBlack",
+        "threshold"
     ]
     property var layout: defaultLayout
     readonly property int places: 16
@@ -515,6 +514,29 @@ QtObject {
         next[b] = keep
         layout = next
         store.layout = layout.join(",")
+    }
+    // A kept layout made whole: an effect no longer there (or there twice)
+    // leaves its place to one missing from it, or, with none missing, to the
+    // first of the rest when it was one of the 16 (so no knob or fader is
+    // left empty and nothing else moves); missing ones go at the end.
+    function keptLayout(saved) {
+        const keys = effects.map(e => e.key)
+        const list = saved.map((k, i) => keys.indexOf(k) >= 0 && saved.indexOf(k) === i ? k : null)
+        const missing = defaultLayout.filter(k => list.indexOf(k) < 0)
+        for (let i = 0; i < list.length; ++i) {
+            if (list[i] !== null)
+                continue
+            if (missing.length) {
+                list[i] = missing.shift()
+            } else if (i < places) {
+                const from = list.findIndex((k, j) => j >= places && k !== null)
+                if (from >= 0) {
+                    list[i] = list[from]
+                    list[from] = null
+                }
+            }
+        }
+        return list.filter(k => k !== null).concat(missing)
     }
     function resetLayout() {
         layout = defaultLayout
@@ -644,10 +666,6 @@ QtObject {
             custom = {}
         }
         reactionOrder = reactionStore.order ? reactionStore.order.split(",") : []
-        // A kept layout holds every effect once, or it is from another
-        // version: the default then.
-        const saved = store.layout ? store.layout.split(",") : []
-        const whole = saved.length === effects.length && effects.every(e => saved.indexOf(e.key) >= 0)
-        layout = whole ? saved : defaultLayout
+        layout = store.layout ? keptLayout(store.layout.split(",")) : defaultLayout
     }
 }

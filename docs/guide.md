@@ -224,10 +224,8 @@ let go or dragged there stays offstage (faint on the preview, unseen by the
 audience) until it is dragged into the picture.
 The size bar works on the chosen sticker, or else on the one posted last, and
 sets the size of the next. The effects are a rail of two columns at the
-window's right edge, 24 of them: mirror, video wall, lens, twirl, punch (pushed
-in), shake, zoom blur, out of body (soft, brightened copies growing out of the picture and fading),
-splash (the picture smaller in a moving liquid outline, white water thrown
-out from all round it on black), mosaic, glitch, RGB split, halftone, scanlines, VHS,
+window's right edge, 23 of them: mirror, video wall, lens, twirl, punch (pushed
+in), shake, zoom blur, out of body (soft, brightened copies growing out of the picture and fading), mosaic, glitch, RGB split, halftone, scanlines, VHS,
 neon outline, hue, heat (duotone), black and white, pure black and white,
 negative, flash to black, flash to white and strobe. Each has a key that turns
 it on at the strength it looks best at (or off; dragged on up or down its

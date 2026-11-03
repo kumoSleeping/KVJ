@@ -622,20 +622,6 @@ Item {
                 c.fill()
                 c.fillRect(7.5, 15, 9, 6)
                 break
-            case "splash":
-                // A small picture with rays thrown out from its edge.
-                box(8, 8.5, 8, 7, 1.2)
-                c.fill()
-                c.lineWidth = 1.5
-                for (let i = 0; i < 14; ++i) {
-                    const a = i * Math.PI / 7 + 0.2
-                    const r0 = 6.5, r1 = i % 2 ? 10.5 : 8.5
-                    c.beginPath()
-                    c.moveTo(12 + Math.cos(a) * r0, 12 + Math.sin(a) * r0)
-                    c.lineTo(12 + Math.cos(a) * r1, 12 + Math.sin(a) * r1)
-                    c.stroke()
-                }
-                break
             case "vhs":
                 // A tape: two reels in a case.
                 c.lineWidth = 1.4
