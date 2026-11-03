@@ -32,6 +32,20 @@ float ease(float e0, float e1, float x)
     return e0 < e1 ? smoothstep(e0, e1, x) : 1.0 - smoothstep(e1, e0, x);
 }
 
+// How deep a drop is at r (its radius 1): 1 in the middle, 0 at the rim and
+// flat there.
+float dome(float r)
+{
+    float d = max(0.0, 1.0 - r * r);
+    return d * d;
+}
+// The larger of a and b, rounded where they are within k of each other.
+float smax(float a, float b, float k)
+{
+    float h = max(k - abs(a - b), 0.0) / k;
+    return max(a, b) + h * h * k * 0.25;
+}
+
 vec3 split(vec2 uv, vec2 offset)
 {
     if (offset == vec2(0.0))
@@ -105,13 +119,18 @@ vec2 runningDrops(vec2 v, float t, float density)
     xPath = clamp(xPath, size - 0.48, 0.48 - size);
     vec2 to = (st - vec2(x, y)) * vec2(1.0, cells.x / cells.y);
     float d = length(to);
-    // A dome: its slope, not just its rim, bends the picture.
-    float drop = max(0.0, 1.0 - (d / size) * (d / size));
-    // A neck above it, narrowing upwards, that runs into it: the two cut
-    // at one level make one tear, round below and tapering smoothly.
-    float up = max(to.y, 0.0);
-    float neck = max(0.0, 1.0 - abs(to.x) / (size * 0.55 * (1.0 - smoothstep(0.0, size * 2.2, up)) + 1e-4))
-               * (1.0 - smoothstep(0.0, size * 2.2, up)) * smoothstep(0.0, size * 0.5, up) * 0.75;
+    // A dome, flat at its rim (so where it lies over another the two run
+    // together without a crease): its slope, not just its rim, bends the
+    // picture.
+    float drop = dome(d / size);
+    // A neck above it that runs into it: a short upright stroke from the
+    // drop's middle, thinner as it goes up but never to a point, its end
+    // round (a capsule), fading into the trail. Cut at one level with the
+    // drop, one tear: round and full below, tapering softly to a round tip.
+    float neckLength = size * (1.3 + 0.9 * h2);
+    float along = clamp(to.y, 0.0, neckLength);
+    float neckWidth = size * (0.62 - 0.3 * along / neckLength);
+    float neck = dome(length(vec2(to.x, to.y - along)) / neckWidth) * 0.85;
     // The trail: nothing at the cell's top, widening down to the drop.
     float widen = sqrt(ease(1.0, y, st.y));
     float off = abs(st.x - xPath);
@@ -124,8 +143,10 @@ vec2 runningDrops(vec2 v, float t, float density)
     float fromRow = (0.5 - fract(glass.y * rows)) * cells.y / rows;
     float dsize = 0.06 + 0.12 * hash(vec2(id.x, rowId));
     float dr = length(vec2(st.x - xPath, fromRow * cells.x / cells.y)) / dsize;
-    float droplet = max(0.0, 1.0 - dr * dr) * step(0.3, hash(vec2(id.x + 0.5, rowId)));
-    return vec2(drop + neck + droplet * widen * behind, trail);
+    float droplet = dome(dr) * step(0.3, hash(vec2(id.x + 0.5, rowId)));
+    // The trail itself holds a little water, too little to show alone,
+    // enough for the neck to fade into.
+    return vec2(drop + neck + droplet * widen * behind + trail * 0.07, trail);
 }
 
 // Still drops: one in each of a fine grid's cells, anywhere in it, most
@@ -141,13 +162,12 @@ float stillDrops(vec2 v, float t, float density)
     vec2 at = (vec2(h1, h2) - 0.5) * 2.0 * (0.46 - size * 1.15);
     float life = fract(t * (0.15 + 0.2 * h1) + h2);
     float fade = smoothstep(0.0, 0.05, life) * ease(1.0, 0.4, life);
-    float d = length((st - at) * vec2(1.0, 1.0 + 0.3 * h1)) / size;
-    return max(0.0, 1.0 - d * d) * fade * step(h3 * 0.8, density);
+    return dome(length((st - at) * vec2(1.0, 1.0 + 0.3 * h1)) / size) * fade * step(h3 * 0.8, density);
 }
 
 // The water at v: still drops and two layers of running ones (the second
-// smaller by a ratio that is no whole number, and shifted), added up:
-// where the sum passes a level is water, so what lies close together runs
+// smaller by a ratio that is no whole number, and shifted), in one field:
+// where it passes a level is water, so what lies close together runs
 // together into one smooth shape, and the sum's slope bends the picture.
 // x: how deep, y: trail.
 vec2 rainField(vec2 v, float t, float a)
@@ -155,7 +175,9 @@ vec2 rainField(vec2 v, float t, float a)
     float stillOnes = stillDrops(v, t, a) * (0.4 + 1.2 * a);
     vec2 one = runningDrops(v, t, 0.15 + 0.85 * smoothstep(0.0, 0.6, a));
     vec2 two = runningDrops(v * 1.83 + vec2(7.3, 2.9), t * 1.1, smoothstep(0.25, 1.0, a));
-    return vec2(stillOnes + one.x + two.x, max(one.y, two.y));
+    // The layers in one field, run together where they meet (a smooth
+    // maximum: one larger body of water, one rim, one glint).
+    return vec2(smax(smax(stillOnes, one.x, 0.35), two.x, 0.35), max(one.y, two.y));
 }
 
 // Picture coordinates about the centre with square units, and back.
@@ -314,7 +336,7 @@ void main()
         float dx = rainField(v + vec2(e, 0.0), time * 0.25, a).x - here.x;
         float dy = rainField(v + vec2(0.0, e), time * 0.25, a).x - here.x;
         vec2 slope = vec2(dx, -dy);
-        float water = smoothstep(0.25, 0.4, here.x);
+        float water = smoothstep(0.1, 0.22, here.x);
         float clear = max(water, here.y);
         float mist = (0.002 + 0.004 * a) * (1.0 - clear);
         vec2 m = vec2(mist / aspect, mist);
@@ -326,7 +348,7 @@ void main()
         float glint = pow(max(dot(normalize(vec3(slope * 60.0, 1.0)), normalize(vec3(-0.5, 0.7, 0.6))), 0.0), 24.0);
         color += glint * water * 0.5;
         // A darker rim where the water ends.
-        color *= 1.0 - 0.25 * smoothstep(0.2, 0.32, here.x) * (1.0 - smoothstep(0.32, 0.5, here.x));
+        color *= 1.0 - 0.25 * smoothstep(0.08, 0.16, here.x) * (1.0 - smoothstep(0.16, 0.3, here.x));
         color = mix(color, color * vec3(0.9, 0.96, 1.08) + vec3(0.0, 0.01, 0.03), 0.18 + 0.12 * a);
     } else if (k == 16) {
         // Rotate the hue in YIQ, up to most of the way round.
