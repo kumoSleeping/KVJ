@@ -457,11 +457,7 @@ ApplicationWindow {
     // "single 0|1" switches 单轨 on or off; "zoom <0.4–1>" sizes the board's view;
     // "dragsim X Y | off" shows the track rows as a drag at (X, Y) would.
     // "cc <number> <value>" acts as the controller's control change would,
-    // "rhythm <key> <0–7>" sets an effect's rhythm, "knobsweep" turns strip
-    // 1's knob through every step and answers the largest jump of its period, "midi" answers the
-    // controller's and the beat clock's state, "beats <seconds> <path>" where
-    // the beats are there (Beats.at), "music <seconds> <path> | off" has the
-    // beat clock hear that file as if it played from there.
+    // "midi" answers the controller's state.
     function devCommand(line) {
         const w = String(line).trim().split(/\s+/)
         switch (w[0]) {
@@ -515,62 +511,17 @@ ApplicationWindow {
             Live.midiLink.onControl(0, Number(w[1]), v, was === 0 && v > 0 ? 1 : 0, was > 0 && v === 0 ? 1 : 0)
             break
         }
-        case "rhythm": Live.setRhythm(w[1], Number(w[2] || 0)); break
-        case "knobsweep": {
-            // Turns strip 1's knob from the foot to the top and back as fast as
-            // it can go, and answers the largest jump its effect's period
-            // made at any step (0: none).
-            const key = Live.stripKey(0)
-            let worst = 0
-            const values = []
-            for (let v = 0; v <= 127; v += 3) values.push(v)
-            for (let v = 127; v >= 0; v -= 5) values.push(v)
-            for (const v of values) {
-                const t = Date.now()
-                const g = Live.grids[key]
-                const before = g ? Live.gridAt(g, t) : null
-                Live.turnKnob(0, v)
-                const h = Live.grids[key]
-                if (before !== null && h) {
-                    let jump = Live.gridAt(h, t) - before
-                    jump -= Math.round(jump)
-                    worst = Math.max(worst, Math.abs(jump))
-                }
-            }
-            return JSON.stringify({ key: key, steps: values.length, worstJump: Math.round(worst * 1e6) / 1e6, rhythm: Live.rhythmOf(key) })
-        }
-        case "beats": {
-            // Only the timeline asks for a file's beats: ask as one of its strips would.
-            const path = w.slice(2).join(" ")
-            if (!app.devStrips[path])
-                app.devStrips[path] = Qt.createQmlObject("import KVJ; WaveStrip {}", app)
-            app.devStrips[path].source = path
-            return JSON.stringify(Beats.at(path, Number(w[1])))
-        }
-        case "music": app.devMusic = w[1] === "off" ? null : { at: Number(w[1]), path: w.slice(2).join(" "), since: Date.now() }; break
         case "midi":
-            if (app.devMusic) {
-                const heard = Beats.at(app.devMusic.path, app.devMusic.at + (Date.now() - app.devMusic.since) / 1000)
-                const mine = Live.beatAt(Date.now())
-                let e = heard.beat - mine
-                e -= Math.round(e)
-                return JSON.stringify({ bpm: Live.bpm, rate: Live.beatRate * 60, locked: Live.beatLocked, synced: Live.effectsSynced, error: Math.round(e * 1000) / 1000 })
-            }
             return JSON.stringify({ enabled: Midi.enabled, devices: Midi.devices, daw: Midi.dawMode, page: Live.midiPage,
-                                    faders: Live.faders, knobs: Live.knobs, level: Live.level, rhythm: Live.rhythm,
-                                    bpm: Math.round(Live.bpm * 10) / 10, locked: Live.beatLocked, bar: Live.barAt,
-                                    beat: Math.round(Live.beatAt(Date.now()) * 100) / 100,
-                                    played: Object.keys(Live.rhythm).filter(k => Live.rhythm[k] > 0).map(k => k + " " + Live.rhythmName(k)) })
+                                    faders: Live.faders, level: Live.level })
         default: return "unknown"
         }
         app.tick()
         return "ok"
     }
 
-    // The last value each "cc" dev command gave; the music "music" plays.
+    // The last value each "cc" dev command gave.
     property var devCc: ({})
-    property var devMusic: null
-    property var devStrips: ({})
 
     // Files into the Set shown: into its library (the drawer's keys and
     // drops), or placed on a track (dropped on the timeline; `track` set).
@@ -1150,50 +1101,6 @@ ApplicationWindow {
         enabled: app.effectKeysLive
         onActivated: Live.tune(-0.05)
     }
-    // The beat effects with a rhythm keep (Live.hearBeat): that of the video
-    // the picture shows (画面 1), where its own clock has it (the timing the
-    // projection's picture runs on; while following leads, following has
-    // brought it to the DJ's place), never anything following or acoustic
-    // tracking says. Paused or without a video, none (the clock runs on at
-    // the last tempo). It only reads, ten times a second while an effect
-    // keeps a rhythm; nothing of playing or following waits for it. With 详细
-    // 日志 on, a line every two seconds says what it went by.
-    Timer {
-        interval: 100
-        repeat: true
-        running: Live.effectsSynced
-        property int count: 0
-        onTriggered: {
-            app.hearBeat()
-            if (Engine.detailLog && ++count % 20 === 0)
-                Engine.writeDetail("拍钟 " + JSON.stringify(app.beatStatus))
-        }
-    }
-    function hearBeat() {
-        if (app.devMusic) {
-            const d = app.devMusic
-            Live.hearBeat(Beats.at(d.path, d.at + (Date.now() - d.since) / 1000), 1, "画面")
-            return
-        }
-        const e = projection.entry
-        if (e && !e.silent && e.path && projection.rate > 0) {
-            const at = projection.position + (Engine.clockMs() - projection.clockAtMs + projection.offsetMs) / 1000 * projection.rate
-            Live.hearBeat(Beats.at(e.path, at), projection.rate, "画面")
-        } else {
-            Live.hearBeat(null, 0, "空跑")
-        }
-    }
-    // The beat clock's state, for status.json (main.cpp) and the detail log.
-    readonly property var beatStatus: ({
-        synced: Live.effectsSynced,
-        source: Live.beatSource,
-        locked: Live.beatLocked,
-        beats: Live.beatHeard,
-        bar: Live.barKnown,
-        bpm: Math.round(Live.bpm * 10) / 10,
-        error: Math.round(Live.beatError * 1000) / 1000,
-        entry: app.shownEntry ? app.shownEntry.title : ""
-    })
     Shortcut {
         sequences: ["."]
         context: Qt.ApplicationShortcut

@@ -26,7 +26,7 @@ cargo test --release
 | `document.rs` | 媒体库合并、条目开关、轨道、存取不丢字段 |
 | `index.rs` | 关掉或移动条目时索引保留；旧索引的清理 |
 | `waveform.rs` | 时间线波形的列宽、颜色、静音、坏数据不压扁整条 |
-| `rhythm/` | 速度分段：不同速度的歌分开、过渡不算一段、半速不算新段、取消；拍点存进缓存，旧缓存仍能读 |
+| `rhythm/` | 速度分段：不同速度的歌分开、过渡不算一段、半速不算新段、取消；旧版本的缓存直接沿用，不再重分析 |
 | `report/` | 错误报告去掉路径和账号、长度上限；版本号比较 |
 | `update/` | 下载包的校验值、找本平台的安装包、更新失败后的回滚提示 |
 
@@ -75,4 +75,4 @@ QT_QPA_PLATFORM=offscreen KVJ_DATA_DIR=/tmp/kvj-data KVJ_SNAPSHOT=/tmp/kvj.png b
 - 界面（QML）和画面输出，只靠在应用里试和截图。
 - `runtime.rs` 的追踪主循环本身：单元测试只覆盖其中的判断函数，整条循环要靠 `kvj-follow-bench` 和现场试用，开着「详细日志」看每一轮。
 - 相似位置的扫描（`alike.rs`），以及相机、投屏、Windows 上的系统声音采集，都要在真机上试。
-- MIDI 控制器（`Midi.cpp`、`platform/*/MidiPort.*`）和拍钟：开发命令 `cc <号> <值>` 模拟控制器，`music <秒> <路径>` 让拍钟按某个文件的拍点走，`midi` 返回状态；真机插拔要手动试。
+- MIDI 控制器（`Midi.cpp`、`platform/*/MidiPort.*`）：开发命令 `cc <号> <值>` 模拟控制器，`midi` 返回状态；真机插拔要手动试。

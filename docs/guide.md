@@ -245,39 +245,16 @@ nanoKONTROL2), since there pulling a MIDI device out may bring an app using
 WinMM down under Windows 11's new MIDI service. It must be in CC mode: unplug it, hold SET MARKER and CYCLE, plug it
 back in (it keeps that mode). Its eight strips work the first eight effects of
 the rail, marked by a line at their left; TRACK ▶ moves them to the ninth on,
-TRACK ◀ back. A fader sets the strength (at the foot the effect is off). A knob
-sets the rhythm, turning its effect to the beat: from 2 小节 at the left
-through 1 小节, 2 拍, 1 拍, 1/2 拍 and 1/4 拍 to 1/8 拍 at the right, the effect
-changing more and faster the further right (不跟拍 is R's, never the knob's).
-A period too short to see (under 80 ms: 1/8 拍 above 93 BPM) goes at the next
-slower step that can be seen, and says so.
-A still effect comes on at the start of each period, a little stronger than
-set and settling, and goes off at its middle; 多画面 instead steps a period
-each from 1×1 up to the grid its fader sets and back down (1, 2, 3, 4, 3, 2 …);
-a moving effect (RGB split, wave, glitch, scanlines) keeps its own motion and
-hits hard at the start of each period (split wider, waves taller, more bands
-torn, lines darker). A dot at the key's lower right blinks with it. Turning
-the knob never makes the picture jump: a new rhythm goes on from where the
-period was and is back on the beat within a period. A fader takes an effect
-that is off at once; an effect that is on and stands elsewhere (after a
-number key, the mouse, a reorder or the other page) follows the fader's moves
-scaled so that the two meet at the end of its travel, then goes with it; an
-amber tick at the key's foot shows where the fader stands meanwhile. A knob
-takes at once. What a fader or knob set shows beside its key for a moment
-("故障 · 1/4 拍 · 168 BPM"), with 空跑, 无拍点 or 小节未知 when the beat is
-not the picture's own or bars are not known (then 1 小节 and 2 小节 may start
-on any beat of the bar). S switches the strip's effect as its number key does, M
-held flips it until let go, R puts its rhythm back to 不跟拍; nothing on the
-controller plays, follows or projects. The beat is that of the video the picture
-shows (画面 1), where its own clock has it (while following leads, following
-has brought it to the DJ's place), from the beats KVJ found in its sound for
-the timeline's BPM lane; nothing following or acoustic tracking says is read,
-and the effects never have anything analysed: a video whose analysis predates
-the beats goes by its BPM alone (无拍点). Paused, or without a video, the clock
-runs on at the last tempo. With 详细日志 on, the log gets a 拍钟 line every two
-seconds (what it goes by, BPM, how far off the beat). Unplugging the
-controller leaves every effect as it is; the ⋯ menu turns the controller off
-(kept between runs) and puts every rhythm back to 不跟拍. The ⋯ key shows an
+TRACK ◀ back. A fader sets the strength (at the foot the effect is off). It
+takes an effect that is off at once; an effect that is on and stands
+elsewhere (after a number key, the mouse, a reorder or the other page)
+follows the fader's moves scaled so that the two meet at the end of its
+travel, then goes with it; an amber tick at the key's foot shows where the
+fader stands meanwhile. What a fader set shows beside its key for a moment
+("故障 · 45%"). S switches the strip's effect as its number key does, M held
+flips it until let go; nothing on the controller plays, follows or projects.
+Unplugging the controller leaves every effect as it is; the ⋯ menu turns the
+controller off (kept between runs). The ⋯ key shows an
 amber dot while the controller is in a DAW mode.
 
 Planned, later: any MIDI controller, not only the nanoKONTROL2, with bindings

@@ -42,10 +42,8 @@ typedef bool (*KvjStopFn)(void *user);
 unsigned char *kvj_waveform(const char *path, const char *cache_dir, KvjStopFn stop, void *user, size_t *columns);
 void kvj_bytes_free(unsigned char *bytes, size_t columns);
 /* Where the tempo changes along a media file, as JSON:
- * {"duration":s,"sections":[{"start":s,"end":s,"bpm":n|null,"confidence":c}],
- *  "beats":[s,..],"bar":i|null}, sections end to end over the file (bpm null:
- * no beat holds there), every beat heard, and which of every four beats starts
- * a bar (beats[bar], beats[bar+4], …) when that can be told. Cached and
+ * {"duration":s,"sections":[{"start":s,"end":s,"bpm":n|null,"confidence":c}]},
+ * sections end to end over the file (bpm null: no beat holds there). Cached and
  * stopped as kvj_waveform; null without audio. Free with kvj_string_free. */
 char *kvj_tempo(const char *path, const char *cache_dir, KvjStopFn stop, void *user);
 

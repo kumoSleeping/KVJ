@@ -14,9 +14,7 @@ import KVJ
 // 全关, the order (dragging the keys while it is on), the kept strengths and
 // the controller. With a nanoKONTROL2 plugged in (Live: the controller), the
 // eight keys its strips work have a line at their left; a fader not yet
-// level with its effect shows where it stands as an amber tick at the foot. An
-// effect keeping a rhythm has a dot at its lower right, lit for the first
-// half of each period.
+// level with its effect shows where it stands as an amber tick at the foot.
 Item {
     id: rail
 
@@ -35,13 +33,6 @@ Item {
     onMaxScrollChanged: scroll = Math.min(scroll, maxScroll)
     function scrollBy(dy) {
         scroll = Math.max(0, Math.min(maxScroll, scroll - dy))
-    }
-
-    // The clock the rhythm dots blink on, running only while one does.
-    property real now: Date.now()
-    FrameAnimation {
-        running: Live.effectsSynced && rail.visible
-        onTriggered: rail.now = Date.now()
     }
 
     implicitWidth: 40
@@ -76,7 +67,6 @@ Item {
                     // The controller's strip working it, or -1.
                     readonly property int strip: Midi.connected && index >= Live.midiPage * 8 && index < Live.midiPage * 8 + 8 ? index - Live.midiPage * 8 : -1
                     readonly property real fader: strip >= 0 ? Live.faders[strip] : -1
-                    readonly property int rhythm: Live.rhythmOf(key)
                     width: rail.key
                     height: rail.key
                     radius: Theme.radius - 1
@@ -141,18 +131,6 @@ Item {
                         height: 5
                         radius: 1
                         color: Theme.warn
-                    }
-                    // Its rhythm: lit for the first half of each period while on.
-                    Rectangle {
-                        visible: fx.rhythm > 0
-                        readonly property real period: fx.on ? Live.periodsAt(fx.key, rail.now) : 0
-                        x: parent.width - 7
-                        y: parent.height - 7
-                        width: 4
-                        height: 4
-                        radius: 2
-                        color: fx.level > 0.85 ? Theme.bg : Theme.text
-                        opacity: fx.on && period - Math.floor(period) < 0.5 ? 1 : 0.3
                     }
                     // A strength of its own was kept (see Live.tune).
                     Rectangle {
@@ -264,7 +242,6 @@ Item {
                         ToolTip.visible: (containsMouse && !rail.editing && mode !== "sweep") || mode === "tune"
                         ToolTip.delay: mode === "tune" ? 0 : 500
                         ToolTip.text: fx.name + " · " + (fx.on ? Math.round(fx.level * 100) + "%" : "关")
-                                      + (fx.rhythm > 0 ? " · " + Live.rhythmName(fx.key) + " · " + Math.round(Live.bpm) + " BPM" : "")
                                       + (fx.fader >= 0 && Math.abs(fx.fader - fx.level) > 0.03 ? " · 推子在 " + Math.round(fx.fader * 100) + "%，推动时逐渐对齐" : "")
                     }
                 }
@@ -273,9 +250,7 @@ Item {
     }
 
     // What a fader or knob of the controller just set, beside its key for a
-    // moment: "故障 · 45%", or "故障 · 1/4 拍 · 168 BPM" with what the beat goes
-    // by when it is not the picture's own (空跑, 无拍点, 小节未知). On this
-    // window only, never on the projection.
+    // moment: "故障 · 45%". On this window only, never on the projection.
     property string hintKey: ""
     property string hintControl: ""
     Connections {
@@ -318,22 +293,8 @@ Item {
                 if (!key)
                     return ""
                 const name = rail.nameOf(key)
-                if (rail.hintControl === "fader") {
-                    const level = Live.level[key] || 0
-                    return name + " · " + (level > 0 ? Math.round(level * 100) + "%" : "关")
-                }
-                const i = Live.rhythmOf(key)
-                if (!i)
-                    return name + " · " + Live.rhythms[0].name
-                const notes = []
-                if (Live.beatSource === "空跑")
-                    notes.push("空跑")
-                else if (!Live.beatHeard)
-                    notes.push("无拍点")
-                if (Live.rhythms[i].beats >= 2 && Live.beatHeard && !Live.barKnown)
-                    notes.push("小节未知")
-                return name + " · " + Live.rhythmName(key) + " · " + Math.round(Live.bpm) + " BPM"
-                        + (notes.length ? "（" + notes.join("，") + "）" : "")
+                const level = Live.level[key] || 0
+                return name + " · " + (level > 0 ? Math.round(level * 100) + "%" : "关")
             }
         }
     }
@@ -379,11 +340,6 @@ Item {
             text: "强度恢复默认推荐"
             enabled: Live.customized
             onTriggered: Live.resetPresets()
-        }
-        PopAction {
-            text: "节奏全部恢复不跟拍"
-            enabled: Object.keys(Live.rhythm).some(k => Live.rhythm[k] > 0)
-            onTriggered: Live.resetRhythms()
         }
         PopAction {
             text: !Midi.enabled ? "使用 nanoKONTROL2" : Midi.connected ? "停用 nanoKONTROL2（已连接）" : "停用 nanoKONTROL2（未连接）"

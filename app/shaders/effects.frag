@@ -4,11 +4,7 @@
 // order the desk lists them, each reading the picture the one before made, so
 // the order changes the look (a mosaic of a wall of screens, or a wall of
 // mosaics). All sizes are fractions of the picture, so the small preview looks
-// like the projection. With a rhythm (`synced`), `beat` counts the periods of
-// it gone by: each starts with a hit (`hit`, 1 on the beat, gone within a
-// third of the period) that a moving effect adds to its own motion and that
-// takes a still one a little past its strength, and a still one passes the
-// picture through while `shown` is 0.
+// like the projection.
 
 layout(location = 0) in vec2 qt_TexCoord0;
 layout(location = 0) out vec4 fragColor;
@@ -20,9 +16,6 @@ layout(std140, binding = 0) uniform buf {
     float aspect; // width / height
     float kind;
     float amount;
-    float synced;
-    float beat;
-    float shown;
 };
 layout(binding = 1) uniform sampler2D source;
 
@@ -43,33 +36,18 @@ void main()
     vec2 uv = qt_TexCoord0;
     int k = int(kind + 0.5);
     vec3 color;
-    float hit = synced > 0.5 ? exp(-9.0 * fract(beat)) : 0.0;
-
-    if (shown < 0.5) {
-        fragColor = vec4(texture(source, uv).rgb, 1.0) * qt_Opacity;
-        return;
-    }
-    // A still effect comes on stronger than set and settles.
-    float amt = k == 1 || k == 2 || k == 5 || k == 6 || k == 7 ? amount : min(1.0, amount * (1.0 + 0.6 * hit));
 
     if (k == 0) {
         // Mosaic.
-        float across = mix(150.0, 10.0, pow(amt, 0.6));
+        float across = mix(150.0, 10.0, pow(amount, 0.6));
         vec2 grid = vec2(across, across / aspect);
         color = texture(source, (floor(uv * grid) + 0.5) / grid).rgb;
     } else if (k == 1) {
-        // RGB split, jittering a little while it is on, flung wide by a hit.
-        color = split(uv, vec2(amt * 0.018 * (1.0 + 0.3 * sin(time * 7.0)) * (1.0 + 2.0 * hit), 0.0));
+        // RGB split, jittering a little while it is on.
+        color = split(uv, vec2(amount * 0.018 * (1.0 + 0.3 * sin(time * 7.0)), 0.0));
     } else if (k == 2) {
-        // A wall of screens: 2×2 from the first step up to 6×6, with thin
-        // bezels. With a rhythm it steps a period each from 1×1 up to that
-        // and back down: 1, 2, 3, 4, 3, 2, 1, 2 …
-        float n = 1.0 + ceil(amt * 5.0);
-        if (synced > 0.5) {
-            float trip = 2.0 * (n - 1.0);
-            float at = mod(floor(beat), trip);
-            n = 1.0 + (at < n ? at : trip - at);
-        }
+        // A wall of screens: 2×2 from the first step up to 6×6, with thin bezels.
+        float n = 1.0 + ceil(amount * 5.0);
         vec2 cell = fract(uv * n);
         vec2 bezel = vec2(0.0025 / aspect, 0.0025) * n;
         bool seam = any(lessThan(cell, bezel)) || any(greaterThan(cell, 1.0 - bezel));
@@ -78,48 +56,43 @@ void main()
         // A lens bulging from the centre.
         vec2 c = (uv - 0.5) * vec2(aspect, 1.0);
         float r = length(c) / 0.8;
-        c *= r < 1.0 ? 1.0 - amt * 0.62 * (1.0 - r * r) : 1.0;
+        c *= r < 1.0 ? 1.0 - amount * 0.62 * (1.0 - r * r) : 1.0;
         color = texture(source, c / vec2(aspect, 1.0) + 0.5).rgb;
     } else if (k == 4) {
         // Zoom blur: smeared outwards from the centre.
         color = vec3(0.0);
         for (int i = 0; i < 12; ++i) {
-            float s = 1.0 - amt * 0.2 * float(i) / 11.0;
+            float s = 1.0 - amount * 0.2 * float(i) / 11.0;
             color += texture(source, (uv - 0.5) * s + 0.5).rgb;
         }
         color /= 12.0;
     } else if (k == 5) {
-        // Water, swelling at a hit.
-        float swell = amt * (1.0 + 1.6 * hit);
-        uv.x += sin(uv.y * 11.0 + time * 2.2) * 0.018 * swell;
-        uv.y += sin(uv.x * 8.0 + time * 1.7) * 0.012 * swell;
+        // Water.
+        uv.x += sin(uv.y * 11.0 + time * 2.2) * 0.018 * amount;
+        uv.y += sin(uv.x * 8.0 + time * 1.7) * 0.012 * amount;
         color = texture(source, uv).rgb;
     } else if (k == 6) {
-        // Bands torn sideways, a new tear about twelve times a second (and at
-        // every period with a rhythm); torn bands split their colours. A hit
-        // tears more bands, further.
+        // Bands torn sideways, a new tear about twelve times a second; torn
+        // bands split their colours.
         float tear = 0.0;
-        float slot = floor(time * 12.0) + (synced > 0.5 ? floor(beat) * 31.0 : 0.0);
+        float slot = floor(time * 12.0);
         float band = floor(uv.y * 22.0);
-        float torn = amt * (1.0 + 1.6 * hit);
-        if (hash(vec2(band, slot)) < min(0.95, torn * 0.55)) {
+        if (hash(vec2(band, slot)) < amount * 0.55) {
             tear = hash(vec2(band, slot + 7.0)) - 0.5;
-            uv.x += tear * 0.16 * torn;
+            uv.x += tear * 0.16 * amount;
         }
-        color = split(uv, vec2(abs(tear) * 0.03 * torn, 0.0));
+        color = split(uv, vec2(abs(tear) * 0.03 * amount, 0.0));
     } else if (k == 7) {
-        // Scan lines with a rolling bar and a little noise, all darker and
-        // brighter at a hit.
+        // Scan lines with a rolling bar and a little noise.
         color = texture(source, uv).rgb;
         float line = 0.5 + 0.5 * sin(uv.y * 240.0 * 6.2832);
-        float at = fract(uv.y - time * 0.12);
-        float roll = smoothstep(0.0, 0.08, at) * (1.0 - smoothstep(0.08, 0.18, at));
-        color *= 1.0 - min(0.9, amt * 0.55 * (1.0 + hit)) * line;
-        color += amt * (1.0 + 2.0 * hit) * (0.07 * roll + 0.06 * (hash(uv * 512.0 + fract(time) * 37.0) - 0.5));
+        float roll = smoothstep(0.0, 0.08, fract(uv.y - time * 0.12)) * (1.0 - smoothstep(0.08, 0.18, fract(uv.y - time * 0.12)));
+        color *= 1.0 - amount * 0.55 * line;
+        color += amount * (0.07 * roll + 0.06 * (hash(uv * 512.0 + fract(time) * 37.0) - 0.5));
     } else if (k == 8) {
         // Halftone: a dot per cell, as large as the cell is bright.
         color = texture(source, uv).rgb;
-        float across = mix(180.0, 45.0, amt);
+        float across = mix(180.0, 45.0, amount);
         vec2 grid = vec2(across, across / aspect);
         vec2 cell = uv * grid;
         vec3 ink = texture(source, (floor(cell) + 0.5) / grid).rgb;
@@ -127,16 +100,16 @@ void main()
         float d = length(fract(cell) - 0.5);
         float radius = sqrt(light) * 0.62;
         float spot = 1.0 - smoothstep(radius - 0.08, radius + 0.08, d);
-        color = mix(color, ink * spot * 1.15, smoothstep(0.0, 0.25, amt));
+        color = mix(color, ink * spot * 1.15, smoothstep(0.0, 0.25, amount));
     } else if (k == 9) {
         // Posterize.
         color = texture(source, uv).rgb;
-        float levels = mix(12.0, 2.5, amt);
-        color = mix(color, floor(color * levels + 0.5) / levels, smoothstep(0.0, 0.15, amt));
+        float levels = mix(12.0, 2.5, amount);
+        color = mix(color, floor(color * levels + 0.5) / levels, smoothstep(0.0, 0.15, amount));
     } else if (k == 10) {
         // Rotate the hue in YIQ, up to most of the way round.
         color = texture(source, uv).rgb;
-        float a = amt * 5.5;
+        float a = amount * 5.5;
         mat3 toYiq = mat3(0.299, 0.596, 0.211, 0.587, -0.274, -0.523, 0.114, -0.322, 0.312);
         mat3 toRgb = mat3(1.0, 1.0, 1.0, 0.956, -0.272, -1.106, 0.621, -0.647, 1.703);
         vec3 yiq = toYiq * color;
@@ -148,7 +121,7 @@ void main()
         // Black and white.
         color = texture(source, uv).rgb;
         float light = dot(color, vec3(0.299, 0.587, 0.114));
-        color = mix(color, vec3(smoothstep(0.02, 0.98, light)), amt);
+        color = mix(color, vec3(smoothstep(0.02, 0.98, light)), amount);
     } else {
         color = texture(source, uv).rgb;
     }
