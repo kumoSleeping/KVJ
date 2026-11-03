@@ -226,8 +226,9 @@ The size bar works on the chosen sticker, or else on the one posted last, and
 sets the size of the next. The effects are a rail of two columns at the
 window's right edge, 25 of them: mirror, video wall, lens, twirl, punch (pushed
 in), shake, zoom blur, out of body (soft, brightened copies growing out of the picture and fading), mosaic, glitch, RGB split, halftone, scanlines, VHS,
-neon outline, rain on the glass (drops running down, the picture bent through
-them; after the idea of BigWings' Heartfelt on Shadertoy, written anew), hue, heat (duotone), black and white, pure black and white,
+neon outline, rain on the glass (built as BigWings' "Heartfelt" on Shadertoy builds
+it, from his explanation; no code taken, its licence, CC BY-NC-SA, not being
+one KVJ can take code under), hue, heat (duotone), black and white, pure black and white,
 negative, fire round the edge, flash to black, flash to white and strobe. Each has a key that turns
 it on at the strength it looks best at (or off; dragged on up or down its
 column, it switches the others the same way); dragged sideways, or the wheel,

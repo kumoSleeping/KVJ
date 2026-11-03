@@ -25,6 +25,13 @@ float hash(vec2 p)
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
+// smoothstep that may also fall (from 1 at e0 to 0 at e1 when e0 > e1):
+// smoothstep itself is undefined that way round, and some GPUs give NaN.
+float ease(float e0, float e1, float x)
+{
+    return e0 < e1 ? smoothstep(e0, e1, x) : 1.0 - smoothstep(e1, e0, x);
+}
+
 vec3 split(vec2 uv, vec2 offset)
 {
     if (offset == vec2(0.0))
@@ -55,48 +62,100 @@ float fbm(vec2 p)
     return sum;
 }
 
-// Rain on glass, one layer of it: a drop in some cells of a grid (as many as
-// `density`), running down its cell fast and then slow, wavering; a tear,
-// narrow above and round below, drawn out the more it runs, its outline
-// stirred by noise, with a thin streak of water left above it and small
-// drops along that. Gives how far to look aside through the water (xy, in
-// the cell's units) and how much water there is (z). After the idea of
-// BigWings' "Heartfelt" (Shadertoy); written anew.
-vec3 rainLayer(vec2 p, float t, float density)
+// Rain on glass, as BigWings' "Heartfelt" (Shadertoy, 2017; explained in
+// his videos) builds it, written anew from that explanation, no code taken:
+// every drop, trail and droplet adds to one field of how much water there
+// is, the field is cut at a level so that drops, trails and droplets close
+// to each other run together into one smooth shape, and the picture is
+// bent by the field's slope. Coordinates here have y up.
+
+// A running drop and its trail in one cell of a layer: the cells are tall
+// and thin, each column shifted by its own amount; in each cell a drop
+// slides down in fits and starts (slowly, then a quick slip), its own size,
+// speed and sway, while the trail above it widens towards it and leaves
+// droplets that stay on the glass. Gives the water (x) and how much trail
+// clears the mist (y).
+vec2 runningDrops(vec2 v, float t, float density)
 {
-    vec2 cell = vec2(1.0, 2.0);
-    vec2 id = floor(p / cell);
-    vec2 st = fract(p / cell) - 0.5;
-    float n = hash(id);
-    if (n > density)
-        return vec3(0.0);
-    float phase = fract(t * (0.12 + 0.2 * hash(id + 3.3)) + n * 7.0);
-    // Down the cell, slower as it goes, and back to the top.
-    float y = -0.42 + 0.84 * (1.0 - (1.0 - phase) * (1.0 - phase));
-    float speed = 2.0 * (1.0 - phase);
-    float wobble = 0.06 * (1.0 - phase);
-    float x = (hash(id + 7.1) - 0.5) * 0.5 + sin(phase * 13.0 + n * 40.0) * wobble;
-    vec2 to = (st - vec2(x, y)) * vec2(1.0, 2.0);
-    float r = 0.13 + 0.07 * hash(id + 5.9);
-    // A tear: drawn out upwards (behind it) and narrowed there, the more
-    // the faster it runs; its rim stirred.
-    float behind = max(-to.y, 0.0);
-    vec2 shape = vec2(to.x * (1.0 + behind / r * (0.5 + speed * 0.3)), to.y / (1.0 + (to.y < 0.0 ? 0.3 + speed * 0.4 : 0.0)));
-    float angle = atan(shape.y, shape.x);
-    float rim = r * (1.0 + 0.12 * (noise(vec2(angle * 2.0 + n * 9.0, t * 0.5 + n)) - 0.5));
-    float drop = smoothstep(rim, rim * 0.6, length(shape));
-    // The streak above: a thin line where it came down, wavering, fading
-    // further up, with small drops of different sizes along it.
-    float above = y - st.y;
-    float path = x + sin(st.y * 18.0 + n * 30.0) * 0.015;
-    float streak = smoothstep(0.03, 0.008, abs(st.x - path)) * step(0.0, above) * (1.0 - smoothstep(0.0, 0.45, above)) * 0.12;
-    float row = floor(st.y * 9.0);
-    vec2 tr = vec2(st.x - path, (fract(st.y * 9.0) - 0.5) / 9.0);
-    float size = (0.012 + 0.03 * hash(vec2(row, n))) * step(0.45, hash(vec2(row, n + 2.0)));
-    float bead = smoothstep(size, size * 0.4, length(tr * vec2(1.0, 1.3))) * step(0.0, above) * (1.0 - smoothstep(0.05, 0.5, above));
-    float trail = max(streak, bead);
-    vec2 aside = shape / r * drop + tr / max(size, 1e-3) * bead * 0.4;
-    return vec3(aside, max(drop, trail));
+    vec2 glass = v;
+    vec2 cells = vec2(12.0, 2.0);
+    float shift = t * 0.7 + hash(vec2(floor(v.x * cells.x), 3.1));
+    v.y += shift;
+    vec2 id = floor(v * cells);
+    vec2 st = fract(v * cells) - vec2(0.5, 0.0);
+    float h1 = hash(id + 0.7), h2 = hash(id + 1.9), h3 = hash(id + 3.3), h4 = hash(id + 5.1);
+    if (h4 > density)
+        return vec2(0.0);
+    // Down the cell slowly, then a slip: the slope of a soft saw.
+    float phase = fract(t * (0.8 + 0.5 * h2) + h3);
+    float saw = smoothstep(0.0, 0.85, phase) * ease(1.0, 0.85, phase);
+    float y = (saw - 0.5) * 0.9 + 0.5;
+    // Its line down, swaying as it goes, less near the cell's sides: the
+    // drop where its own middle has got to, its streak row by row.
+    float k = 14.0 + 10.0 * h2;
+    float swayHere = glass.y * k;
+    float swayDrop = ((id.y + y) / cells.y - shift) * k;
+    float reachX = (0.5 - abs(h1 - 0.5)) * (h3 - 0.5);
+    float x = ((h1 - 0.5) + sin(swayDrop + sin(swayDrop)) * reachX) * 0.7;
+    float xPath = ((h1 - 0.5) + sin(swayHere + sin(swayHere)) * reachX) * 0.7;
+    // Its own size, and kept whole inside its cell.
+    float size = 0.16 + 0.2 * h4 * h4 / max(density, 0.05);
+    size = min(size, 0.36);
+    x = clamp(x, size - 0.48, 0.48 - size);
+    xPath = clamp(xPath, size - 0.48, 0.48 - size);
+    vec2 to = (st - vec2(x, y)) * vec2(1.0, cells.x / cells.y);
+    float d = length(to);
+    // A dome: its slope, not just its rim, bends the picture.
+    float drop = max(0.0, 1.0 - (d / size) * (d / size));
+    // A neck above it, narrowing upwards, that runs into it: the two cut
+    // at one level make one tear, round below and tapering smoothly.
+    float up = max(to.y, 0.0);
+    float neck = max(0.0, 1.0 - abs(to.x) / (size * 0.55 * (1.0 - smoothstep(0.0, size * 2.2, up)) + 1e-4))
+               * (1.0 - smoothstep(0.0, size * 2.2, up)) * smoothstep(0.0, size * 0.5, up) * 0.75;
+    // The trail: nothing at the cell's top, widening down to the drop.
+    float widen = sqrt(ease(1.0, y, st.y));
+    float off = abs(st.x - xPath);
+    float behind = smoothstep(-0.02, 0.02, st.y - y);
+    float trail = ease(0.22 * widen + 1e-4, 0.14 * widen * widen, off) * behind * widen * widen;
+    // Droplets left on the glass along it, a row of them, some missing.
+    float rows = 8.0 + 6.0 * h1;
+    float rowId = floor(glass.y * rows);
+    // How far from the middle of its row, in the cell's height, then in its width.
+    float fromRow = (0.5 - fract(glass.y * rows)) * cells.y / rows;
+    float dsize = 0.06 + 0.12 * hash(vec2(id.x, rowId));
+    float dr = length(vec2(st.x - xPath, fromRow * cells.x / cells.y)) / dsize;
+    float droplet = max(0.0, 1.0 - dr * dr) * step(0.3, hash(vec2(id.x + 0.5, rowId)));
+    return vec2(drop + neck + droplet * widen * behind, trail);
+}
+
+// Still drops: one in each of a fine grid's cells, anywhere in it, most
+// tiny and a few large, each coming and going at its own time.
+float stillDrops(vec2 v, float t, float density)
+{
+    v *= 40.0;
+    vec2 id = floor(v);
+    vec2 st = fract(v) - 0.5;
+    float h1 = hash(id + 2.2), h2 = hash(id + 4.4), h3 = hash(id + 6.6);
+    float size = 0.05 + 0.33 * h3 * h3 * h3;
+    // Anywhere in the cell, but whole inside it.
+    vec2 at = (vec2(h1, h2) - 0.5) * 2.0 * (0.46 - size * 1.15);
+    float life = fract(t * (0.15 + 0.2 * h1) + h2);
+    float fade = smoothstep(0.0, 0.05, life) * ease(1.0, 0.4, life);
+    float d = length((st - at) * vec2(1.0, 1.0 + 0.3 * h1)) / size;
+    return max(0.0, 1.0 - d * d) * fade * step(h3 * 0.8, density);
+}
+
+// The water at v: still drops and two layers of running ones (the second
+// smaller by a ratio that is no whole number, and shifted), added up:
+// where the sum passes a level is water, so what lies close together runs
+// together into one smooth shape, and the sum's slope bends the picture.
+// x: how deep, y: trail.
+vec2 rainField(vec2 v, float t, float a)
+{
+    float stillOnes = stillDrops(v, t, a) * (0.4 + 1.2 * a);
+    vec2 one = runningDrops(v, t, 0.15 + 0.85 * smoothstep(0.0, 0.6, a));
+    vec2 two = runningDrops(v * 1.83 + vec2(7.3, 2.9), t * 1.1, smoothstep(0.25, 1.0, a));
+    return vec2(stillOnes + one.x + two.x, max(one.y, two.y));
 }
 
 // Picture coordinates about the centre with square units, and back.
@@ -244,48 +303,30 @@ void main()
         vec3 glow = normalize(base + 0.05) * 1.6 * edge;
         color = mix(base, glow, a);
     } else if (k == 15) {
-        // Rain on the glass: drops (more with strength) running down and
-        // still ones on the pane, the picture bent through each, its colours
-        // parting a little at their rims, a glint on each, and the picture
-        // a faint blue, never more.
-        vec2 p = vec2(uv.x * aspect, uv.y);
-        float density = 0.1 + 0.85 * a;
-        vec3 big = rainLayer(p * 6.0, time, density);
-        vec3 small = rainLayer(p * 12.0 + vec2(3.7, 1.1), time * 1.3, density * 0.9);
-        // Still drops beading on the pane, coming and going: two in a cell,
-        // not round, flattened a little, of all sizes, run together where
-        // they touch.
-        vec2 g = p * 24.0;
-        vec2 gid = floor(g);
-        vec2 gst = fract(g) - 0.5;
-        vec2 c1 = (vec2(hash(gid + 1.0), hash(gid + 2.0)) - 0.5) * 0.5;
-        vec2 c2 = c1 + (vec2(hash(gid + 5.0), hash(gid + 6.0)) - 0.5) * 0.45;
-        float r1 = 0.06 + 0.14 * hash(gid + 3.0), r2 = 0.04 + 0.1 * hash(gid + 7.0);
-        vec2 o1 = (gst - c1) * vec2(1.0, 1.2), o2 = (gst - c2) * vec2(1.0, 1.25);
-        float wob = 0.25 * (noise(gst * 9.0 + gid * 3.1) - 0.5);
-        float d1 = length(o1) - r1 * (1.0 + wob), d2 = length(o2) - r2 * (1.0 - wob);
-        float k = 0.06;
-        float h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
-        float dd = mix(d2, d1, h) - k * h * (1.0 - h);
-        float on = step(hash(gid), density * 0.6) * smoothstep(0.0, 0.3, sin(time * 0.6 + hash(gid + 4.0) * 6.2832));
-        float bead = (1.0 - smoothstep(-0.03, 0.005, dd)) * on;
-        vec2 gc = mix(c2, c1, h);
-        float gr = mix(r2, r1, h);
-        vec2 aside = big.xy * 0.06 + small.xy * 0.03 + (gst - gc) / gr * bead * 0.012;
-        float water = max(max(big.z, small.z), bead);
-        aside.x /= aspect;
-        // The wet glass a little misted (five looks), clear through the water.
-        float mist = (0.002 + 0.004 * a) * (1.0 - water);
+        // Rain on the glass (rainField): the more strength, the more drops.
+        // The glass mists a little except where water is or a drop has just
+        // run; through the water the picture is clear and bent by the
+        // water's slope, its colours parting a little, a glint where the
+        // slope faces the light, and all of it a faint blue, never more.
+        vec2 v = vec2(uv.x * aspect, 1.0 - uv.y) * 0.9;
+        vec2 here = rainField(v, time * 0.25, a);
+        float e = 0.0012;
+        float dx = rainField(v + vec2(e, 0.0), time * 0.25, a).x - here.x;
+        float dy = rainField(v + vec2(0.0, e), time * 0.25, a).x - here.x;
+        vec2 slope = vec2(dx, -dy);
+        float water = smoothstep(0.25, 0.4, here.x);
+        float clear = max(water, here.y);
+        float mist = (0.002 + 0.004 * a) * (1.0 - clear);
         vec2 m = vec2(mist / aspect, mist);
         vec3 misted = (texture(source, uv).rgb + texture(source, uv + m).rgb + texture(source, uv - m).rgb
                        + texture(source, uv + vec2(m.x, -m.y)).rgb + texture(source, uv + vec2(-m.x, m.y)).rgb) / 5.0;
-        vec3 through = vec3(texture(source, uv + aside * 1.1).r, texture(source, uv + aside).g, texture(source, uv + aside * 0.9).b);
-        color = mix(misted, through, smoothstep(0.0, 0.3, water));
-        // A darker rim round each drop, and a glint, the light from the upper left.
-        color *= 1.0 - 0.35 * water * (1.0 - water) * 4.0;
-        vec2 bend = normalize(aside + 1e-6);
-        float glint = pow(max(dot(bend, vec2(0.55, 0.83)), 0.0), 4.0) * smoothstep(0.002, 0.02, length(aside));
-        color += water * glint * 0.6;
+        vec2 bend = slope * water * vec2(1.0 / aspect, 1.0) * 0.35;
+        vec3 through = vec3(texture(source, uv + bend * 1.1).r, texture(source, uv + bend).g, texture(source, uv + bend * 0.9).b);
+        color = mix(misted, through, smoothstep(0.0, 0.25, clear));
+        float glint = pow(max(dot(normalize(vec3(slope * 60.0, 1.0)), normalize(vec3(-0.5, 0.7, 0.6))), 0.0), 24.0);
+        color += glint * water * 0.5;
+        // A darker rim where the water ends.
+        color *= 1.0 - 0.25 * smoothstep(0.2, 0.32, here.x) * (1.0 - smoothstep(0.32, 0.5, here.x));
         color = mix(color, color * vec3(0.9, 0.96, 1.08) + vec3(0.0, 0.01, 0.03), 0.18 + 0.12 * a);
     } else if (k == 16) {
         // Rotate the hue in YIQ, up to most of the way round.
@@ -369,8 +410,8 @@ void main()
             vec2 e = q * 32.0 + vec2(0.0, time * 6.0);
             vec2 eid = floor(e);
             vec2 est = fract(e) - 0.5 - (vec2(hash(eid + 1.3), hash(eid + 2.9)) - 0.5) * 0.6;
-            float spark = step(hash(eid), 0.06 + 0.1 * a) * smoothstep(0.2, 0.02, length(est))
-                        * (0.5 + 0.5 * sin(time * 20.0 + hash(eid) * 50.0)) * smoothstep(high * 2.2, high * 0.3, d);
+            float spark = step(hash(eid), 0.06 + 0.1 * a) * ease(0.2, 0.02, length(est))
+                        * (0.5 + 0.5 * sin(time * 20.0 + hash(eid) * 50.0)) * ease(high * 2.2, high * 0.3, d);
             color += vec3(1.0, 0.6, 0.15) * spark * 1.4;
         }
     } else if (k == 22) {
