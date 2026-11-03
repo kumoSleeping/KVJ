@@ -75,4 +75,4 @@ QT_QPA_PLATFORM=offscreen KVJ_DATA_DIR=/tmp/kvj-data KVJ_SNAPSHOT=/tmp/kvj.png b
 - 界面（QML）和画面输出，只靠在应用里试和截图。
 - `runtime.rs` 的追踪主循环本身：单元测试只覆盖其中的判断函数，整条循环要靠 `kvj-follow-bench` 和现场试用，开着「详细日志」看每一轮。
 - 相似位置的扫描（`alike.rs`），以及相机、投屏、Windows 上的系统声音采集，都要在真机上试。
-- MIDI 控制器（`Midi.cpp`、`platform/*/MidiPort.*`）：开发命令 `cc <号> <值>` 模拟控制器（推子 0–7、旋钮 16–23、按钮见 `Live.reactionButtons`），`midi` 返回推子旋钮位置、强度、闪光档位和每行的分配，`swap <a> <b>` 交换效果栏两个位置；真机插拔要手动试。效果的画面（23 个都是 `effects.frag` 里的一遍着色）没有自动测试，只能在 GPU 上截图看。
+- MIDI 控制器（`Midi.cpp`、`platform/*/MidiPort.*`）：开发命令 `cc <号> <值>` 模拟控制器（推子 0–7、旋钮 16–23、按钮见 `Live.reactionButtons`），`midi` 返回推子旋钮位置、强度、闪光档位和每行的分配，`swap <a> <b>` 交换效果栏两个位置；真机插拔要手动试。效果的画面（25 个都是 `effects.frag` 里的一遍着色）没有自动测试，只能在 GPU 上截图看。

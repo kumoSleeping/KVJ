@@ -37,6 +37,54 @@ float luma(vec3 c)
     return dot(c, vec3(0.299, 0.587, 0.114));
 }
 
+// Smooth value noise in [0, 1], and four octaves of it.
+float noise(vec2 p)
+{
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float fbm(vec2 p)
+{
+    float sum = 0.0, weight = 0.5;
+    for (int i = 0; i < 4; ++i) {
+        sum += weight * noise(p);
+        p = p * 2.03 + vec2(1.7, 9.2);
+        weight *= 0.5;
+    }
+    return sum;
+}
+
+// Rain on glass, one layer of it: a drop in some cells of a grid (as many as
+// `density`), running down its cell fast and then slow, wavering, with a
+// trail of small drops left above it. Gives how far to look aside through
+// the water (xy, in the cell's units) and how much water there is (z).
+// After the idea of BigWings' "Heartfelt" (Shadertoy); written anew.
+vec3 rainLayer(vec2 p, float t, float density)
+{
+    vec2 cell = vec2(1.0, 2.0);
+    vec2 id = floor(p / cell);
+    vec2 st = fract(p / cell) - 0.5;
+    float n = hash(id);
+    if (n > density)
+        return vec3(0.0);
+    float phase = fract(t * (0.12 + 0.2 * hash(id + 3.3)) + n * 7.0);
+    // Down the cell, slower as it goes, and back to the top.
+    float y = -0.42 + 0.84 * (1.0 - (1.0 - phase) * (1.0 - phase));
+    float x = (hash(id + 7.1) - 0.5) * 0.5 + sin(phase * 13.0 + n * 40.0) * 0.06 * (1.0 - phase);
+    vec2 to = (st - vec2(x, y)) * vec2(1.0, 2.0);
+    float r = 0.16 + 0.08 * hash(id + 5.9);
+    float drop = smoothstep(r, r * 0.55, length(to));
+    // The trail: small drops above it, fewer further up.
+    float above = st.y - y;
+    vec2 tr = vec2(st.x - x, (fract(st.y * 7.0 + 0.5) - 0.5) / 3.5);
+    float trail = smoothstep(0.06, 0.025, length(tr * vec2(1.0, 2.0)))
+                * step(0.0, -above) * smoothstep(-0.5, -0.05, above);
+    trail *= smoothstep(-0.02, 0.0, -above);
+    vec2 aside = to / r * drop + tr / 0.06 * trail * 0.5;
+    return vec3(aside, max(drop, trail * 0.8));
+}
+
 // Picture coordinates about the centre with square units, and back.
 vec2 toSquare(vec2 uv)
 {
@@ -182,6 +230,38 @@ void main()
         vec3 glow = normalize(base + 0.05) * 1.6 * edge;
         color = mix(base, glow, a);
     } else if (k == 15) {
+        // Rain on the glass: drops (more with strength) running down and
+        // still ones on the pane, the picture bent through each, its colours
+        // parting a little at their rims, a glint on each, and the picture
+        // a faint blue, never more.
+        vec2 p = vec2(uv.x * aspect, uv.y);
+        float density = 0.1 + 0.85 * a;
+        vec3 big = rainLayer(p * 6.0, time, density);
+        vec3 small = rainLayer(p * 12.0 + vec2(3.7, 1.1), time * 1.3, density * 0.9);
+        // Still drops beading on the pane, coming and going.
+        vec2 g = p * 28.0;
+        vec2 gid = floor(g);
+        vec2 gst = fract(g) - 0.5 - (vec2(hash(gid + 1.0), hash(gid + 2.0)) - 0.5) * 0.5;
+        float gr = 0.08 + 0.12 * hash(gid + 3.0);
+        float bead = smoothstep(gr, gr * 0.5, length(gst)) * step(hash(gid), density * 0.6)
+                   * smoothstep(0.0, 0.3, sin(time * 0.6 + hash(gid + 4.0) * 6.2832));
+        vec2 aside = big.xy * 0.06 + small.xy * 0.03 + gst / gr * bead * 0.012;
+        float water = max(max(big.z, small.z), bead);
+        aside.x /= aspect;
+        // The wet glass a little misted (five looks), clear through the water.
+        float mist = (0.002 + 0.004 * a) * (1.0 - water);
+        vec2 m = vec2(mist / aspect, mist);
+        vec3 misted = (texture(source, uv).rgb + texture(source, uv + m).rgb + texture(source, uv - m).rgb
+                       + texture(source, uv + vec2(m.x, -m.y)).rgb + texture(source, uv + vec2(-m.x, m.y)).rgb) / 5.0;
+        vec3 through = vec3(texture(source, uv + aside * 1.1).r, texture(source, uv + aside).g, texture(source, uv + aside * 0.9).b);
+        color = mix(misted, through, smoothstep(0.0, 0.3, water));
+        // A darker rim round each drop, and a glint, the light from the upper left.
+        color *= 1.0 - 0.35 * water * (1.0 - water) * 4.0;
+        vec2 bend = normalize(aside + 1e-6);
+        float glint = pow(max(dot(bend, vec2(0.55, 0.83)), 0.0), 4.0) * smoothstep(0.002, 0.02, length(aside));
+        color += water * glint * 0.6;
+        color = mix(color, color * vec3(0.9, 0.96, 1.08) + vec3(0.0, 0.01, 0.03), 0.18 + 0.12 * a);
+    } else if (k == 16) {
         // Rotate the hue in YIQ, up to most of the way round.
         color = texture(source, uv).rgb;
         float turn = a * 5.5;
@@ -192,7 +272,7 @@ void main()
         float s = sin(turn);
         yiq.yz = vec2(yiq.y * c - yiq.z * s, yiq.y * s + yiq.z * c);
         color = toRgb * yiq;
-    } else if (k == 16) {
+    } else if (k == 17) {
         // Duotone, as a heat camera sees: dark blue through purple and red
         // to yellow and white.
         vec3 base = texture(source, uv).rgb;
@@ -202,22 +282,54 @@ void main()
                   : l < 0.75 ? mix(vec3(0.95, 0.15, 0.1), vec3(1.0, 0.85, 0.1), (l - 0.5) / 0.25)
                   : mix(vec3(1.0, 0.85, 0.1), vec3(1.0), (l - 0.75) / 0.25);
         color = mix(base, heat, a);
-    } else if (k == 17) {
+    } else if (k == 18) {
         // Black and white.
         color = texture(source, uv).rgb;
         color = mix(color, vec3(smoothstep(0.02, 0.98, luma(color))), a);
-    } else if (k == 18) {
+    } else if (k == 19) {
         // Pure black and white, nothing between.
         color = texture(source, uv).rgb;
         color = mix(color, vec3(smoothstep(0.47, 0.53, luma(color))), a);
-    } else if (k == 19) {
+    } else if (k == 20) {
         // A negative.
         color = texture(source, uv).rgb;
         color = mix(color, 1.0 - color, a);
-    } else if (k == 20) {
+    } else if (k == 21) {
+        // Fire all round the picture's edge: flames from four octaves of
+        // noise, warped by more of it so they curl, licking inwards, white
+        // and yellow at the heart through orange and red to dark red, with a
+        // glow. Strength: how high and fierce. Only near the edge is it
+        // worked out.
+        color = texture(source, uv).rgb;
+        vec2 q = toSquare(uv);
+        vec2 room = vec2(aspect, 1.0) * 0.5 - abs(q);
+        float d = min(room.x, room.y);
+        float high = 0.06 + 0.24 * a;
+        if (d < high * 1.7) {
+            // Each edge burns on its own, the nearer side and the nearer top
+            // or foot: where they meet at a corner the two fires mingle.
+            float heat = 0.0;
+            for (int e = 0; e < 2; ++e) {
+                float inward = e == 0 ? room.x : room.y;
+                if (inward > high * 1.7)
+                    continue;
+                float along = e == 0 ? q.y + 10.0 * sign(q.x) : q.x + 20.0 * sign(q.y);
+                vec2 f = vec2(along * 9.0, inward * 4.5 - time * 2.6);
+                vec2 warp = vec2(fbm(f * 0.7 + vec2(0.0, time * 0.5)), fbm(f * 0.7 + vec2(5.2, -time * 0.4)));
+                float flame = fbm(f + warp * 1.6);
+                heat = max(heat, clamp(flame * 1.6 - inward / high * 1.1 + 0.15 * a, 0.0, 1.0));
+            }
+            vec3 fire = heat < 0.3 ? mix(vec3(0.0), vec3(0.5, 0.03, 0.0), heat / 0.3)
+                      : heat < 0.55 ? mix(vec3(0.5, 0.03, 0.0), vec3(1.0, 0.3, 0.02), (heat - 0.3) / 0.25)
+                      : heat < 0.8 ? mix(vec3(1.0, 0.3, 0.02), vec3(1.0, 0.8, 0.15), (heat - 0.55) / 0.25)
+                      : mix(vec3(1.0, 0.8, 0.15), vec3(1.0, 1.0, 0.9), (heat - 0.8) / 0.2);
+            float body = smoothstep(0.05, 0.35, heat);
+            color = mix(color, fire, body) + vec3(1.0, 0.35, 0.05) * exp(-d / (high * 0.9)) * 0.25 * (0.4 + 0.6 * a);
+        }
+    } else if (k == 22) {
         // Flash to black (Live lowers `amount` as it fades).
         color = texture(source, uv).rgb * (1.0 - a);
-    } else if (k == 21 || k == 22) {
+    } else if (k == 23 || k == 24) {
         // Flash to white, and the strobe's flashes (Live sets `amount`).
         color = mix(texture(source, uv).rgb, vec3(1.0), a);
     } else {

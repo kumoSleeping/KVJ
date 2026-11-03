@@ -224,10 +224,11 @@ let go or dragged there stays offstage (faint on the preview, unseen by the
 audience) until it is dragged into the picture.
 The size bar works on the chosen sticker, or else on the one posted last, and
 sets the size of the next. The effects are a rail of two columns at the
-window's right edge, 23 of them: mirror, video wall, lens, twirl, punch (pushed
+window's right edge, 25 of them: mirror, video wall, lens, twirl, punch (pushed
 in), shake, zoom blur, out of body (soft, brightened copies growing out of the picture and fading), mosaic, glitch, RGB split, halftone, scanlines, VHS,
-neon outline, hue, heat (duotone), black and white, pure black and white,
-negative, flash to black, flash to white and strobe. Each has a key that turns
+neon outline, rain on the glass (drops running down, the picture bent through
+them; after the idea of BigWings' Heartfelt on Shadertoy, written anew), hue, heat (duotone), black and white, pure black and white,
+negative, fire round the edge, flash to black, flash to white and strobe. Each has a key that turns
 it on at the strength it looks best at (or off; dragged on up or down its
 column, it switches the others the same way); dragged sideways, or the wheel,
 it sets the strength. For the three flashes (闪白, 闪黑, 频闪) the strength
@@ -237,7 +238,8 @@ coming up and fading out within each flash, 频闪 is a hard white flash.
 Never more than 8 a second (Live.fastestFlash): faster reads as flicker,
 and fast flashing can bring on seizures in people prone to them. They apply
 in one fixed order, whatever key they are on: layout (mirror, video wall),
-then shape, then texture, then colour, the flashes last so that a flash is
+then shape, then texture (rain last), then colour, then fire (so it keeps
+its colours), the flashes last so that a flash is
 pure white or black. The first eight rows of the rail are the controller's
 strips (below), the left key a knob and the right a fader; the number keys
 1–8 (on the number pad too) switch the right column's effects and Shift with

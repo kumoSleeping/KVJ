@@ -317,11 +317,13 @@ QtObject {
         { key: "scan", name: "扫描线", moving: true, preset: 0.45 },
         { key: "vhs", name: "VHS", moving: true, preset: 0.6 },
         { key: "edge", name: "描边", preset: 0.8 },
+        { key: "rain", name: "雨打玻璃", moving: true, preset: 0.5 },
         { key: "hue", name: "色相", preset: 0.3 },
         { key: "duotone", name: "双色调", preset: 1 },
         { key: "mono", name: "黑白", preset: 1 },
         { key: "threshold", name: "高对比黑白", preset: 1 },
         { key: "invert", name: "反色", preset: 1 },
+        { key: "fire", name: "火焰", moving: true, preset: 0.5 },
         { key: "flashBlack", name: "闪黑", rate: true, moving: true, preset: 0.4 },
         { key: "flash", name: "闪白", rate: true, moving: true, preset: 0.4 },
         { key: "strobe", name: "频闪", rate: true, moving: true, preset: 0.4 }
@@ -495,7 +497,8 @@ QtObject {
         "lens", "zoom",
         "twirl", "halftone",
         "scan", "flashBlack",
-        "threshold"
+        "threshold", "fire",
+        "rain"
     ]
     property var layout: defaultLayout
     readonly property int places: 16

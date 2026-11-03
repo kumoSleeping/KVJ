@@ -622,6 +622,40 @@ Item {
                 c.fill()
                 c.fillRect(7.5, 15, 9, 6)
                 break
+            case "rain":
+                // Drops on glass, one running with a trail.
+                for (const [x, y, r] of [[7, 7, 2.4], [16, 5, 1.6], [17, 15, 2.8], [6, 17, 1.4]]) {
+                    c.beginPath()
+                    c.arc(x, y, r, 0, Math.PI * 2)
+                    c.stroke()
+                }
+                c.fillStyle = rgba(0.5)
+                for (const y of [9.5, 12, 14])
+                    c.fillRect(6.6, y, 0.9, 0.9)
+                break
+            case "fire": {
+                // A flame.
+                c.fillStyle = glyph.lit ? ink : "#ff5a1f"
+                c.beginPath()
+                c.moveTo(12, 2.5)
+                c.bezierCurveTo(16, 7, 20, 10, 18.5, 15.5)
+                c.bezierCurveTo(17.5, 19.5, 14.5, 21.5, 12, 21.5)
+                c.bezierCurveTo(8, 21.5, 5, 18.5, 5.5, 14.5)
+                c.bezierCurveTo(6, 11, 9, 10, 9.5, 6.5)
+                c.bezierCurveTo(11, 8, 11.5, 9.5, 11.5, 11)
+                c.bezierCurveTo(13, 8.5, 13, 5.5, 12, 2.5)
+                c.closePath()
+                c.fill()
+                c.fillStyle = glyph.lit ? Theme.text.toString() : "#ffd23a"
+                c.beginPath()
+                c.moveTo(12, 12)
+                c.bezierCurveTo(14.5, 14, 15, 16.5, 14, 18.5)
+                c.bezierCurveTo(13, 20, 11, 20, 10, 18.5)
+                c.bezierCurveTo(9, 16.5, 10.5, 15, 12, 12)
+                c.closePath()
+                c.fill()
+                break
+            }
             case "vhs":
                 // A tape: two reels in a case.
                 c.lineWidth = 1.4
