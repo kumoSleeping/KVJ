@@ -99,50 +99,83 @@ void main()
         }
         color /= 12.0;
     } else if (k == 7) {
-        // Out of body: a faint larger copy leaving the picture over and over.
-        color = texture(source, uv).rgb;
-        for (int i = 0; i < 2; ++i) {
-            float t = fract(time * 0.9 + float(i) * 0.5);
-            float s = 1.0 + t * (0.15 + 0.45 * a);
-            vec3 ghost = texture(source, (uv - 0.5) / s + 0.5).rgb;
-            color = mix(color, max(color, ghost), (1.0 - t) * 0.6 * a);
+        // Out of body: soft, brightened, slightly larger copies leaving the
+        // picture and fading, three at a time a third of the way apart, each
+        // a little blurred as it grows, laid on with a screen so they glow.
+        vec3 base = texture(source, uv).rgb;
+        color = base;
+        for (int i = 0; i < 3; ++i) {
+            float t = fract(time * 0.7 + float(i) / 3.0);
+            float s = 1.0 + t * (0.1 + 0.35 * a);
+            vec2 p = (uv - 0.5) / s + 0.5;
+            vec2 spread = (p - 0.5) * (0.01 + 0.03 * t);
+            vec3 ghost = (texture(source, p).rgb + texture(source, p + spread).rgb + texture(source, p - spread).rgb) / 3.0;
+            ghost = min(vec3(1.0), ghost * 1.15 + 0.03);
+            float fade = (1.0 - t) * (1.0 - t) * smoothstep(0.0, 0.08, t) * (0.3 + 0.35 * a);
+            color = 1.0 - (1.0 - color) * (1.0 - ghost * fade);
         }
     } else if (k == 8) {
-        // Splash: the picture drawn smaller in the middle, and from all round
-        // its edge rays of the edge's own colours thrown outwards like water
-        // from a stone, a new throw twenty times a second.
-        float s = 1.0 - (0.12 + 0.3 * a);
+        // Splash: the picture smaller in the middle, its outline a liquid one
+        // that keeps moving (a rounded shape wobbling like water), and from
+        // all round it white water thrown out on black: curved streams that
+        // grow and fall back, each ending in a drop, and drops flung off
+        // further. Strength: how much smaller, and how far the water goes.
+        float s = 1.0 - (0.12 + 0.33 * a);
         vec2 c = toSquare(uv);
+        float r = length(c);
+        vec2 d = c / max(r, 1e-5);
+        float theta = atan(d.y, d.x);
+        // A rounded rectangle (|x/w|^4 + |y/h|^4 = 1) as large as the smaller
+        // picture, its edge rippling.
         vec2 half_ = vec2(aspect, 1.0) * 0.5 * s;
-        if (abs(c.x) <= half_.x && abs(c.y) <= half_.y) {
-            color = texture(source, fromSquare(c / s)).rgb;
-        } else {
-            // Where the line from the centre meets the smaller picture's edge.
-            vec2 d = c / max(length(c), 1e-5);
-            float toEdge = min(half_.x / max(abs(d.x), 1e-5), half_.y / max(abs(d.y), 1e-5));
-            vec2 edge = d * toEdge;
-            float beyond = length(c) - toEdge;
-            vec3 ink = texture(source, fromSquare(edge * 0.985 / s)).rgb;
-            float slot = floor(time * 20.0);
-            float angle = atan(d.y, d.x) / 6.2832 + 0.5;
-            color = ink * 0.12 * (1.0 - smoothstep(0.0, 0.25, beyond));
-            for (int layer = 0; layer < 2; ++layer) {
-                float n = floor(70.0 + 90.0 * a) + float(layer) * 37.0;
-                float ray = floor(angle * n);
-                float within = fract(angle * n);
-                vec2 seed = vec2(ray + float(layer) * 101.0, slot);
-                float reach = (0.08 + 0.55 * a) * (0.25 + 0.75 * hash(seed));
-                float width = 0.15 + 0.5 * hash(seed + 3.1);
-                float body = step(abs(within - 0.5), width * 0.5 * (1.0 - beyond / max(reach, 1e-3)));
-                // A drop flung off the end of every other ray.
-                float drop = hash(seed + 5.7) < 0.5 ? 0.0
-                           : step(length(vec2((within - 0.5) / n * 6.2832 * length(c), beyond - reach * 1.08)), 0.006 * (0.5 + a));
-                // The edge's colour at its brightest, its hue kept.
-                vec3 bright = mix(ink, ink / max(max(ink.r, ink.g), max(ink.b, 0.05)), 0.8);
-                color = max(color, bright * (beyond < reach ? body * (1.0 - 0.5 * beyond / max(reach, 1e-3)) : 0.0));
-                color = max(color, bright * drop);
+        vec2 q = abs(d) / half_;
+        float edge = pow(pow(q.x, 4.0) + pow(q.y, 4.0), -0.25);
+        edge += s * (0.022 * sin(5.0 * theta + time * 2.3) + 0.016 * sin(9.0 * theta - time * 3.1)
+                     + 0.010 * sin(15.0 * theta + time * 4.7));
+        float aa = 0.0025;
+        float inside = 1.0 - smoothstep(edge - aa, edge + aa, r);
+        vec3 picture = texture(source, fromSquare(c / s)).rgb;
+        // A bright rim where the water meets the picture.
+        float rim = exp(-abs(r - edge) / 0.004);
+        float water = 0.0;
+        float glow = 0.0;
+        float beyond = r - edge;
+        if (beyond > -aa) {
+            float n = floor(26.0 + 30.0 * a);
+            float around = (theta / 6.2832 + 0.5) * n;
+            float reachAll = 0.04 + 0.36 * a;
+            for (int j = -1; j <= 1; ++j) {
+                float stream = floor(around) + float(j);
+                float seed = mod(stream, n);
+                float h1 = hash(vec2(seed, 1.3)), h2 = hash(vec2(seed, 2.7)), h3 = hash(vec2(seed, 4.1));
+                // Each stream grows and falls back at its own pace.
+                float reach = reachAll * (0.35 + 0.65 * h1) * (0.55 + 0.45 * sin(time * (3.0 + 4.0 * h2) + h3 * 6.2832));
+                float t = clamp(beyond / max(reach, 1e-3), 0.0, 1.0);
+                // Its line bends as it goes out.
+                float line = stream + 0.5 + (h2 - 0.5) * 0.4 + (h3 - 0.5) * 1.6 * t * t;
+                float across = (around - line) / n * 6.2832 * r;
+                float width = (0.007 + 0.016 * h1) * sqrt(1.0 - 0.85 * t);
+                float body = beyond < reach ? 1.0 - smoothstep(width - aa, width + aa, abs(across)) : 0.0;
+                // The drop at its end.
+                vec2 tip = vec2(across, beyond - reach);
+                float bulb = 0.008 + 0.014 * h1;
+                float drop = 1.0 - smoothstep(bulb - aa, bulb + aa, length(tip));
+                float here = max(body, drop);
+                // And drops flung further, going out and shrinking.
+                for (int f = 0; f < 2; ++f) {
+                    float flight = fract(time * (0.7 + 0.8 * h2) + h1 + float(f) * 0.5);
+                    vec2 far = vec2(across - (h3 - 0.5) * 0.03 * (1.0 + float(f)), beyond - reach - flight * (0.06 + 0.28 * a));
+                    float size = bulb * (0.9 - 0.3 * float(f)) * (1.0 - 0.7 * flight);
+                    here = max(here, (1.0 - smoothstep(size - aa, size + aa, length(far))) * (1.0 - flight * flight));
+                }
+                water = max(water, here);
+                glow += exp(-max(abs(across) - width, 0.0) / 0.01) * (beyond < reach * 1.1 ? 0.25 : 0.0);
             }
         }
+        // Spray hanging round the edge.
+        float mist = beyond > 0.0 ? exp(-beyond / (0.015 + 0.03 * a)) * 0.35 : 0.0;
+        vec3 outside = vec3(min(1.0, water + glow * 0.35 + mist));
+        color = mix(outside, picture, inside) + vec3(rim * 0.6 * (0.6 + 0.4 * a));
     } else if (k == 9) {
         // Mosaic.
         float across = mix(150.0, 10.0, pow(a, 0.6));
