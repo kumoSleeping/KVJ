@@ -125,7 +125,8 @@ Item {
                 property real time: ((stage.now - Live.epoch) / 1000) % 1000
                 property real aspect: stage.width / Math.max(1, stage.height)
                 property real kind: Live.kind(pass.modelData)
-                property real amount: Live.amount(pass.modelData)
+                // A flash as far as it is in, the strobe while it is lit (Live.drawnAt).
+                property real amount: Live.drawnAt(pass.modelData, stage.now)
             }
             ShaderEffectSource {
                 id: output

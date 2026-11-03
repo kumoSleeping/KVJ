@@ -223,39 +223,55 @@ half the picture again on every side, as far as the desk has room: a sticker
 let go or dragged there stays offstage (faint on the preview, unseen by the
 audience) until it is dragged into the picture.
 The size bar works on the chosen sticker, or else on the one posted last, and
-sets the size of the next. Each effect (mosaic, RGB split, video wall, lens,
-zoom blur, wave, glitch, scanlines, halftone, posterize, hue, black and
-white) has a key that turns it on at the strength it looks best at (or off;
-dragged on over the other keys, it switches them the same way) and a bar that
-fine-tunes it; they apply from the
-top down, each to the picture the ones above made, and a grip at the left of
-each drags it to another place in that order (kept between runs) while the
-effects panel's **编辑** is on. The number
-keys 1–9 and 0 (on the number pad too) switch the first ten effects in the list,
-whose rows show their key; the effects are the column at the window's right edge; , and . make the last effect switched (or tuned)
-5 % weaker or stronger. An effect tuned that way and then switched off keeps that
-strength as its own (a dot on its key); 重置 gives every effect back the strength
-it came with. The effects panel's own 快捷键 turns these keys off. Effects touch
-only the video, never the words or stickers.
+sets the size of the next. The effects are a rail of two columns at the
+window's right edge, 24 of them: mirror, video wall, lens, twirl, punch (pushed
+in), shake, zoom blur, out of body (a larger faint copy leaving the picture),
+splash (the picture smaller, rays of its edge's colours thrown out from all
+round it, flickering), mosaic, glitch, RGB split, halftone, scanlines, VHS,
+neon outline, hue, heat (duotone), black and white, pure black and white,
+negative, flash to black, flash to white and strobe. Each has a key that turns
+it on at the strength it looks best at (or off; dragged on up or down its
+column, it switches the others the same way); dragged sideways, or the wheel,
+it sets the strength. For the three flashes (闪白, 闪黑, 频闪) the strength
+is how fast they flash, in six steps (1, 1.5, 2.5, 4, 6 and 8 a second; the
+range cut in six, held at a border until well past it): 闪白 and 闪黑 breathe,
+coming up and fading out within each flash, 频闪 is a hard white flash.
+Never more than 8 a second (Live.fastestFlash): faster reads as flicker,
+and fast flashing can bring on seizures in people prone to them. They apply
+in one fixed order, whatever key they are on: layout (mirror, video wall),
+then shape, then texture, then colour, the flashes last so that a flash is
+pure white or black. The first eight rows of the rail are the controller's
+strips (below), the left key a knob and the right a fader; the number keys
+1–8 (on the number pad too) switch the right column's effects and Shift with
+1–8 the left's, as the keys show; , and . make the last effect switched (or
+tuned) 5 % weaker or stronger. An effect tuned that way and then switched off
+keeps that strength as its own (a dot on its key); 强度恢复默认推荐 gives
+every effect back the strength it came with. Which effect sits where is the
+⋯ menu's 分配控件: press one key, then another, and the two change places (a
+row's key with one of the rest too); 完成 ends it, and the choice is kept
+between runs (分配恢复默认 brings back the first one). Effects touch only the
+video, never the words or stickers.
 
 A Korg nanoKONTROL2 works the effects too (only devices of that name are
 opened, so a DJ controller on the same computer never moves the picture). It
 is on by default on macOS; on Windows turn it on in the effects' ⋯ menu (使用
 nanoKONTROL2), since there pulling a MIDI device out may bring an app using
-WinMM down under Windows 11's new MIDI service. It must be in CC mode: unplug it, hold SET MARKER and CYCLE, plug it
-back in (it keeps that mode). Its eight strips work the first eight effects of
-the rail, marked by a line at their left; TRACK ▶ moves them to the ninth on,
-TRACK ◀ back. A fader sets the strength (at the foot the effect is off). It
-takes an effect that is off at once; an effect that is on and stands
-elsewhere (after a number key, the mouse, a reorder or the other page)
-follows the fader's moves scaled so that the two meet at the end of its
-travel, then goes with it; an amber tick at the key's foot shows where the
-fader stands meanwhile. What a fader set shows beside its key for a moment
-("故障 · 45%"). S switches the strip's effect as its number key does, M held
-flips it until let go; nothing on the controller plays, follows or projects.
-Unplugging the controller leaves every effect as it is; the ⋯ menu turns the
-controller off (kept between runs). The ⋯ key shows an
-amber dot while the controller is in a DAW mode.
+WinMM down under Windows 11's new MIDI service. It must be in CC mode: unplug
+it, hold SET MARKER and CYCLE, plug it back in (it keeps that mode). Strip N's
+knob and fader set the strength of the effects in the rail's row N, left and
+right. Neither jumps an effect that is on: while one stands elsewhere (after
+a key, the mouse or a swap), the effect follows its moves scaled so that the
+two meet at the end of its travel, then goes with it, and an amber tick at
+the key's foot shows where it stands meanwhile; an effect that is off it
+takes at once. What one set shows beside its key for a moment ("故障 · 45%").
+Knobs and faders work the effects and nothing else does (an effect is off
+at 0). Every button sends a reaction, in the reactions rail's order: the S
+row the first eight, the M row the next eight, the R row the next, then
+TRACK ◀ ▶, CYCLE, MARKER SET ◀ ▶ and ◀◀ ▶▶ ■ ▶ ●, as they sit from left
+to right (35 reactions, one for each button); nothing on the controller
+plays, follows or projects. Unplugging the controller leaves every
+effect as it is; the ⋯ menu turns the controller off (kept between runs). The
+⋯ key shows an amber dot while the controller is in a DAW mode.
 
 Planned, later: any MIDI controller, not only the nanoKONTROL2, with bindings
 of one's own (MIDI learn, as in djay: press 学习, touch a control on the

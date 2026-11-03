@@ -4,27 +4,31 @@ import QtQuick.Layouts
 import QtQuick.Window
 import KVJ
 
-// The effects as a narrow rail at the window's right edge, top to bottom in
-// the order they apply: each a small key with a drawing of what it does (no
-// name; the name is in its tip) and its number key in a corner, its strength
-// ink filling it from the left. A press turns it on at the strength it looks
-// best at, or off, and dragged on up or down switches the others it passes
-// the same way; dragged sideways (or the wheel) it sets the strength; a
-// double-click brings back the best strength. The ⋯ key at the foot holds
-// 全关, the order (dragging the keys while it is on), the kept strengths and
-// the controller. With a nanoKONTROL2 plugged in (Live: the controller), the
-// eight keys its strips work have a line at their left; a fader not yet
-// level with its effect shows where it stands as an amber tick at the foot.
+// The effects as a rail of two columns at the window's right edge: each a
+// small key with a drawing of what it does (no name; the name is in its tip),
+// its strength ink filling it from the left. The first eight rows are the
+// nanoKONTROL2's strips, the left key its knob and the right its fader (the
+// keys show 1–8 and ⇧1–⇧8, the number keys that switch them); the rest of the
+// effects follow below (Live.layout). A press turns an effect on at the
+// strength it looks best at, or off, and dragged on up
+// or down its column switches the others it passes the same way; dragged
+// sideways (or the wheel) it sets the strength. The ⋯ key at the foot holds
+// 全关, 分配控件 (press one key and then another: the two change places), the
+// kept strengths and the controller. A knob or fader not yet level with its
+// effect shows where it stands as an amber tick at the key's foot.
 Item {
     id: rail
 
-    // Dragging the keys changes their order while this is on.
+    // 分配控件: a press picks a key, a second press swaps the two.
     property bool editing: false
+    property int picked: -1
+    onEditingChanged: picked = -1
     // This computer draws in software: no effects show.
     readonly property bool software: GraphicsInfo.api === GraphicsInfo.Software
 
-    readonly property int count: Live.chain.count
     readonly property int gap: 3
+    // The room between the controller's rows and the rest.
+    readonly property int apart: 10
     // One size always; a rail taller than its room scrolls with the wheel.
     readonly property int key: 36
     property real scroll: 0
@@ -35,13 +39,28 @@ Item {
         scroll = Math.max(0, Math.min(maxScroll, scroll - dy))
     }
 
-    implicitWidth: 40
-    Layout.preferredWidth: key
+    implicitWidth: key * 2 + gap
+    Layout.preferredWidth: key * 2 + gap
     Layout.fillWidth: false
 
     function nameOf(k) {
         const i = Live.kind(k)
         return i >= 0 ? Live.effects[i].name : ""
+    }
+    // Where place p's key sits in the column of keys.
+    function placeY(p) {
+        const row = Math.floor(p / 2)
+        return row < 8 ? row * (key + gap) : 8 * (key + gap) - gap + apart + (row - 8) * (key + gap)
+    }
+    // The place under y in column `col` (0 left, 1 right), within p's part.
+    function placeAt(y, col, p) {
+        const rows = Math.ceil(Live.layout.length / 2)
+        const lower = p >= Live.places
+        const top = lower ? placeY(Live.places) : 0
+        const first = lower ? 8 : 0
+        const last = lower ? rows - 1 : 7
+        const row = Math.max(first, Math.min(last, first + Math.floor((y - top) / (key + gap))))
+        return Math.min(Live.layout.length - 1, row * 2 + col)
     }
 
     Item {
@@ -49,203 +68,209 @@ Item {
         width: parent.width
         height: parent.height - menuKey.height - 8
         clip: true
-        Column {
+        Item {
             id: keys
             y: -rail.scroll
             width: parent.width
-            spacing: rail.gap
+            height: rail.placeY(Live.layout.length - 1) + rail.key
             Repeater {
-                model: Live.chain
-                Rectangle {
-                    id: fx
-                    required property string key
-                    required property string name
-                    required property int index
-                    readonly property real level: Live.level[key] || 0
-                    readonly property bool on: level > 0
-                    readonly property bool focused: Live.focused === key
-                    // The controller's strip working it, or -1.
-                    readonly property int strip: Midi.connected && index >= Live.midiPage * 8 && index < Live.midiPage * 8 + 8 ? index - Live.midiPage * 8 : -1
-                    readonly property real fader: strip >= 0 ? Live.faders[strip] : -1
-                    width: rail.key
-                    height: rail.key
-                    radius: Theme.radius - 1
-                    color: hot.pressed && !on ? Theme.selected : hot.containsMouse ? Theme.hover : Theme.inset
-                    border.width: rail.editing || on ? 1 : 0
-                    border.color: on ? Theme.text : Theme.line
-                    Behavior on color { ColorAnimation { duration: 90 } }
+                model: Live.layout
+                FxKey {}
+            }
+        }
+    }
 
-                    Glyph {
-                        anchors.centerIn: parent
-                        size: Math.round(rail.key * 0.62)
-                        kind: fx.key
-                        ink: hot.containsMouse || fx.on ? Theme.text : Theme.body
-                    }
-                    // The strength: ink filling it from the left, the drawing
-                    // turned light where the ink is.
-                    Item {
-                        width: Math.round(parent.width * fx.level)
-                        height: parent.height
-                        clip: true
-                        Rectangle {
-                            width: fx.width
-                            height: fx.height
-                            radius: fx.radius
-                            color: hot.pressed ? Theme.body : Theme.text
-                            Glyph {
-                                anchors.centerIn: parent
-                                size: Math.round(rail.key * 0.62)
-                                kind: fx.key
-                                ink: Theme.bg
-                                lit: true
-                            }
-                        }
-                    }
-                    // Its number key, for the first ten.
-                    Text {
-                        x: 3
-                        y: 1
-                        visible: Live.keysOn && fx.index < 10 && rail.key >= 30
-                        text: String((fx.index + 1) % 10)
-                        font.pixelSize: 8
-                        font.features: { "tnum": 1 }
-                        font.weight: fx.focused ? Font.Bold : Font.Normal
-                        color: fx.level > 0.15 ? Theme.faint : Theme.muted
-                    }
-                    // Worked by a strip of the controller.
-                    Rectangle {
-                        visible: fx.strip >= 0
-                        x: 0
-                        y: 8
-                        width: 2
-                        height: parent.height - 16
-                        radius: 1
-                        color: fx.level > 0.02 ? Theme.bg : Theme.muted
-                    }
-                    // Its fader, not yet taken over: where it stands.
-                    Rectangle {
-                        visible: fx.fader >= 0 && Math.abs(fx.fader - fx.level) > 0.03 && !rail.editing
-                        x: Math.round(fx.fader * (parent.width - width))
-                        y: parent.height - height
-                        width: 3
-                        height: 5
-                        radius: 1
-                        color: Theme.warn
-                    }
-                    // A strength of its own was kept (see Live.tune).
-                    Rectangle {
-                        visible: Live.custom[fx.key] !== undefined
-                        x: parent.width - 6
-                        y: 3
-                        width: 3
-                        height: 3
-                        radius: 1.5
-                        color: fx.level > 0.9 ? Theme.faint : Theme.muted
-                    }
-                    // The one , and . tune: a ring round it.
-                    Rectangle {
-                        visible: fx.focused && !rail.editing
-                        anchors.fill: parent
-                        anchors.margins: -2
-                        radius: parent.radius + 2
-                        color: "transparent"
-                        border.width: 1
-                        border.color: Theme.muted
-                    }
+    component FxKey: Rectangle {
+        id: fx
+        required property string modelData
+        required property int index
+        readonly property string key: modelData
+        readonly property string name: rail.nameOf(key)
+        readonly property int row: Math.floor(index / 2)
+        readonly property int col: index % 2
+        // On the controller: its strip (row), knob (left) or fader (right).
+        readonly property bool placed: index < Live.places
+        readonly property real hardware: placed && Midi.connected ? (col ? Live.faders[row] : Live.knobs[row]) : -1
+        readonly property bool rate: Live.kind(key) >= 0 && !!Live.effects[Live.kind(key)].rate
+        readonly property real level: Live.level[key] || 0
+        readonly property bool on: level > 0
+        readonly property bool focused: Live.focused === key
+        x: col * (rail.key + rail.gap)
+        y: rail.placeY(index)
+        width: rail.key
+        height: rail.key
+        radius: Theme.radius - 1
+        color: hot.pressed && !on ? Theme.selected : hot.containsMouse ? Theme.hover : Theme.inset
+        border.width: rail.editing || on ? 1 : 0
+        border.color: rail.picked === index ? Theme.warn : on ? Theme.text : Theme.line
+        Behavior on color { ColorAnimation { duration: 90 } }
 
-                    // Pressed, it switches (on at its best strength, or off);
-                    // dragged on up or down over the others, it switches them the
-                    // same way, and dragged back, those it leaves go back to how
-                    // they were, the pressed one too once the drag has left it
-                    // and returns. Dragged sideways instead, it sets the strength:
-                    // the whole range over 150 px, finer with Shift.
-                    MouseArea {
-                        id: hot
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        preventStealing: true
-                        cursorShape: rail.editing ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor)
-                                                  : mode === "tune" ? Qt.SizeHorCursor : Qt.PointingHandCursor
-                        property bool turning: false
-                        property bool swept: false
-                        property var before: ({})
-                        property point from
-                        property real fromLevel: 0
-                        // "" until the drag shows its way, then "sweep" or "tune".
-                        property string mode: ""
-                        onPressed: mouse => {
-                            from = mapToItem(keys, mouse.x, mouse.y)
-                            mode = ""
-                            if (rail.editing)
-                                return
-                            before = Live.level
-                            fromLevel = fx.level
-                            swept = false
-                            turning = !fx.on
-                            Live.switchEffect(fx.key, turning)
-                        }
-                        onPositionChanged: mouse => {
-                            if (!pressed)
-                                return
-                            const p = mapToItem(keys, mouse.x, mouse.y)
-                            const to = Math.max(0, Math.min(rail.count - 1, Math.floor(p.y / (rail.key + rail.gap))))
-                            if (rail.editing) {
-                                Live.moveEffect(fx.index, to)
-                                return
-                            }
-                            const dx = p.x - from.x, dy = p.y - from.y
-                            if (mode === "" && Math.abs(dx) > 5 && Math.abs(dx) > Math.abs(dy)) {
-                                mode = "tune"
-                                // Not a switch after all: back as it was.
-                                Live.setLevel(fx.key, fromLevel)
-                            } else if (mode === "" && Math.abs(dy) > 5) {
-                                mode = "sweep"
-                            }
-                            if (mode === "tune") {
-                                const range = (mouse.modifiers & Qt.ShiftModifier) ? 600 : 150
-                                Live.focused = fx.key
-                                Live.setLevel(fx.key, Math.max(0, Math.min(1, fromLevel + dx / range)))
-                            } else if (mode === "sweep") {
-                                if (to !== fx.index)
-                                    swept = true
-                                const back = swept && to === fx.index
-                                const lo = Math.min(fx.index, to)
-                                const hi = Math.max(fx.index, to)
-                                for (let i = 0; i < rail.count; ++i) {
-                                    const k = Live.chain.get(i).key
-                                    if (!back && i >= lo && i <= hi)
-                                        Live.switchEffect(k, turning)
-                                    else if (Live.amount(k) !== (before[k] || 0))
-                                        Live.setLevel(k, before[k] || 0)
-                                }
-                            }
-                        }
-                        onReleased: mode = ""
-                        onCanceled: mode = ""
-                        // A second quick press is a second switch, never a double-click.
-                        // The wheel up and down scrolls a rail that does not fit;
-                        // otherwise (and sideways) it sets the strength.
-                        onWheel: wheel => {
-                            const dy = wheel.pixelDelta.y !== 0 ? wheel.pixelDelta.y : wheel.angleDelta.y / 120 * 36
-                            const dx = wheel.pixelDelta.x !== 0 ? wheel.pixelDelta.x : wheel.angleDelta.x / 120 * 36
-                            if (rail.scrolls && Math.abs(dy) >= Math.abs(dx)) {
-                                rail.scrollBy(dy)
-                                return
-                            }
-                            if (rail.editing)
-                                return
-                            const step = wheel.pixelDelta.x !== 0 || wheel.pixelDelta.y !== 0
-                                       ? (wheel.pixelDelta.y - wheel.pixelDelta.x) / 400 : wheel.angleDelta.y / 120 * 0.02
-                            Live.focused = fx.key
-                            Live.setLevel(fx.key, Math.max(0, Math.min(1, fx.level + step)))
-                        }
-                        ToolTip.visible: (containsMouse && !rail.editing && mode !== "sweep") || mode === "tune"
-                        ToolTip.delay: mode === "tune" ? 0 : 500
-                        ToolTip.text: fx.name + " · " + (fx.on ? Math.round(fx.level * 100) + "%" : "关")
-                                      + (fx.fader >= 0 && Math.abs(fx.fader - fx.level) > 0.03 ? " · 推子在 " + Math.round(fx.fader * 100) + "%，推动时逐渐对齐" : "")
+        Glyph {
+            anchors.centerIn: parent
+            size: Math.round(rail.key * 0.62)
+            kind: fx.key
+            ink: hot.containsMouse || fx.on ? Theme.text : Theme.body
+        }
+        // The strength: ink filling it from the left, the drawing turned
+        // light where the ink is.
+        Item {
+            width: Math.round(parent.width * fx.level)
+            height: parent.height
+            clip: true
+            Rectangle {
+                width: fx.width
+                height: fx.height
+                radius: fx.radius
+                color: hot.pressed ? Theme.body : Theme.text
+                Glyph {
+                    anchors.centerIn: parent
+                    size: Math.round(rail.key * 0.62)
+                    kind: fx.key
+                    ink: Theme.bg
+                    lit: true
+                }
+            }
+        }
+        // Its number key: 1–8 on the right, ⇧1–⇧8 on the left.
+        Text {
+            x: 3
+            y: 1
+            visible: Live.keysOn && fx.placed
+            text: (fx.col ? "" : "⇧") + (fx.row + 1)
+            font.pixelSize: 8
+            font.features: { "tnum": 1 }
+            font.weight: fx.focused ? Font.Bold : Font.Normal
+            color: fx.level > 0.15 ? Theme.faint : Theme.muted
+        }
+        // Its knob or fader, not level with it yet: where it stands.
+        Rectangle {
+            visible: fx.hardware >= 0 && Math.abs(fx.hardware - fx.level) > 0.03 && !rail.editing
+            x: Math.round(fx.hardware * (parent.width - width))
+            y: parent.height - height
+            width: 3
+            height: 5
+            radius: 1
+            color: Theme.warn
+        }
+        // A strength of its own was kept (see Live.tune).
+        Rectangle {
+            visible: Live.custom[fx.key] !== undefined
+            x: parent.width - 6
+            y: 3
+            width: 3
+            height: 3
+            radius: 1.5
+            color: fx.level > 0.9 ? Theme.faint : Theme.muted
+        }
+        // The one , and . tune: a ring round it.
+        Rectangle {
+            visible: fx.focused && !rail.editing
+            anchors.fill: parent
+            anchors.margins: -2
+            radius: parent.radius + 2
+            color: "transparent"
+            border.width: 1
+            border.color: Theme.muted
+        }
+
+        // Pressed, it switches (on at its best strength, or off); dragged on
+        // up or down its column over the others, it switches them the same
+        // way, and dragged back, those it leaves go
+        // back to how they were, the pressed one too once the drag has left
+        // it and returns. Dragged sideways instead, it sets the strength: the
+        // whole range over 150 px, finer with Shift.
+        MouseArea {
+            id: hot
+            anchors.fill: parent
+            hoverEnabled: true
+            preventStealing: true
+            cursorShape: mode === "tune" ? Qt.SizeHorCursor : Qt.PointingHandCursor
+            property bool turning: false
+            property bool swept: false
+            property var before: ({})
+            property point from
+            property real fromLevel: 0
+            // "" until the drag shows its way, then "sweep" or "tune".
+            property string mode: ""
+            onPressed: mouse => {
+                from = mapToItem(keys, mouse.x, mouse.y)
+                mode = ""
+                if (rail.editing) {
+                    if (rail.picked < 0) {
+                        rail.picked = fx.index
+                    } else {
+                        Live.swapPlaces(rail.picked, fx.index)
+                        rail.picked = -1
+                    }
+                    return
+                }
+                before = Live.level
+                fromLevel = fx.level
+                swept = false
+                turning = !fx.on
+                Live.switchEffect(fx.key, turning)
+            }
+            onPositionChanged: mouse => {
+                if (!pressed || rail.editing)
+                    return
+                const p = mapToItem(keys, mouse.x, mouse.y)
+                const to = rail.placeAt(p.y, fx.col, fx.index)
+                const dx = p.x - from.x, dy = p.y - from.y
+                if (mode === "" && Math.abs(dx) > 5 && Math.abs(dx) > Math.abs(dy)) {
+                    mode = "tune"
+                    // Not a switch after all: back as it was.
+                    Live.setLevel(fx.key, fromLevel)
+                } else if (mode === "" && Math.abs(dy) > 5) {
+                    mode = "sweep"
+                }
+                if (mode === "tune") {
+                    const range = (mouse.modifiers & Qt.ShiftModifier) ? 600 : 150
+                    Live.focused = fx.key
+                    Live.setLevel(fx.key, Math.max(0, Math.min(1, fromLevel + dx / range)))
+                } else if (mode === "sweep") {
+                    if (to !== fx.index)
+                        swept = true
+                    const back = swept && to === fx.index
+                    const lo = Math.min(fx.index, to)
+                    const hi = Math.max(fx.index, to)
+                    const lower = fx.index >= Live.places
+                    for (let i = fx.col; i < Live.layout.length; i += 2) {
+                        if ((i >= Live.places) !== lower)
+                            continue
+                        const k = Live.layout[i]
+                        if (!back && i >= lo && i <= hi)
+                            Live.switchEffect(k, turning)
+                        else if (Live.amount(k) !== (before[k] || 0))
+                            Live.setLevel(k, before[k] || 0)
                     }
                 }
             }
+            onReleased: mode = ""
+            onCanceled: mode = ""
+            // A second quick press is a second switch, never a double-click.
+            // The wheel up and down scrolls a rail that does not fit;
+            // otherwise (and sideways) it sets the strength.
+            onWheel: wheel => {
+                const dy = wheel.pixelDelta.y !== 0 ? wheel.pixelDelta.y : wheel.angleDelta.y / 120 * 36
+                const dx = wheel.pixelDelta.x !== 0 ? wheel.pixelDelta.x : wheel.angleDelta.x / 120 * 36
+                if (rail.scrolls && Math.abs(dy) >= Math.abs(dx)) {
+                    rail.scrollBy(dy)
+                    return
+                }
+                if (rail.editing)
+                    return
+                const step = wheel.pixelDelta.x !== 0 || wheel.pixelDelta.y !== 0
+                           ? (wheel.pixelDelta.y - wheel.pixelDelta.x) / 400 : wheel.angleDelta.y / 120 * 0.02
+                Live.focused = fx.key
+                Live.setLevel(fx.key, Math.max(0, Math.min(1, fx.level + step)))
+            }
+            ToolTip.visible: (containsMouse && mode !== "sweep") || mode === "tune"
+            ToolTip.delay: mode === "tune" ? 0 : 500
+            ToolTip.text: rail.editing ? fx.name + (rail.picked < 0 ? " · 按下再按另一个，两者换位" : " · 和选中的换位")
+                        : fx.name + " · " + (fx.rate ? Live.stepName(fx.key) : fx.on ? Math.round(fx.level * 100) + "%" : "关")
+                          + (fx.placed ? " · " + (fx.col ? "推子 " : "旋钮 ") + (fx.row + 1) : "")
+                          + (fx.hardware >= 0 && Math.abs(fx.hardware - fx.level) > 0.03
+                             ? " · " + (fx.col ? "推子" : "旋钮") + "在 " + Math.round(fx.hardware * 100) + "%，推动时逐渐对齐" : "")
         }
     }
 
@@ -269,13 +294,13 @@ Item {
     }
     Rectangle {
         id: hint
-        readonly property int place: Live.order.indexOf(rail.hintKey)
+        readonly property int place: Live.layout.indexOf(rail.hintKey)
         visible: opacity > 0 && place >= 0
         opacity: 0
         Behavior on opacity { NumberAnimation { duration: 250 } }
         z: 100
         x: -width - 6
-        y: Math.max(0, Math.min(rail.height - height, place * (rail.key + rail.gap) - rail.scroll + (rail.key - height) / 2))
+        y: Math.max(0, Math.min(rail.height - height, rail.placeY(place) - rail.scroll + (rail.key - height) / 2))
         width: hintText.implicitWidth + 16
         height: hintText.implicitHeight + 10
         radius: Theme.radius
@@ -294,12 +319,15 @@ Item {
                     return ""
                 const name = rail.nameOf(key)
                 const level = Live.level[key] || 0
+                const i = Live.kind(key)
+                if (i >= 0 && Live.effects[i].rate)
+                    return name + " · " + Live.stepName(key)
                 return name + " · " + (level > 0 ? Math.round(level * 100) + "%" : "关")
             }
         }
     }
 
-    // ⋯: 全关, the order, the kept strengths.
+    // ⋯: 全关, 分配控件, the kept strengths, the controller.
     IconButton {
         id: menuKey
         anchors.bottom: parent.bottom
@@ -308,9 +336,9 @@ Item {
         implicitHeight: 24
         iconName: rail.editing ? "check" : "ellipsis"
         active: rail.editing || fxMenu.visible
-        tip: rail.editing ? "完成排序" : rail.software ? "这台电脑以软件方式绘制，效果不会出现"
+        tip: rail.editing ? "完成分配" : rail.software ? "这台电脑以软件方式绘制，效果不会出现"
            : Midi.dawMode ? "nanoKONTROL2 在 DAW 模式：拔下，按住 SET MARKER 和 CYCLE 再插上，换成 CC 模式"
-           : "效果：全关、排序、强度、控制器"
+           : "效果：全关、分配控件、强度、控制器"
         onClicked: rail.editing ? rail.editing = false : fxMenu.popup(menuKey, -fxMenu.implicitWidth - 4, menuKey.height - fxMenu.implicitHeight)
         // This computer draws in software (no effects show), or the
         // controller is not in CC mode.
@@ -333,8 +361,13 @@ Item {
             onTriggered: Live.resetEffects()
         }
         PopAction {
-            text: "调整顺序（拖动，上面的先作用）"
+            text: "分配控件（按两个键，两者换位）"
             onTriggered: rail.editing = true
+        }
+        PopAction {
+            text: "分配恢复默认"
+            enabled: Live.laidOutOwn
+            onTriggered: Live.resetLayout()
         }
         PopAction {
             text: "强度恢复默认推荐"
@@ -462,20 +495,6 @@ Item {
                 c.arc(12, 12, 1.6, 0, Math.PI * 2)
                 c.fill()
                 break
-            case "wave":
-                // Ripples.
-                for (let r = 0; r < 3; ++r) {
-                    c.beginPath()
-                    for (let x = 2; x <= 22; x += 0.5) {
-                        const y = 6 + r * 6 + Math.sin((x - 2) / 20 * Math.PI * 2 * 1.5 + r * 0.8) * 2.2
-                        if (x === 2)
-                            c.moveTo(x, y)
-                        else
-                            c.lineTo(x, y)
-                    }
-                    c.stroke()
-                }
-                break
             case "glitch":
                 // Bands torn sideways, a colour edge on two.
                 c.fillStyle = "#ff2d95"
@@ -512,13 +531,6 @@ Item {
                         c.fill()
                     }
                 break
-            case "posterize":
-                // A smooth fall in a few flat steps.
-                for (let i = 0; i < 4; ++i) {
-                    c.fillStyle = rgba(1 - i * 0.26)
-                    c.fillRect(2.5 + i * 4.9, 3 + i * 2.5, 4.4, 18 - i * 2.5)
-                }
-                break
             case "hue": {
                 // The colour wheel.
                 const cols = ["#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#00c7d4", "#0a84ff", "#af52de", "#ff2d95"]
@@ -536,6 +548,195 @@ Item {
                 c.fill()
                 break
             }
+            case "mirror":
+                // A shape and its reflection across a line.
+                c.beginPath()
+                c.moveTo(12, 2.5)
+                c.lineTo(12, 21.5)
+                c.stroke()
+                c.beginPath()
+                c.moveTo(10, 6)
+                c.lineTo(3.5, 12)
+                c.lineTo(10, 18)
+                c.closePath()
+                c.fill()
+                c.fillStyle = rgba(0.45)
+                c.beginPath()
+                c.moveTo(14, 6)
+                c.lineTo(20.5, 12)
+                c.lineTo(14, 18)
+                c.closePath()
+                c.fill()
+                break
+            case "twirl":
+                // A spiral.
+                c.beginPath()
+                for (let t = 0; t <= 1; t += 0.02) {
+                    const a = t * Math.PI * 5
+                    const r = 1 + t * 9
+                    const x = 12 + Math.cos(a) * r, y = 12 + Math.sin(a) * r
+                    if (t === 0)
+                        c.moveTo(x, y)
+                    else
+                        c.lineTo(x, y)
+                }
+                c.stroke()
+                break
+            case "punch":
+                // A small frame thrown out to a large one.
+                c.lineWidth = 1.4
+                box(8.5, 8.5, 7, 7, 1.2)
+                c.stroke()
+                box(2.5, 2.5, 19, 19, 2.5)
+                c.stroke()
+                for (const [x, y] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+                    c.beginPath()
+                    c.moveTo(12 + x * 4.5, 12 + y * 4.5)
+                    c.lineTo(12 + x * 8, 12 + y * 8)
+                    c.stroke()
+                }
+                break
+            case "shake":
+                // A frame, and two thrown aside behind it.
+                c.lineWidth = 1.4
+                c.strokeStyle = rgba(0.35)
+                box(2, 5.5, 15, 12, 2)
+                c.stroke()
+                box(7, 6.5, 15, 12, 2)
+                c.stroke()
+                c.strokeStyle = ink
+                c.lineWidth = 1.8
+                box(4.5, 4, 15, 12, 2)
+                c.stroke()
+                break
+            case "ghost":
+                // A figure, and a larger faint one leaving it.
+                c.fillStyle = rgba(0.3)
+                c.beginPath()
+                c.arc(12, 8, 5.5, 0, Math.PI * 2)
+                c.fill()
+                c.fillRect(5, 14, 14, 8)
+                c.fillStyle = ink
+                c.beginPath()
+                c.arc(12, 10, 3.5, 0, Math.PI * 2)
+                c.fill()
+                c.fillRect(7.5, 15, 9, 6)
+                break
+            case "splash":
+                // A small picture with rays thrown out from its edge.
+                box(8, 8.5, 8, 7, 1.2)
+                c.fill()
+                c.lineWidth = 1.5
+                for (let i = 0; i < 14; ++i) {
+                    const a = i * Math.PI / 7 + 0.2
+                    const r0 = 6.5, r1 = i % 2 ? 10.5 : 8.5
+                    c.beginPath()
+                    c.moveTo(12 + Math.cos(a) * r0, 12 + Math.sin(a) * r0)
+                    c.lineTo(12 + Math.cos(a) * r1, 12 + Math.sin(a) * r1)
+                    c.stroke()
+                }
+                break
+            case "vhs":
+                // A tape: two reels in a case.
+                c.lineWidth = 1.4
+                box(2.5, 5, 19, 14, 2)
+                c.stroke()
+                c.beginPath()
+                c.arc(8.5, 11, 2.6, 0, Math.PI * 2)
+                c.stroke()
+                c.beginPath()
+                c.arc(15.5, 11, 2.6, 0, Math.PI * 2)
+                c.stroke()
+                c.fillRect(7, 15.5, 10, 1.6)
+                break
+            case "edge":
+                // Only an outline, glowing.
+                c.lineWidth = 2.2
+                c.strokeStyle = glyph.lit ? ink : "#ff2d95"
+                c.beginPath()
+                c.moveTo(3, 19)
+                c.lineTo(9, 7)
+                c.lineTo(13, 14)
+                c.lineTo(16, 9)
+                c.lineTo(21, 19)
+                c.closePath()
+                c.stroke()
+                break
+            case "duotone": {
+                // Light as heat: blue to red to yellow.
+                const g = c.createLinearGradient(3, 0, 21, 0)
+                g.addColorStop(0, "#2a0a6b")
+                g.addColorStop(0.45, "#e0261a")
+                g.addColorStop(1, "#ffd21a")
+                c.fillStyle = g
+                box(2.5, 4, 19, 16, 2.5)
+                c.fill()
+                break
+            }
+            case "threshold":
+                // Black and white only, a hard line between.
+                c.beginPath()
+                c.arc(12, 12, 9, 0, Math.PI * 2)
+                c.stroke()
+                c.fillRect(12, 3, 9, 18)
+                c.globalCompositeOperation = "destination-in"
+                c.beginPath()
+                c.arc(12, 12, 9, 0, Math.PI * 2)
+                c.fill()
+                c.globalCompositeOperation = "source-over"
+                c.beginPath()
+                c.arc(12, 12, 9, 0, Math.PI * 2)
+                c.stroke()
+                break
+            case "invert":
+                // A frame half filled, the other half its negative.
+                c.lineWidth = 1.4
+                box(3, 5, 18, 14, 2)
+                c.stroke()
+                c.fillRect(12, 5, 9, 14)
+                c.fillStyle = glyph.lit ? Theme.text.toString() : Theme.inset.toString()
+                c.beginPath()
+                c.arc(12, 12, 3.5, 0, Math.PI * 2)
+                c.fill()
+                c.fillStyle = ink
+                c.beginPath()
+                c.arc(12, 12, 3.5, Math.PI / 2, Math.PI * 1.5)
+                c.fill()
+                break
+            case "flash":
+            case "flashBlack": {
+                // A burst, filled (white) or hollow (black).
+                c.beginPath()
+                for (let i = 0; i < 16; ++i) {
+                    const a = i * Math.PI / 8 - Math.PI / 2
+                    const r = i % 2 ? 4.5 : 10
+                    const x = 12 + Math.cos(a) * r, y = 12 + Math.sin(a) * r
+                    if (i === 0)
+                        c.moveTo(x, y)
+                    else
+                        c.lineTo(x, y)
+                }
+                c.closePath()
+                if (glyph.kind === "flash") {
+                    c.stroke()
+                } else {
+                    c.fill()
+                }
+                break
+            }
+            case "strobe":
+                // Flashes in a row.
+                c.lineWidth = 1.6
+                for (let i = 0; i < 3; ++i) {
+                    const x = 4 + i * 8
+                    c.beginPath()
+                    c.moveTo(x + 2, 3)
+                    c.lineTo(x - 1, 12)
+                    c.lineTo(x + 3, 12)
+                    c.lineTo(x, 21)
+                    c.stroke()
+                }
+                break
             case "mono":
                 // Half dark, half light.
                 c.beginPath()

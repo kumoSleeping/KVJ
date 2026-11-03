@@ -71,9 +71,10 @@ KVJ listens to the sound the DJ is playing and compares it with the sound of the
 
 ### Overlay and effects
 
-- Danmaku (scrolling, top or bottom, laned as on Bilibili), large words in the middle, and Google Meet–style reactions (Noto's animated emoji; hold to send a stream, Q–P send one each).
+- Danmaku (scrolling, top or bottom, laned as on Bilibili), large words in the middle, and Google Meet–style reactions (35 of Noto's animated emoji; hold to send a stream, Q–P send one each).
 - Stickers of images, GIFs and words, moved, sized, turned and taken down on the board; the audience's picture follows.
-- A dozen picture effects (glitch, RGB split, zoom blur, halftone, posterize, video wall, wave, scanlines, mosaic, black and white, lens…) form an **effect chain**. They apply from the top down, each to the picture the ones above made, are reordered by dragging (kept between runs), keyed on at their best strength, and the number keys 1–0 switch the first ten. Effects touch only the picture, never the danmaku, reactions or stickers.
+- 24 picture effects: mirror, video wall, lens, twirl, punch, shake, zoom blur, out of body, splash, mosaic, glitch, RGB split, halftone, scanlines, VHS, neon outline, hue, heat, black and white, pure black and white, negative, flash to black, flash to white and strobe. They apply in a fixed order (layout and shape first, then texture and colour, the flashes last) and key on at their best strength. The three flashes' strength is how fast they flash, in six steps up to 8 a second. Effects touch only the picture, never the danmaku, reactions or stickers.
+- With a Korg nanoKONTROL2 (CC mode), its 8 knobs and 8 faders each set one effect's strength; which effect sits on which control is changed in the effects rail and kept between runs. No control makes the picture jump. Every button on it sends a reaction; nothing on it plays, follows or projects. Off by default on Windows: turn it on in the effects' ⋯ menu.
 
 ### Cameras (experimental)
 
