@@ -6,8 +6,7 @@
 // strip; a pixel that covers many columns shows their energy, as KDJ's preview
 // buckets do, and their height-weighted colour, as KDJ draws it. The same
 // thread then finds where the file's tempo changes (kvj_tempo) for the lane
-// above the frames, once every waveform asked for is drawn, and where its
-// beats fall, for effects that move on the beat (Beats).
+// above the frames, once every waveform asked for is drawn.
 
 #include <QByteArray>
 #include <QColor>
@@ -19,11 +18,9 @@
 #include <QStringList>
 #include <QVariantList>
 #include <QWaitCondition>
-#include <QtQml/qqmlregistration.h>
 
 #include <atomic>
 #include <memory>
-#include <vector>
 
 class QThread;
 
@@ -37,17 +34,6 @@ public:
         QByteArray bytes; // heights, then R, G and B: `columns` bytes each
         int columns = 0;
     };
-    // Where the beats fall along a file (kvj_tempo).
-    struct Grid
-    {
-        struct Section
-        {
-            double start, end, bpm; // bpm 0 where no beat holds
-        };
-        std::vector<Section> sections;
-        std::vector<double> beats; // seconds
-        int bar = -1;              // beats[bar], beats[bar + 4], … start bars; -1 unknown
-    };
     static WaveCache *instance();
     ~WaveCache() override;
 
@@ -60,8 +46,6 @@ public:
     QVariantList tempo(const QString &path);
     // Being looked for: not known yet, and the file has not turned out to have no audio.
     bool findingTempo(const QString &path);
-    // Its beats once the tempo is known (null meanwhile; asks as tempo() does).
-    std::shared_ptr<const Grid> grid(const QString &path);
 
 signals:
     void ready(const QString &path);
@@ -78,7 +62,6 @@ private:
     QSet<QString> m_failed;
     QStringList m_tempoQueue;
     QHash<QString, QVariantList> m_tempi;
-    QHash<QString, std::shared_ptr<const Grid>> m_grids;
     QSet<QString> m_tempoFailed;
     QString m_cacheDir;
     QThread *m_thread = nullptr;
@@ -137,20 +120,4 @@ private:
     bool m_analysing = false;
     QVariantList m_tempo;
     bool m_findingTempo = false;
-};
-
-// Where the music is in its beats, for effects that move on the beat
-// (Live.qml): at(path, seconds) gives {bpm, beat, bar} there, `beat` counting
-// the file's beats (3.25: a quarter past its fourth) and `bar` which of every
-// four starts a bar (-1 unknown). Without beats to go by there (silence, a
-// beat V4 missed, not analysed yet) only {bpm}, or nothing.
-class Beats : public QObject
-{
-    Q_OBJECT
-    QML_ELEMENT
-    QML_SINGLETON
-
-public:
-    explicit Beats(QObject *parent = nullptr);
-    Q_INVOKABLE QVariantMap at(const QString &path, double seconds) const;
 };

@@ -144,6 +144,28 @@ qt_add_qml_module(KVJ
         qml/emoji/2728.webp
         qml/emoji/1faa9.webp
         qml/emoji/1f40d.webp
+        qml/emoji/1f4a5.webp
+        qml/emoji/26a1.webp
+        qml/emoji/1f4af.webp
+        qml/emoji/1f92f.webp
+        qml/emoji/1f483.webp
+        qml/emoji/1f3b6.webp
+        qml/emoji/1f60e.webp
+        qml/emoji/1f929.webp
+        qml/emoji/1f941.webp
+        qml/emoji/1f3b8.webp
+        qml/emoji/1f680.webp
+        qml/emoji/1f308.webp
+        qml/emoji/1f386.webp
+        qml/emoji/1f38a.webp
+        qml/emoji/1f37e.webp
+        qml/emoji/1f37b.webp
+        qml/emoji/1faf6.webp
+        qml/emoji/1f91f.webp
+        qml/emoji/1f44b.webp
+        qml/emoji/1f4aa.webp
+        qml/emoji/1f975.webp
+        qml/emoji/1f440.webp
     SOURCES
         src/Engine.h src/Engine.cpp
         src/VideoSurface.h src/VideoSurface.cpp

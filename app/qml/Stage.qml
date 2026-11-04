@@ -35,6 +35,51 @@ Item {
         onTriggered: stage.now = Date.now()
     }
 
+    // The effects' shader drawn once, out of sight (two nearly transparent
+    // pixels under the picture), for a moment after the stage first shows.
+    // The first time after an update the system compiles it, which froze the
+    // picture for about 0.1 s (M1, measured) the first time an effect came on;
+    // on Windows it is compiled at every start. Here that happens while the
+    // window opens instead.
+    // Not in the projection window: nothing of the effects may hold it up as
+    // it opens (on the Mac the main window's warming has done it for all).
+    property bool warmUp: true
+    property bool warmed: false
+    readonly property bool warming: warmUp && shown && !warmed && GraphicsInfo.api !== GraphicsInfo.Software
+    Timer {
+        running: stage.warming
+        interval: 1500
+        onTriggered: stage.warmed = true
+    }
+    Loader {
+        active: stage.warming
+        width: 2
+        height: 2
+        sourceComponent: Item {
+            Rectangle {
+                id: ink
+                width: 2
+                height: 2
+                color: "black"
+            }
+            ShaderEffectSource {
+                id: inkSource
+                sourceItem: ink
+                hideSource: true
+                visible: false
+            }
+            ShaderEffect {
+                anchors.fill: parent
+                opacity: 0.01
+                fragmentShader: "qrc:/qt/qml/KVJ/shaders/effects.frag.qsb"
+                property var source: inkSource
+                property real time: 0
+                property real aspect: 1
+                property real kind: 99
+                property real amount: 0
+            }
+        }
+    }
     Item {
         id: picture
         anchors.fill: parent
@@ -80,12 +125,8 @@ Item {
                 property real time: ((stage.now - Live.epoch) / 1000) % 1000
                 property real aspect: stage.width / Math.max(1, stage.height)
                 property real kind: Live.kind(pass.modelData)
-                property real amount: Live.amount(pass.modelData)
-                // Its rhythm (Live.rhythms): a moving effect goes through its
-                // motion once a period, a still one shows for half of each.
-                property real synced: Live.rhythmOf(pass.modelData) > 0 ? 1 : 0
-                property real beat: synced ? Live.periodsAt(pass.modelData, stage.now) : 0
-                property real shown: synced ? (Live.shownAt(pass.modelData, stage.now) ? 1 : 0) : 1
+                // A flash as far as it is in, the strobe while it is lit (Live.drawnAt).
+                property real amount: Live.drawnAt(pass.modelData, stage.now)
             }
             ShaderEffectSource {
                 id: output

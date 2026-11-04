@@ -451,16 +451,13 @@ ApplicationWindow {
     // along the strip), "jump"; "post <px> <py> <words>" posts a sticker of
     // words and chooses it; "nudge <±1> <ms>" holds a nudge key that long;
     // "drop" turns the entry on the screen off as the sidebar's confirmed
-    // second press does; "effect <key> <0–1>" sets an effect, "move <from>
-    // <to>" reorders them; "set <no.>" chooses that Set as the sidebar does;
+    // second press does; "effect <key> <0–1>" sets an effect, "swap <a> <b>"
+    // swaps two of the rail's places (Live.layout); "set <no.>" chooses that Set as the sidebar does;
     // "library 0|1" puts the column at the left away or brings it out.
     // "single 0|1" switches 单轨 on or off; "zoom <0.4–1>" sizes the board's view;
     // "dragsim X Y | off" shows the track rows as a drag at (X, Y) would.
     // "cc <number> <value>" acts as the controller's control change would,
-    // "rhythm <key> <0–6>" sets an effect's rhythm, "midi" answers the
-    // controller's and the beat clock's state, "beats <seconds> <path>" where
-    // the beats are there (Beats.at), "music <seconds> <path> | off" has the
-    // beat clock hear that file as if it played from there.
+    // "midi" answers the controller's state.
     function devCommand(line) {
         const w = String(line).trim().split(/\s+/)
         switch (w[0]) {
@@ -487,7 +484,7 @@ ApplicationWindow {
         case "nudge": app.nudge(Number(w[1] || 1), Number(w[2] || 1000)); break
         case "drop": if (transport.entry) app.dropPlaying(transport.entry.id); break
         case "effect": Live.setLevel(w[1], Number(w[2] || 0)); break
-        case "move": Live.moveEffect(Number(w[1]), Number(w[2])); break
+        case "swap": Live.swapPlaces(Number(w[1]), Number(w[2])); break
         case "set": if (app.sets[Number(w[1] || 1) - 1]) app.chooseSet(app.sets[Number(w[1] || 1) - 1].id); break
         case "post": mixer.chosenSid = Live.post({ kind: "text", text: w.slice(3).join(" "), name: "", px: Number(w[1]), py: Number(w[2]), size: 0.15 }); break
         case "apply": Switcher.apply(); break
@@ -514,30 +511,18 @@ ApplicationWindow {
             Live.midiLink.onControl(0, Number(w[1]), v, was === 0 && v > 0 ? 1 : 0, was > 0 && v === 0 ? 1 : 0)
             break
         }
-        case "rhythm": Live.setRhythm(w[1], Number(w[2] || 0)); break
-        case "beats": return JSON.stringify(Beats.at(w.slice(2).join(" "), Number(w[1])))
-        case "music": app.devMusic = w[1] === "off" ? null : { at: Number(w[1]), path: w.slice(2).join(" "), since: Date.now() }; break
         case "midi":
-            if (app.devMusic) {
-                const heard = Beats.at(app.devMusic.path, app.devMusic.at + (Date.now() - app.devMusic.since) / 1000)
-                const mine = Live.beatAt(Date.now())
-                let e = heard.beat - mine
-                e -= Math.round(e)
-                return JSON.stringify({ bpm: Live.bpm, rate: Live.beatRate * 60, locked: Live.beatLocked, error: Math.round(e * 1000) / 1000 })
-            }
-            return JSON.stringify({ enabled: Midi.enabled, devices: Midi.devices, daw: Midi.dawMode, page: Live.midiPage,
-                                    faders: Live.faders, knobs: Live.knobs, level: Live.level, rhythm: Live.rhythm,
-                                    bpm: Math.round(Live.bpm * 10) / 10, locked: Live.beatLocked, bar: Live.barAt,
-                                    beat: Math.round(Live.beatAt(Date.now()) * 100) / 100 })
+            return JSON.stringify({ enabled: Midi.enabled, devices: Midi.devices, daw: Midi.dawMode,
+                                    faders: Live.faders, knobs: Live.knobs, level: Live.level, steps: Live.steps,
+                                    rows: [0, 1, 2, 3, 4, 5, 6, 7].map(i => Live.knobKey(i) + "|" + Live.faderKey(i)) })
         default: return "unknown"
         }
         app.tick()
         return "ok"
     }
 
-    // The last value each "cc" dev command gave; the music "music" plays.
+    // The last value each "cc" dev command gave.
     property var devCc: ({})
-    property var devMusic: null
 
     // Files into the Set shown: into its library (the drawer's keys and
     // drops), or placed on a track (dropped on the timeline; `track` set).
@@ -1082,19 +1067,33 @@ ApplicationWindow {
         enabled: app.keysLive && app.manualTempo
         onActivated: app.nudgeTempo(-0.01)
     }
-    // Effects: 1–9 and 0 (the number pad too) switch the first ten in the
-    // list, , and . tune the last one; their own switch in the effects panel.
+    // Effects: 1–8 (the number pad too) switch the effects in the rail's
+    // right column, the faders' places, with Shift those in the left, the
+    // knobs' (Live.layout); , and . tune the last one; their own switch in
+    // the effects panel.
     readonly property bool effectKeysLive: Live.keysOn && !app.typing
     Instantiator {
-        model: 10
+        model: 8
         delegate: Shortcut {
             required property int index
-            readonly property string digit: String((index + 1) % 10)
+            readonly property string digit: String(index + 1)
             sequences: [digit, "Num+" + digit]
             context: Qt.ApplicationShortcut
             autoRepeat: false
-            enabled: app.effectKeysLive && index < Live.order.length
-            onActivated: Live.toggleEffect(Live.order[index])
+            enabled: app.effectKeysLive
+            onActivated: Live.toggleEffect(Live.faderKey(index))
+        }
+    }
+    Instantiator {
+        model: 8
+        delegate: Shortcut {
+            required property int index
+            // Shift and a digit come as the digit's shifted sign on some keyboards.
+            sequences: ["Shift+" + (index + 1), "!@#$%^&*"[index]]
+            context: Qt.ApplicationShortcut
+            autoRepeat: false
+            enabled: app.effectKeysLive
+            onActivated: Live.toggleEffect(Live.knobKey(index))
         }
     }
     // Reactions: Q to P send the first ten in the rail (held, a stream).
@@ -1116,30 +1115,6 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: app.effectKeysLive
         onActivated: Live.tune(-0.05)
-    }
-    // The beat effects with a rhythm keep (Live.hearBeat): where following
-    // hears the music, else where the main player plays (its picture's own
-    // sound), else none (the clock runs on at the last tempo). Only while an
-    // effect keeps a rhythm.
-    Timer {
-        interval: 100
-        repeat: true
-        running: Live.effectsSynced
-        onTriggered: app.hearBeat()
-    }
-    function hearBeat() {
-        const m = app.match
-        if (app.devMusic) {
-            const d = app.devMusic
-            Live.hearBeat(Beats.at(d.path, d.at + (Date.now() - d.since) / 1000), 1)
-        } else if (m && app.phase === "matched" && m.rate > 0 && m.entry.path) {
-            const at = m.position + (Engine.clockMs() - m.clock_at_ms + strip.offsetMs) / 1000 * m.rate
-            Live.hearBeat(Beats.at(m.entry.path, at), m.rate)
-        } else if (transport.playing && transport.entry && !transport.entry.silent && transport.entry.path) {
-            Live.hearBeat(Beats.at(transport.entry.path, transport.now()), transport.speed)
-        } else {
-            Live.hearBeat(null, 0)
-        }
     }
     Shortcut {
         sequences: ["."]
