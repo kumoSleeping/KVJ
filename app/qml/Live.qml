@@ -486,19 +486,19 @@ QtObject {
     // `layout` lists them so, left then right, row by row; swapping two (the
     // rail's 调整顺序) is all that changes it. Kept between runs.
     readonly property var defaultLayout: [
-        "mono", "flash",
-        "invert", "strobe",
-        "hue", "punch",
-        "duotone", "glitch",
+        "vhs", "fire",
+        "invert", "rain",
+        "hue", "threshold",
+        "duotone", "lens",
         "rgb", "mosaic",
-        "vhs", "tiles",
-        "mirror", "ghost",
+        "mono", "tiles",
+        "glitch", "ghost",
         "edge", "shake",
-        "lens", "zoom",
-        "twirl", "halftone",
-        "scan", "flashBlack",
-        "threshold", "fire",
-        "rain"
+        "scan", "zoom",
+        "mirror", "halftone",
+        "twirl", "flashBlack",
+        "flash", "punch",
+        "strobe"
     ]
     property var layout: defaultLayout
     readonly property int places: 16
