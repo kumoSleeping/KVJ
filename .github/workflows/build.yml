@@ -14,6 +14,9 @@ concurrency:
 
 env:
   QT_VERSION: 6.8.3
+  # Built on a newer macOS, the app still opens from macOS 12 (Info.plist's
+  # LSMinimumSystemVersion); CMake and Rust both read this.
+  MACOSX_DEPLOYMENT_TARGET: "12.0"
 
 jobs:
   build:
@@ -21,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             name: macos-arm64
             qt_arch: clang_64
           - os: windows-latest
@@ -64,6 +67,9 @@ jobs:
           choco install ffmpeg -y --no-progress | Out-Null
           ffmpeg -v error -f lavfi -i testsrc2=size=1920x1080:rate=30 -t 40 -c:v libx264 -g 60 -pix_fmt yuv420p sample.mp4
           $env:KVJ_MAX_HEIGHT = "720"
+          # A fresh runner's first Media Foundation open is slow (over 2 s):
+          # once to warm it, then the check that counts.
+          ./build/kvj-player-check.exe sample.mp4 0 | Out-Null
           ./build/kvj-player-check.exe sample.mp4 0 20 5 30.5
 
       # macOS runs headless (offscreen); Windows uses its real platform plugin, so
