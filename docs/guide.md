@@ -248,9 +248,10 @@ strips (below), the left key a knob and the right a fader; the number keys
 tuned) 5 % weaker or stronger. An effect tuned that way and then switched off
 keeps that strength as its own (a dot on its key); 强度恢复默认推荐 gives
 every effect back the strength it came with. Which effect sits where is the
-⋯ menu's 分配控件: press one key, then another, and the two change places (a
-row's key with one of the rest too); 完成 ends it, and the choice is kept
-between runs (分配恢复默认 brings back the first one). Effects touch only the
+⋯ menu's 调整顺序: drag a key onto another, or press one key and then the
+other, and the two change places (a row's key with one of the rest too); 完成
+ends it, and the choice is kept between runs (顺序恢复默认 brings back the
+first one). Effects touch only the
 video, never the words or stickers.
 
 A Korg nanoKONTROL2 works the effects too (only devices of that name are

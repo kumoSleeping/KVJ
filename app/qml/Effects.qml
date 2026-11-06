@@ -13,16 +13,22 @@ import KVJ
 // strength it looks best at, or off, and dragged on up
 // or down its column switches the others it passes the same way; dragged
 // sideways (or the wheel) it sets the strength. The ⋯ key at the foot holds
-// 全关, 分配控件 (press one key and then another: the two change places), the
-// kept strengths and the controller. A knob or fader not yet level with its
+// 全关, 调整顺序 (drag a key onto another, or press one and then the other:
+// the two change places), the kept strengths and the controller. A knob or fader not yet level with its
 // effect shows where it stands as an amber tick at the key's foot.
 Item {
     id: rail
 
-    // 分配控件: a press picks a key, a second press swaps the two.
+    // 调整顺序: a key dragged onto another, or pressed and then the other
+    // pressed, changes places with it.
     property bool editing: false
     property int picked: -1
-    onEditingChanged: picked = -1
+    // While a key is dragged there: the place it would go to.
+    property int target: -1
+    onEditingChanged: {
+        picked = -1
+        target = -1
+    }
     // This computer draws in software: no effects show.
     readonly property bool software: GraphicsInfo.api === GraphicsInfo.Software
 
@@ -61,6 +67,17 @@ Item {
         const last = lower ? rows - 1 : 7
         const row = Math.max(first, Math.min(last, first + Math.floor((y - top) / (key + gap))))
         return Math.min(Live.layout.length - 1, row * 2 + col)
+    }
+
+    // The place under a point of the keys, either column, either part.
+    function placeUnder(x, y) {
+        const rows = Math.ceil(Live.layout.length / 2)
+        const col = x < key + gap / 2 ? 0 : 1
+        const lowerTop = placeY(Live.places)
+        const row = y < lowerTop - apart / 2 ? Math.floor(y / (key + gap))
+                  : 8 + Math.floor((y - lowerTop) / (key + gap))
+        const r = Math.max(0, Math.min(rows - 1, row))
+        return Math.min(Live.layout.length - 1, r * 2 + col)
     }
 
     Item {
@@ -102,7 +119,11 @@ Item {
         radius: Theme.radius - 1
         color: hot.pressed && !on ? Theme.selected : hot.containsMouse ? Theme.hover : Theme.inset
         border.width: rail.editing || on ? 1 : 0
-        border.color: rail.picked === index ? Theme.warn : on ? Theme.text : Theme.line
+        border.color: rail.picked === index || rail.target === index ? Theme.warn : on ? Theme.text : Theme.line
+        // Dragged in 调整顺序, it follows the pointer above the others.
+        z: hot.moving ? 2 : 0
+        opacity: hot.moving ? 0.85 : 1
+        transform: Translate { x: hot.moving ? hot.shift.x : 0; y: hot.moving ? hot.shift.y : 0 }
         Behavior on color { ColorAnimation { duration: 90 } }
 
         Glyph {
@@ -184,7 +205,8 @@ Item {
             anchors.fill: parent
             hoverEnabled: true
             preventStealing: true
-            cursorShape: mode === "tune" ? Qt.SizeHorCursor : Qt.PointingHandCursor
+            cursorShape: rail.editing ? (pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor)
+                       : mode === "tune" ? Qt.SizeHorCursor : Qt.PointingHandCursor
             property bool turning: false
             property bool swept: false
             property var before: ({})
@@ -192,18 +214,16 @@ Item {
             property real fromLevel: 0
             // "" until the drag shows its way, then "sweep" or "tune".
             property string mode: ""
+            // 调整顺序: dragged (it follows the pointer by `shift`).
+            property bool moving: false
+            property point shift
             onPressed: mouse => {
                 from = mapToItem(keys, mouse.x, mouse.y)
                 mode = ""
-                if (rail.editing) {
-                    if (rail.picked < 0) {
-                        rail.picked = fx.index
-                    } else {
-                        Live.swapPlaces(rail.picked, fx.index)
-                        rail.picked = -1
-                    }
+                moving = false
+                if (rail.editing)
                     return
-                }
+
                 before = Live.level
                 fromLevel = fx.level
                 swept = false
@@ -211,8 +231,20 @@ Item {
                 Live.switchEffect(fx.key, turning)
             }
             onPositionChanged: mouse => {
-                if (!pressed || rail.editing)
+                if (!pressed)
                     return
+                if (rail.editing) {
+                    const q = mapToItem(keys, mouse.x, mouse.y)
+                    if (!moving && Math.hypot(q.x - from.x, q.y - from.y) > 5) {
+                        moving = true
+                        rail.picked = -1
+                    }
+                    if (moving) {
+                        shift = Qt.point(q.x - from.x, q.y - from.y)
+                        rail.target = rail.placeUnder(q.x, q.y)
+                    }
+                    return
+                }
                 const p = mapToItem(keys, mouse.x, mouse.y)
                 const to = rail.placeAt(p.y, fx.col, fx.index)
                 const dx = p.x - from.x, dy = p.y - from.y
@@ -245,8 +277,27 @@ Item {
                     }
                 }
             }
-            onReleased: mode = ""
-            onCanceled: mode = ""
+            onReleased: {
+                mode = ""
+                if (!rail.editing)
+                    return
+                if (moving) {
+                    if (rail.target >= 0)
+                        Live.swapPlaces(fx.index, rail.target)
+                } else if (rail.picked < 0) {
+                    rail.picked = fx.index
+                } else {
+                    Live.swapPlaces(rail.picked, fx.index)
+                    rail.picked = -1
+                }
+                moving = false
+                rail.target = -1
+            }
+            onCanceled: {
+                mode = ""
+                moving = false
+                rail.target = -1
+            }
             // A second quick press is a second switch, never a double-click.
             // The wheel up and down scrolls a rail that does not fit;
             // otherwise (and sideways) it sets the strength.
@@ -264,9 +315,9 @@ Item {
                 Live.focused = fx.key
                 Live.setLevel(fx.key, Math.max(0, Math.min(1, fx.level + step)))
             }
-            ToolTip.visible: (containsMouse && mode !== "sweep") || mode === "tune"
+            ToolTip.visible: (containsMouse && mode !== "sweep" && !moving) || mode === "tune"
             ToolTip.delay: mode === "tune" ? 0 : 500
-            ToolTip.text: rail.editing ? fx.name + (rail.picked < 0 ? " · 按下再按另一个，两者换位" : " · 和选中的换位")
+            ToolTip.text: rail.editing ? fx.name + (rail.picked < 0 ? " · 拖到另一个上，或按下再按另一个，两者换位" : " · 和选中的换位")
                         : fx.name + " · " + (fx.rate ? Live.stepName(fx.key) : fx.on ? Math.round(fx.level * 100) + "%" : "关")
                           + (fx.placed ? " · " + (fx.col ? "推子 " : "旋钮 ") + (fx.row + 1) : "")
                           + (fx.hardware >= 0 && Math.abs(fx.hardware - fx.level) > 0.03
@@ -327,7 +378,7 @@ Item {
         }
     }
 
-    // ⋯: 全关, 分配控件, the kept strengths, the controller.
+    // ⋯: 全关, 调整顺序, the kept strengths, the controller.
     IconButton {
         id: menuKey
         anchors.bottom: parent.bottom
@@ -336,9 +387,9 @@ Item {
         implicitHeight: 24
         iconName: rail.editing ? "check" : "ellipsis"
         active: rail.editing || fxMenu.visible
-        tip: rail.editing ? "完成分配" : rail.software ? "这台电脑以软件方式绘制，效果不会出现"
+        tip: rail.editing ? "完成调整顺序" : rail.software ? "这台电脑以软件方式绘制，效果不会出现"
            : Midi.dawMode ? "nanoKONTROL2 在 DAW 模式：拔下，按住 SET MARKER 和 CYCLE 再插上，换成 CC 模式"
-           : "效果：全关、分配控件、强度、控制器"
+           : "效果：全关、调整顺序、强度、控制器"
         onClicked: rail.editing ? rail.editing = false : fxMenu.popup(menuKey, -fxMenu.implicitWidth - 4, menuKey.height - fxMenu.implicitHeight)
         // This computer draws in software (no effects show), or the
         // controller is not in CC mode.
@@ -361,11 +412,11 @@ Item {
             onTriggered: Live.resetEffects()
         }
         PopAction {
-            text: "分配控件（按两个键，两者换位）"
+            text: "调整顺序（拖动换位）"
             onTriggered: rail.editing = true
         }
         PopAction {
-            text: "分配恢复默认"
+            text: "顺序恢复默认"
             enabled: Live.laidOutOwn
             onTriggered: Live.resetLayout()
         }

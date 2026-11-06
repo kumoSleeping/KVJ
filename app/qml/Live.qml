@@ -484,7 +484,7 @@ QtObject {
     // knob of that strip and the right one its fader (the first eight rows,
     // its 16 places), the rest of the effects below in the same two columns.
     // `layout` lists them so, left then right, row by row; swapping two (the
-    // rail's 分配控件) is all that changes it. Kept between runs.
+    // rail's 调整顺序) is all that changes it. Kept between runs.
     readonly property var defaultLayout: [
         "mono", "flash",
         "invert", "strobe",
