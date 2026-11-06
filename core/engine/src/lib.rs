@@ -362,7 +362,7 @@ impl Engine {
         if self.running() {
             bail!("请先停止当前会话");
         }
-        let set = self.with_store(|s| {
+        let mut set = self.with_store(|s| {
             Ok(s.doc
                 .sets
                 .iter()
@@ -370,6 +370,24 @@ impl Engine {
                 .context("Set 不存在")?
                 .clone())
         })?;
+        // A file gone from the disk is removed from the Set; one on a drive
+        // not mounted now stays in the Set and only sits this session out.
+        let (gone, away) = document::missing(&set);
+        if !gone.is_empty() {
+            self.with_store(|s| {
+                let mut next = s.doc.clone();
+                next.set_mut(set_id)?.entries.retain(|e| !gone.contains(&e.id));
+                s.commit(next)
+            })?;
+            self.invalidate_prepared();
+        }
+        let dropped: Vec<String> = set
+            .entries
+            .iter()
+            .filter(|e| gone.contains(&e.id) || away.contains(&e.id))
+            .map(|e| e.path.clone())
+            .collect();
+        set.entries.retain(|e| !gone.contains(&e.id) && !away.contains(&e.id));
         anyhow::ensure!(!set.entries.is_empty(), "Set 没有素材");
         anyhow::ensure!(set.entries.iter().any(|e| !e.silent), "Set 里的素材都没有声音，无从跟随");
         // Every entry is indexed, but only the followed track's are listened for.
@@ -398,6 +416,12 @@ impl Engine {
         };
         self.diagnostics.lock().unwrap().reset(&session);
         *self.view.lock().unwrap() = view.clone();
+        for path in &dropped {
+            self.log(&session, Level::Warn, Stage::Session, format!("素材文件不存在，已跳过：{path}"));
+        }
+        if !gone.is_empty() {
+            self.log(&session, Level::Warn, Stage::Session, format!("已从 Set 移除 {} 个失效素材", gone.len()));
+        }
         self.log(
             &session,
             Level::Info,

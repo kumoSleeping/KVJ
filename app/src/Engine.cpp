@@ -507,6 +507,14 @@ void Engine::start(const QString &setId, const QString &device, int channelStart
         m_logCursor = 0;
         emit viewChanged();
         emit logsChanged();
+        // Starting removes entries whose file is gone from the Set.
+        call({{"cmd", "document"}}, [this](const QJsonValue &ok) {
+            const QVariantMap document = ok.toObject().toVariantMap();
+            if (document != m_document) {
+                m_document = document;
+                emit documentChanged();
+            }
+        }, false);
     }, true);
 }
 

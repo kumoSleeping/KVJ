@@ -41,7 +41,7 @@ pub struct PreparedSet {
     pub index: Mutex<LiveIndex>,
 }
 pub fn signature(path: &Path) -> Result<String> {
-    let m = fs::metadata(path)?;
+    let m = fs::metadata(path).with_context(|| format!("素材文件不存在或无法读取：{}", path.display()))?;
     Ok(format!(
         "{}:{}",
         m.len(),

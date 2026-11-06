@@ -100,6 +100,36 @@ impl Default for Document {
         }
     }
 }
+/// Entries whose file is not there, by id: (gone from a disk that is there,
+/// on a drive not mounted now: `/Volumes/<name>` or a drive letter missing).
+pub fn missing(set: &Set) -> (Vec<String>, Vec<String>) {
+    let (mut gone, mut away) = (vec![], vec![]);
+    for e in &set.entries {
+        let path = std::path::Path::new(&e.path);
+        if path.exists() {
+            continue;
+        }
+        if volume_present(path) {
+            gone.push(e.id.clone());
+        } else {
+            away.push(e.id.clone());
+        }
+    }
+    (gone, away)
+}
+fn volume_present(path: &std::path::Path) -> bool {
+    use std::path::Component;
+    let mut parts = path.components();
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(Component::Prefix(p)), _, _) => std::path::Path::new(p.as_os_str()).join("\\").exists(),
+        (Some(Component::RootDir), Some(Component::Normal(v)), Some(Component::Normal(name)))
+            if v == "Volumes" =>
+        {
+            std::path::Path::new("/Volumes").join(name).is_dir()
+        }
+        _ => true,
+    }
+}
 pub fn id() -> String {
     use std::hash::{BuildHasher, Hasher};
     static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -520,6 +550,29 @@ mod merge_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_files_are_gone_unless_their_drive_is_away() {
+        let dir = std::env::temp_dir().join(format!("kvj-missing-{}", id()));
+        fs::create_dir_all(&dir).unwrap();
+        let here = dir.join("here.mp4");
+        fs::write(&here, b"x").unwrap();
+        let set: Set = serde_json::from_value(serde_json::json!({
+            "id": "s", "name": "Set 1",
+            "entries": [
+                {"id": "a", "path": here, "title": "a", "duration": 1.0, "video": true, "presentation": "video"},
+                {"id": "b", "path": dir.join("gone/b.mp4"), "title": "b", "duration": 1.0, "video": true, "presentation": "video"},
+                {"id": "c", "path": "/Volumes/kvj-no-such-drive/c.mp4", "title": "c", "duration": 1.0, "video": true, "presentation": "video"}
+            ]
+        }))
+        .unwrap();
+        let (gone, away) = missing(&set);
+        assert_eq!(gone, vec!["b".to_string()]);
+        if cfg!(unix) {
+            assert_eq!(away, vec!["c".to_string()]);
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     /// Test documents name files as `/a.mp4`; on Windows an absolute path
     /// needs a drive, or validation turns the document away.
