@@ -59,6 +59,42 @@ fn a_packed_index_writes_and_searches_as_the_unpacked_one() {
 }
 
 #[test]
+fn a_duplicate_grows_while_the_original_stays_as_it_was() {
+    let recordings = [song(7, 40.), song(99, 40.)];
+    let features: Vec<_> = recordings
+        .iter()
+        .map(|pcm| LiveFeatures::prepare(pcm, &|| false).unwrap())
+        .collect();
+    let mut index = LiveIndex::default();
+    index.add(0, &features[0]).unwrap();
+    index.warm(&|| false).unwrap();
+    let count = index.landmark_count();
+    // An entry placed during the show: added to a copy, after what was there.
+    let mut grown = index.duplicate().unwrap();
+    assert_eq!(grown.landmark_count(), count);
+    grown.add(1, &features[1]).unwrap();
+    grown.warm(&|| false).unwrap();
+    assert_eq!(index.targets(), vec![0]);
+    assert_eq!(index.landmark_count(), count);
+    assert_eq!(grown.targets(), vec![0, 1]);
+
+    let (from, to) = (10. * SAMPLE_RATE as f64, 22.55 * SAMPLE_RATE as f64);
+    let capture: Vec<f32> = recordings[1][from as usize..to as usize].iter().map(|x| x * 0.4).collect();
+    let mut stream = LiveFeatureStream::new(300);
+    stream.push(&capture, &|| false).unwrap();
+    let (query, _) = stream.recent(0.55).expect("enough audio for a query");
+    let seeds = grown.search_slice_at_rate(&query, 1., &|| false).unwrap();
+    assert_eq!(seeds.first().expect("the grown index finds it").target, 1);
+    // The first recording is found in the copy as in the original.
+    let capture: Vec<f32> = recordings[0][from as usize..to as usize].to_vec();
+    let mut stream = LiveFeatureStream::new(300);
+    stream.push(&capture, &|| false).unwrap();
+    let (query, _) = stream.recent(0.55).expect("enough audio for a query");
+    assert_eq!(grown.search_slice_at_rate(&query, 1., &|| false).unwrap()[0].target, 0);
+    assert_eq!(index.search_slice_at_rate(&query, 1., &|| false).unwrap()[0].target, 0);
+}
+
+#[test]
 fn a_short_live_window_finds_its_recording_and_position() {
     let recordings = [song(7, 40.), song(99, 40.)];
     let mut index = LiveIndex::default();

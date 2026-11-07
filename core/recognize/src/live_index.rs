@@ -15,8 +15,8 @@ const MAX_TARGETS: usize = 65_536;
 // Resident Set postings are not the per-recording feature cache or query work
 // area. Dense landmarks need their own bounded budget: about 0.6 MiB a minute
 // of audio once packed (a 166-minute Set: 24.8 million, 98.6 MiB), so 512 MiB
-// holds some fourteen hours. It covers every entry
-// of the Set, turned off or not, so turning one on during the show never waits.
+// holds some fourteen hours. It covers the entries placed on the timeline (on
+// any track), not the rest of the library.
 // While the index is built each landmark also carries its fingerprint (8
 // bytes, to sort by); `warm` groups them by fingerprint and keeps only target
 // and frame (4 bytes), halving what stays in memory for the show.
@@ -144,7 +144,7 @@ impl LiveIndex {
         anyhow::ensure!(
             needed <= MAX_POSTINGS,
             "Set 地标索引需要 {:.1} MiB，超过常驻索引预算 {} MiB（{} 条地标，约十四小时音频）。\
-             索引包含 Set 里全部素材（未勾选的也在内，演出中勾选才不用等）；请把素材分到几个 Set",
+             索引包含放在轨道上的全部素材（各轨道都算）；请从轨道上移走一些",
             (needed * 4 + (HASHES + 1) * 4 + (self.lengths.len() + 1) * 4) as f64 / 1_048_576.,
             INDEX_MEMORY_BUDGET / 1_048_576,
             needed
@@ -210,6 +210,20 @@ impl LiveIndex {
         self.packed = Vec::new();
         self.offsets.clear();
         Ok(())
+    }
+    /// A copy to add to while this one goes on being searched (an entry
+    /// placed during the show).
+    pub fn duplicate(&self) -> Result<Self> {
+        let mut postings = Vec::new();
+        postings
+            .try_reserve_exact(self.landmark_count())
+            .map_err(|e| anyhow::anyhow!("无法分配 Set 地标索引内存：{e}"))?;
+        self.each_posting(|p| postings.push(p));
+        Ok(Self {
+            lengths: self.lengths.clone(),
+            postings,
+            ..Self::default()
+        })
     }
     pub fn targets(&self) -> Vec<usize> {
         (0..self.lengths.len()).collect()

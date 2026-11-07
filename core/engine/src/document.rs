@@ -20,8 +20,9 @@ pub struct Entry {
     #[serde(default)]
     pub audio_offset: f64,
     pub presentation: String,
-    /// Followed only while on. The DJ turns entries on and off during the show,
-    /// so this may change while a session runs and never touches the index.
+    /// On the timeline (placed), and followed while on its track; off, it is
+    /// only in the library. Only placed entries are indexed: one placed while
+    /// following is indexed then, beside the session, and followed once it is.
     #[serde(default = "on")]
     pub enabled: bool,
     /// A picture with no sound the engine reads: it plays without one, has no
@@ -29,7 +30,7 @@ pub struct Entry {
     #[serde(default)]
     pub silent: bool,
     /// The track it plays on: 0 the main one, 1..=3 the aux ones. A session
-    /// follows one track; entries on the others are indexed but never matched.
+    /// follows one track; placed entries on the others are indexed but never matched.
     #[serde(default)]
     pub track: u8,
     #[serde(flatten)]

@@ -120,6 +120,9 @@ pub struct Engine {
     // The track the running session listens to; read every round, so it can
     // change while following (`follow_track`).
     track: AtomicU8,
+    // An entry was turned on (placed) while following: the session indexes
+    // what is placed and not in its index yet.
+    placed: AtomicBool,
     // 详细日志: every round's evidence and timings go to the log. Off by
     // default; read every round.
     detail: AtomicBool,
@@ -143,6 +146,7 @@ impl Engine {
             prepared: Mutex::new(None),
             off: Mutex::new(Default::default()),
             track: AtomicU8::new(0),
+            placed: AtomicBool::new(false),
             detail: AtomicBool::new(false),
             alike_revision: AtomicU64::new(0),
             session: Mutex::new(None),
@@ -256,6 +260,9 @@ impl Engine {
         })?;
         let view = self.view.lock().unwrap();
         if view.set_id == set_id {
+            if on {
+                self.placed.store(true, Ordering::Relaxed);
+            }
             let mut off = self.off.lock().unwrap();
             for id in entry_ids {
                 if on {
@@ -390,10 +397,11 @@ impl Engine {
         set.entries.retain(|e| !gone.contains(&e.id) && !away.contains(&e.id));
         anyhow::ensure!(!set.entries.is_empty(), "Set 没有素材");
         anyhow::ensure!(set.entries.iter().any(|e| !e.silent), "Set 里的素材都没有声音，无从跟随");
-        // Every entry is indexed, but only the followed track's are listened for.
+        // The entries placed on the timeline (on any track) are indexed, but
+        // only the followed track's are listened for.
         anyhow::ensure!(
-            set.entries.iter().any(|e| e.track == track && !e.silent),
-            "{}上的素材都没有声音，无从跟随",
+            set.entries.iter().any(|e| e.track == track && e.enabled && !e.silent),
+            "{}上没有放好的有声素材，无从跟随（先把素材放上轨道）",
             track_name(track)
         );
         *self.off.lock().unwrap() = set
@@ -404,6 +412,7 @@ impl Engine {
             .collect();
         let session = document::id();
         self.track.store(track, Ordering::Relaxed);
+        self.placed.store(false, Ordering::Relaxed);
         let view = View {
             session: session.clone(),
             input_device: input.device.clone(),
@@ -411,7 +420,7 @@ impl Engine {
             set_id: set_id.into(),
             track,
             phase: "indexing".into(),
-            total: set.entries.len(),
+            total: set.entries.iter().filter(|e| e.enabled).count(),
             ..Default::default()
         };
         self.diagnostics.lock().unwrap().reset(&session);
@@ -448,7 +457,7 @@ impl Engine {
         Ok(view)
     }
     /// While following: listen to `track` from the next round on, the input
-    /// left open (every track of the Set is indexed). What the other track
+    /// left open (the placed entries of every track are indexed). What the other track
     /// found is let go.
     /// Turns 详细日志 on or off, for the running session and the next ones.
     pub fn detail_log(&self, on: bool) -> bool {

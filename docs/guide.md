@@ -44,9 +44,11 @@ the library. A piece's right-click menu on the timeline (移出轨道) takes it 
 off, into the library only. Placing works during the show onto the track an
 entry is already on (moving between tracks waits until following stops), so at
 a handover between DJs the next DJ's entries go on while the last ones stay.
-Every entry is indexed either way, so placing never waits for indexing: the
-index holds the whole library, entries off the timeline included (about
-0.6 MiB a minute of sound, up to 512 MiB, some fourteen hours). Files imported from the drawer go into the library; files
+Only entries on the timeline are indexed (on every track; about 0.6 MiB a
+minute of sound, up to 512 MiB, some fourteen hours): the rest of the library
+costs neither memory nor waiting. One placed during the show is indexed then,
+beside following, and followed once that is done (seconds if it was indexed
+before, else about as long as decoding its sound). Files imported from the drawer go into the library; files
 dropped on a track row are imported onto that track.
 
 Every entry is on one of four **tracks**: the main track, where entries go

@@ -404,7 +404,7 @@ pub fn run(
                 }
             });
         }
-        run_inner(&engine, &session, &ready, &cancel, &input)
+        run_inner(&engine, &session, ready, &cancel, &cache, &input)
     }))
     .unwrap_or_else(|_| Err(anyhow::anyhow!("引擎内部错误，请重新开始")));
     if cancel.load(Ordering::Relaxed) {
@@ -425,9 +425,16 @@ pub fn run(
         });
     }
 }
-fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &AtomicBool, input: &super::audio_input::Selection) -> Result<()> {
+fn run_inner(
+    engine: &Arc<Engine>,
+    session: &str,
+    mut ready: Arc<PreparedSet>,
+    cancel: &Arc<AtomicBool>,
+    cache: &Path,
+    input: &super::audio_input::Selection,
+) -> Result<()> {
     {
-        if set.recordings.is_empty() {
+        if ready.recordings.is_empty() {
             bail!("Set 没有素材")
         }
         super::qos::prefer_live_audio();
@@ -496,10 +503,56 @@ fn run_inner(engine: &Arc<Engine>, session: &str, set: &PreparedSet, cancel: &At
         let (mut last_notice, mut notices): (Option<Instant>, u32) = (None, 0);
         // Recordings left out of the search for now: their file is gone or
         // changed (back once it is as it was), or their features are unreadable.
-        let mut unavailable = vec![false; set.recordings.len()];
-        let mut unreadable = vec![false; set.recordings.len()];
+        let mut unavailable = vec![false; ready.recordings.len()];
+        let mut unreadable = vec![false; ready.recordings.len()];
+        // Entries placed while following, being indexed beside it.
+        let mut growing: Option<std::thread::JoinHandle<Result<Option<PreparedSet>>>> = None;
         while !cancel.load(Ordering::Relaxed) {
             let tick = Instant::now();
+            // Their index, once built, replaces this one between two rounds:
+            // what was there keeps its numbers, theirs come after.
+            if growing.as_ref().is_some_and(|g| g.is_finished()) {
+                match growing.take().unwrap().join() {
+                    Ok(Ok(Some(grown))) => {
+                        let grown = Arc::new(grown);
+                        let added: Vec<&str> = grown.recordings[ready.recordings.len()..]
+                            .iter()
+                            .map(|r| r.entry.title.as_str())
+                            .collect();
+                        log(engine, session, Level::Info, Stage::Index, format!(
+                            "已加入索引，开始跟随：{} · 共 {} 条地标",
+                            added.join("、"),
+                            grown.index.lock().unwrap().landmark_count()
+                        ));
+                        unavailable.resize(grown.recordings.len(), false);
+                        unreadable.resize(grown.recordings.len(), false);
+                        *engine.prepared.lock().unwrap() = Some(grown.clone());
+                        ready = grown;
+                    }
+                    Ok(Ok(None)) => {}
+                    Ok(Err(error)) => log(engine, session, Level::Warn, Stage::Index, format!(
+                        "放上轨道的素材未能加入索引，暂不跟随它：{error:#}"
+                    )),
+                    Err(_) => log(engine, session, Level::Warn, Stage::Index,
+                        "放上轨道的素材未能加入索引（引擎内部错误），暂不跟随它".into()),
+                }
+            }
+            if growing.is_none() && engine.placed.swap(false, Ordering::Relaxed) {
+                let set_id = engine.view.lock().unwrap().set_id.clone();
+                let now = engine.with_store(|s| Ok(s.doc.sets.iter().find(|s| s.id == set_id).cloned()));
+                if let Ok(Some(now)) = now {
+                    let (engine, old, cache, cancel, session) =
+                        (engine.clone(), ready.clone(), cache.to_path_buf(), cancel.clone(), session.to_string());
+                    growing = std::thread::Builder::new()
+                        .name("kvj-grow".into())
+                        .spawn(move || {
+                            let _background = super::qos::prefer_background();
+                            index::grow(&engine, &session, &old, &now, &cache, &cancel)
+                        })
+                        .ok();
+                }
+            }
+            let set: &PreparedSet = &ready;
             let polled = match source.as_mut().map(|s| s.poll(cancel)) {
                 Some(Ok(polled)) => polled,
                 failed => {

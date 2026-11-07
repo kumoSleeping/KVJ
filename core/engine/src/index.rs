@@ -24,10 +24,12 @@ use std::{
 const KEPT_INDEXES: usize = 4;
 
 
+#[derive(Clone)]
 pub struct Recording {
     pub entry: Entry,
     pub signature: String,
 }
+#[derive(Clone)]
 pub struct Target {
     pub recording: usize,
     pub start: f64,
@@ -50,12 +52,18 @@ pub fn signature(path: &Path) -> Result<String> {
             .as_nanos()
     ))
 }
+/// What is indexed: the entries placed on the timeline, on any track. The
+/// rest of the library is not, so a big library costs no memory or waiting;
+/// one placed while following is indexed then (`grow`) and followed once it is.
+pub(super) fn used(set: &Set) -> Set {
+    let mut used = set.clone();
+    used.entries.retain(|e| e.enabled);
+    used
+}
 fn key(set: &Set) -> Result<String> {
-    // Every entry is indexed whether it is on or not, and whatever track it is
-    // on, so turning one on or off or moving it to another track keeps the index.
-    let mut indexed = set.clone();
+    // Whatever track an entry is on, so moving it to another keeps the index.
+    let mut indexed = used(set);
     for e in &mut indexed.entries {
-        e.enabled = true;
         e.track = 0;
     }
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -65,18 +73,18 @@ fn key(set: &Set) -> Result<String> {
         serde_json::to_vec(&indexed)?,
     )
         .hash(&mut h);
-    for e in &set.entries {
+    for e in &indexed.entries {
         signature(Path::new(&e.path))?.hash(&mut h);
     }
     Ok(format!("{:016x}", h.finish()))
 }
-/// The index on disk depends only on the files, in order, and their lengths:
-/// renaming an entry or changing how it is shown keeps it (a Set of five hours
-/// has an index of hundreds of MiB).
+/// The index on disk depends only on the files placed, in order, and their
+/// lengths: renaming an entry or changing how it is shown keeps it (five hours
+/// of them make an index of hundreds of MiB).
 pub(super) fn disk_key(set: &Set) -> Result<String> {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     ("live-set-landmarks-v6", LIVE_FEATURE_REVISION).hash(&mut h);
-    for e in &set.entries {
+    for e in &used(set).entries {
         (&e.path, signature(Path::new(&e.path))?, e.duration.to_bits()).hash(&mut h);
     }
     Ok(format!("{:016x}", h.finish()))
@@ -151,6 +159,140 @@ fn prune(cache: &Path, current: &Path, sets: &[Set]) {
         }
     }
 }
+/// One block into `index`: its features from the cache, else decoded (and
+/// cached).
+#[allow(clippy::too_many_arguments)]
+fn add(
+    engine: &Engine,
+    session: &str,
+    index: &mut LiveIndex,
+    id: usize,
+    total: usize,
+    target: &Target,
+    recording: &Recording,
+    cancel: &AtomicBool,
+) -> Result<()> {
+    let entry = &recording.entry;
+    let cached = fs::File::open(&target.path)
+        .ok()
+        .and_then(|f| LiveFeatures::read_from(BufReader::new(f)).ok());
+    let summary = if let Some(summary) = cached {
+        log(
+            engine,
+            session,
+            Level::Info,
+            Stage::Index,
+            format!("{} · 复用指纹，加入整套索引", entry.title),
+        );
+        summary
+    } else {
+        log(
+            engine,
+            session,
+            Level::Info,
+            Stage::Index,
+            format!(
+                "{} · {:.1}–{:.1} 秒 · 提取音频特征",
+                entry.title, target.start, target.end
+            ),
+        );
+        let audio = super::decode::decode_audio_from_cancellable(
+            Path::new(&entry.path),
+            8000,
+            Some(target.end - target.start),
+            target.start,
+            &|| cancel.load(Ordering::Relaxed),
+        )?
+        .context("已停止")?;
+        let features = LiveFeatures::prepare(&audio.samples, &|| cancel.load(Ordering::Relaxed))?;
+        anyhow::ensure!(
+            signature(Path::new(&entry.path))? == recording.signature,
+            "素材已变化：{}",
+            entry.title
+        );
+        save(&target.path, |f| features.write_to(f))?;
+        features
+    };
+    index.add(id, &summary)?;
+    log(
+        engine,
+        session,
+        Level::Info,
+        Stage::Index,
+        format!(
+            "索引区块 {}/{} · {} 条地标 · {:.1} MiB",
+            id + 1,
+            total,
+            index.landmark_count(),
+            index.memory_bytes() as f64 / 1_048_576.
+        ),
+    );
+    Ok(())
+}
+/// Entries placed while following (`set` is the Set as it is now), indexed
+/// beside the running session: a copy of its index with theirs added after,
+/// so every recording and block keeps its number and the session swaps it in
+/// between two rounds. None when every placed entry is in it already.
+pub(super) fn grow(
+    engine: &Engine,
+    session: &str,
+    old: &PreparedSet,
+    set: &Set,
+    cache: &Path,
+    cancel: &AtomicBool,
+) -> Result<Option<PreparedSet>> {
+    let have: HashSet<&str> = old.recordings.iter().map(|r| r.entry.id.as_str()).collect();
+    let new: Vec<Entry> = used(set)
+        .entries
+        .into_iter()
+        .filter(|e| !have.contains(e.id.as_str()))
+        .collect();
+    let mut recordings = old.recordings.clone();
+    let mut targets = old.targets.clone();
+    let first = targets.len();
+    for entry in new {
+        let Ok(before) = signature(Path::new(&entry.path)) else {
+            log(engine, session, Level::Warn, Stage::Index, format!("素材文件不可用，暂不加入索引：{}", entry.title));
+            continue;
+        };
+        for (start, end) in blocks(&entry) {
+            targets.push(Target {
+                recording: recordings.len(),
+                start,
+                end,
+                path: block_path(cache, &entry, &before, start, end),
+            });
+        }
+        log(engine, session, Level::Info, Stage::Index, format!("{} · 放上轨道，正在加入索引", entry.title));
+        recordings.push(Recording { entry, signature: before });
+    }
+    if recordings.len() == old.recordings.len() {
+        return Ok(None);
+    }
+    fs::create_dir_all(cache)?;
+    let mut index = old.index.lock().unwrap().duplicate()?;
+    for id in first..targets.len() {
+        if cancel.load(Ordering::Relaxed) {
+            bail!("已停止")
+        }
+        let target = &targets[id];
+        add(engine, session, &mut index, id, targets.len(), target, &recordings[target.recording], cancel)?;
+    }
+    index.warm(&|| cancel.load(Ordering::Relaxed))?;
+    // The key of exactly these entries, in this order: a session started on
+    // the same placed entries in the same order reuses it.
+    let mut indexed = set.clone();
+    indexed.entries = recordings.iter().map(|r| r.entry.clone()).collect();
+    for e in &mut indexed.entries {
+        e.enabled = true;
+    }
+    Ok(Some(PreparedSet {
+        key: key(&indexed)?,
+        recordings,
+        targets,
+        index: Mutex::new(index),
+    }))
+}
 pub fn prepare(
     engine: &Engine,
     session: &str,
@@ -158,6 +300,7 @@ pub fn prepare(
     cache: &Path,
     cancel: &AtomicBool,
 ) -> Result<Arc<PreparedSet>> {
+    let set = &used(set);
     let key = key(set)?;
     if let Some(ready) = engine
         .prepared
@@ -238,61 +381,7 @@ pub fn prepare(
                 v.preparing = Some(entry.id.clone());
                 v.indexed = target.recording;
             });
-            let cached = fs::File::open(&target.path)
-                .ok()
-                .and_then(|f| LiveFeatures::read_from(BufReader::new(f)).ok());
-            let summary = if let Some(summary) = cached {
-                log(
-                    engine,
-                    session,
-                    Level::Info,
-                    Stage::Index,
-                    format!("{} · 复用指纹，加入整套索引", entry.title),
-                );
-                summary
-            } else {
-                log(
-                    engine,
-                    session,
-                    Level::Info,
-                    Stage::Index,
-                    format!(
-                        "{} · {:.1}–{:.1} 秒 · 提取音频特征",
-                        entry.title, target.start, target.end
-                    ),
-                );
-                let audio = super::decode::decode_audio_from_cancellable(
-                    Path::new(&entry.path),
-                    8000,
-                    Some(target.end - target.start),
-                    target.start,
-                    &|| cancel.load(Ordering::Relaxed),
-                )?
-                .context("已停止")?;
-                let features =
-                    LiveFeatures::prepare(&audio.samples, &|| cancel.load(Ordering::Relaxed))?;
-                anyhow::ensure!(
-                    signature(Path::new(&entry.path))? == recording.signature,
-                    "素材已变化：{}",
-                    entry.title
-                );
-                save(&target.path, |f| features.write_to(f))?;
-                features
-            };
-            index.add(id, &summary)?;
-            log(
-                engine,
-                session,
-                Level::Info,
-                Stage::Index,
-                format!(
-                    "索引区块 {}/{} · {} 条地标 · {:.1} MiB",
-                    id + 1,
-                    targets.len(),
-                    index.landmark_count(),
-                    index.memory_bytes() as f64 / 1_048_576.
-                ),
-            );
+            add(engine, session, &mut index, id, targets.len(), target, recording, cancel)?;
         }
         save(&index_path, |f| index.write_to(f))?;
         index
@@ -339,25 +428,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn turning_entries_off_or_moving_them_keeps_the_index() {
+    fn only_placed_entries_are_indexed_on_whatever_track() {
         let dir = std::env::temp_dir().join(format!("kvj-index-key-{}", super::super::document::id()));
         fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("a.mp4");
-        fs::write(&path, b"x").unwrap();
+        let (a, b) = (dir.join("a.mp4"), dir.join("b.mp4"));
+        fs::write(&a, b"x").unwrap();
+        fs::write(&b, b"yy").unwrap();
         let mut set: Set = serde_json::from_value(serde_json::json!({
             "id": "s", "name": "Set 1",
-            "entries": [{"id": "a", "path": path, "title": "a", "duration": 60.0, "video": true, "presentation": "video"}]
+            "entries": [
+                {"id": "a", "path": a, "title": "a", "duration": 60.0, "video": true, "presentation": "video"},
+                {"id": "b", "path": b, "title": "b", "duration": 60.0, "video": true, "presentation": "video", "enabled": false}
+            ]
         }))
         .unwrap();
+        assert_eq!(used(&set).entries.len(), 1);
         let on = key(&set).unwrap();
-        set.entries[0].enabled = false;
-        assert_eq!(key(&set).unwrap(), on);
+        let disk = disk_key(&set).unwrap();
+        // Moving a placed entry to another track keeps the index.
         set.entries[0].track = 2;
         assert_eq!(key(&set).unwrap(), on);
-        let disk = disk_key(&set).unwrap();
+        // What is only in the library is not in it: changing it changes nothing.
+        set.entries[1].title = "renamed".into();
+        set.entries[1].track = 1;
+        assert_eq!(key(&set).unwrap(), on);
+        assert_eq!(disk_key(&set).unwrap(), disk);
+        // Placing it, or taking one off, is another index.
+        set.entries[1].enabled = true;
+        assert_ne!(key(&set).unwrap(), on);
+        assert_ne!(disk_key(&set).unwrap(), disk);
+        set.entries[1].enabled = false;
+        set.entries[0].enabled = false;
+        assert_ne!(key(&set).unwrap(), on);
+        set.entries[0].enabled = true;
+        // Renaming a placed entry is a new key; the index on disk, the same files', is kept.
         set.entries[0].title = "renamed".into();
         assert_ne!(key(&set).unwrap(), on);
-        // The index on disk is the same files' and is kept.
         assert_eq!(disk_key(&set).unwrap(), disk);
         let _ = fs::remove_dir_all(&dir);
     }
