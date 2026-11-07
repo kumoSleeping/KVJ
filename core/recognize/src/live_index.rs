@@ -14,13 +14,13 @@ const HASHES: usize = 1 << 20;
 const MAX_TARGETS: usize = 65_536;
 // Resident Set postings are not the per-recording feature cache or query work
 // area. Dense landmarks need their own bounded budget: about 0.6 MiB a minute
-// of audio once packed (a 166-minute Set: 24.8 million, 98.6 MiB), so 192 MiB
-// holds some five hours. It covers every entry
+// of audio once packed (a 166-minute Set: 24.8 million, 98.6 MiB), so 512 MiB
+// holds some fourteen hours. It covers every entry
 // of the Set, turned off or not, so turning one on during the show never waits.
 // While the index is built each landmark also carries its fingerprint (8
 // bytes, to sort by); `warm` groups them by fingerprint and keeps only target
 // and frame (4 bytes), halving what stays in memory for the show.
-const INDEX_MEMORY_BUDGET: usize = 192 * 1024 * 1024;
+const INDEX_MEMORY_BUDGET: usize = 512 * 1024 * 1024;
 const MAX_POSTINGS: usize = (INDEX_MEMORY_BUDGET - (HASHES + 1) * 4 - MAX_TARGETS * 4) / 4;
 const MAX_VOTES: usize =
     FEATURE_MEMORY_BUDGET / (std::mem::size_of::<Vote>() + std::mem::size_of::<usize>());
@@ -143,7 +143,7 @@ impl LiveIndex {
             .ok_or_else(|| anyhow::anyhow!("Set 地标数量溢出"))?;
         anyhow::ensure!(
             needed <= MAX_POSTINGS,
-            "Set 地标索引需要 {:.1} MiB，超过常驻索引预算 {} MiB（{} 条地标，约五小时音频）。\
+            "Set 地标索引需要 {:.1} MiB，超过常驻索引预算 {} MiB（{} 条地标，约十四小时音频）。\
              索引包含 Set 里全部素材（未勾选的也在内，演出中勾选才不用等）；请把素材分到几个 Set",
             (needed * 4 + (HASHES + 1) * 4 + (self.lengths.len() + 1) * 4) as f64 / 1_048_576.,
             INDEX_MEMORY_BUDGET / 1_048_576,

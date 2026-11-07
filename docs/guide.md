@@ -46,7 +46,7 @@ entry is already on (moving between tracks waits until following stops), so at
 a handover between DJs the next DJ's entries go on while the last ones stay.
 Every entry is indexed either way, so placing never waits for indexing: the
 index holds the whole library, entries off the timeline included (about
-0.6 MiB a minute of sound, up to 192 MiB, some five hours). Files imported from the drawer go into the library; files
+0.6 MiB a minute of sound, up to 512 MiB, some fourteen hours). Files imported from the drawer go into the library; files
 dropped on a track row are imported onto that track.
 
 Every entry is on one of four **tracks**: the main track, where entries go
