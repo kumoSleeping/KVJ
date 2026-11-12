@@ -102,7 +102,14 @@ ColumnLayout {
 
     function sourceName(id) {
         const s = (sources || []).find(s => s.id === id)
-        return s ? s.name : id.startsWith("camera:") ? "相机（未连接）" : "画面 " + (Number(id.substring(6)) + 1)
+        if (s)
+            return s.name
+        if (id.startsWith("image:")) {
+            const g = gallery.find(g => "image:" + g.source === id)
+            const url = id.substring(6)
+            return g && g.name ? g.name : decodeURIComponent(url.substring(url.lastIndexOf("/") + 1))
+        }
+        return id.startsWith("camera:") ? "相机（未连接）" : "画面 " + (Number(id.substring(6)) + 1)
     }
     function known(id) {
         return (sources || []).some(s => s.id === id)
@@ -336,6 +343,25 @@ ColumnLayout {
     }
     function forget(id) {
         setGallery(gallery.filter(g => g.id !== id))
+    }
+    // A picture from 预备 as a layer of the picture (not a sticker): it
+    // fills the picture, cropped, over every other layer, and is chosen; the
+    // effects work on it as on the videos and cameras. Its layer keys do the
+    // rest (铺满, 完整显示, mask, …); taken off the picture it is gone from it.
+    function imageLayerId(item) {
+        return item && item.kind === "image" && item.source ? "image:" + item.source : ""
+    }
+    function layImage(item) {
+        const id = imageLayerId(item)
+        if (!id)
+            return
+        chosenSid = ""
+        choose(Switcher.addLayer(id, "cover"))
+    }
+    // Whether a picture of 预备 is laid on the picture as a layer.
+    function imageLaid(item) {
+        const id = imageLayerId(item)
+        return !!id && slots.some(s => s.source === id && Switcher.inPicture(s))
     }
     // Posts `item` centred at (px, py) of the picture, at the next size.
     function postAt(item, px, py) {

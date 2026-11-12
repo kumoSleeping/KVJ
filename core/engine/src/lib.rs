@@ -4,6 +4,7 @@
 //! Ported from KDJ's Live VJ (`src-tauri/src/live_vj` at 00f377a) without Tauri.
 pub mod decode;
 mod alike;
+mod analysis;
 mod audio_input;
 #[cfg(target_os = "macos")]
 mod capture;
@@ -101,6 +102,8 @@ pub struct Status {
     pub logs: Vec<LogEntry>,
     /// Goes up when a scan for entries sharing their sound is done (`alike`).
     pub alike_revision: u64,
+    /// 提前分析 under way (`analyse`).
+    pub analysis: analysis::Progress,
 }
 struct Session {
     cancel: Arc<AtomicBool>,
@@ -127,6 +130,7 @@ pub struct Engine {
     // default; read every round.
     detail: AtomicBool,
     alike_revision: AtomicU64,
+    analysis: analysis::Analysis,
     session: Mutex<Option<Session>>,
     gate: Mutex<()>,
     reports: report::Reports,
@@ -149,6 +153,7 @@ impl Engine {
             placed: AtomicBool::new(false),
             detail: AtomicBool::new(false),
             alike_revision: AtomicU64::new(0),
+            analysis: Default::default(),
             session: Mutex::new(None),
             gate: Mutex::new(()),
             reports: report::Reports::default(),
@@ -540,11 +545,17 @@ impl Engine {
             .unwrap()
             .since(&view.session, after_log_id);
         view.clock_ms = clock_ms();
-        Status { view, logs, alike_revision: self.alike_revision.load(Ordering::Relaxed) }
+        Status {
+            view,
+            logs,
+            alike_revision: self.alike_revision.load(Ordering::Relaxed),
+            analysis: self.analysis.progress(),
+        }
     }
     /// Stop and wait for the worker, so `notify` is never called afterwards.
     /// Call from the host thread, never from inside `notify`.
     pub fn shutdown(&self) {
+        self.analysis_stop();
         let session = self.session.lock().unwrap().take();
         if let Some(s) = session {
             s.cancel.store(true, Ordering::Relaxed);

@@ -4,7 +4,9 @@
 // block (importing files, listing devices, starting a session) run on the thread
 // pool; their replies and the engine's events land back on the GUI thread.
 
+#include <QHash>
 #include <QJsonObject>
+#include <QSet>
 #include <QObject>
 #include <QStringList>
 #include <QThreadPool>
@@ -55,6 +57,11 @@ class Engine : public QObject
     // Entries sharing their sound with another on the same track: entry id
     // to what it shares, said in a sentence (empty: none known).
     Q_PROPERTY(QVariantMap alike READ alike NOTIFY alikeChanged)
+    // 提前分析 (analyse): {running, current (a path), waiting, done, failed,
+    // error}. analysedRevision moves whenever what isAnalysed() answers may
+    // have changed.
+    Q_PROPERTY(QVariantMap analysis READ analysis NOTIFY analysisChanged)
+    Q_PROPERTY(int analysedRevision READ analysedRevision NOTIFY analysedChanged)
 
 public:
     explicit Engine(QObject *parent = nullptr);
@@ -138,6 +145,17 @@ public:
     static void note(const QString &line);
     bool detailLog() const { return s_detail; }
     QVariantMap alike() const { return m_alike; }
+    QVariantMap analysis() const { return m_analysis; }
+    int analysedRevision() const { return m_analysedRevision; }
+    // 提前分析: the videos among `urls`, and in the folders among them, have
+    // their sound analysed ahead (features for following, waveform, tempo)
+    // into the caches on disk, one at a time in the background; those done
+    // already are passed over.
+    Q_INVOKABLE void analyse(const QList<QUrl> &urls);
+    Q_INVOKABLE void stopAnalysis();
+    // Whether the file (a file URL) is analysed as it is now; false until
+    // known (asked in the background, then analysedRevision moves).
+    Q_INVOKABLE bool isAnalysed(const QUrl &url);
     void setDetailLog(bool on);
     // Whether 详细日志 is on, and a line for its file only (GUI thread).
     static bool detailing() { return s_detail; }
@@ -155,6 +173,8 @@ signals:
     void keepAwakeChanged();
     void detailLogChanged();
     void alikeChanged();
+    void analysisChanged();
+    void analysedChanged();
     void updateChanged();
     void updateJobChanged();
     void reportReady(const QVariantMap &preview);
@@ -195,6 +215,16 @@ private:
     QTimer m_updatePoll;
     QVariantMap m_document;
     QVariantMap m_alike;
+    QVariantMap m_analysis;
+    qint64 m_analysisRevision = -1;
+    // What isAnalysed() knows, by local path; those to ask about next, and
+    // those being asked about.
+    QHash<QString, bool> m_analysed;
+    QStringList m_analysedAsk;
+    QSet<QString> m_analysedAsking;
+    QTimer m_analysedSoon;
+    int m_analysedRevision = 0;
+    void askAnalysed();
     qint64 m_alikeRevision = -1;
     QVariantMap m_view;
     QVariantMap m_matched;

@@ -48,11 +48,7 @@ pub struct Tempo {
 /// The tempo sections of `path`, from `cache_dir` when made before. `None` when cancelled.
 pub fn load(path: &Path, cache_dir: &Path, cancelled: &(dyn Fn() -> bool + Sync)) -> Result<Option<Tempo>> {
     let signature = super::index::signature(path)?;
-    let cached = |revision: u32| {
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        ("kvj-tempo", revision, v4::REVISION, path, &signature).hash(&mut h);
-        cache_dir.join(format!("{:016x}.kbpm", h.finish()))
-    };
+    let cached = |revision: u32| cache_file(path, &signature, cache_dir, revision);
     let file = cached(REVISION);
     if let Some(tempo) = fs::read(&file).ok().and_then(|data| serde_json::from_slice(&data).ok()) {
         return Ok(Some(tempo));
@@ -68,11 +64,22 @@ pub fn load(path: &Path, cache_dir: &Path, cancelled: &(dyn Fn() -> bool + Sync)
     };
     // A cache that cannot be written only costs the next analysis.
     let _ = fs::create_dir_all(cache_dir).and_then(|_| {
-        let part = file.with_extension("part");
+        // A name of its own: 提前分析 and the timeline may make the same one at once.
+        let part = file.with_extension(format!("{}.part", crate::document::id()));
         fs::write(&part, serde_json::to_vec(&tempo)?)?;
         fs::rename(&part, &file)
     });
     Ok(Some(tempo))
+}
+
+fn cache_file(path: &Path, signature: &str, cache_dir: &Path, revision: u32) -> std::path::PathBuf {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    ("kvj-tempo", revision, v4::REVISION, path, signature).hash(&mut h);
+    cache_dir.join(format!("{:016x}.kbpm", h.finish()))
+}
+/// The tempo of `path` as it is now (`signature`) is kept (`load` would read it).
+pub(crate) fn cached(path: &Path, signature: &str, cache_dir: &Path) -> bool {
+    [REVISION, OLDEST_REVISION].iter().any(|&r| cache_file(path, signature, cache_dir, r).is_file())
 }
 
 pub fn analyse(path: &Path, cancelled: &(dyn Fn() -> bool + Sync)) -> Result<Option<Tempo>> {

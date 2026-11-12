@@ -8,6 +8,8 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
+#include <QDirIterator>
+#include <QFileInfo>
 #include <QFile>
 #include <QJsonArray>
 #include <QLockFile>
@@ -17,6 +19,7 @@
 #include <QThreadPool>
 
 #include <algorithm>
+#include <utility>
 
 namespace {
 
@@ -69,6 +72,16 @@ Engine::Engine(QObject *parent)
     m_poll.start();
     m_updatePoll.setInterval(250);
     connect(&m_updatePoll, &QTimer::timeout, this, &Engine::pollUpdate);
+    // The rows asking at once (a folder opened) are asked about together.
+    m_analysedSoon.setSingleShot(true);
+    m_analysedSoon.setInterval(30);
+    connect(&m_analysedSoon, &QTimer::timeout, this, &Engine::askAnalysed);
+    // A video placed and indexed, or taken off: what is analysed is asked anew.
+    connect(this, &Engine::documentChanged, this, [this] {
+        m_analysed.clear();
+        ++m_analysedRevision;
+        emit analysedChanged();
+    });
     if (!alone)
         setError(QStringLiteral("另一个 KVJ 正在使用同一份 Set 数据：请只开一个，两个会互相覆盖改动"));
 }
@@ -233,6 +246,108 @@ void Engine::ask(const QJsonObject &request, std::function<void(const QJsonObjec
             if (guard)
                 done(reply);
         }, Qt::QueuedConnection);
+    });
+}
+
+void Engine::analyse(const QList<QUrl> &urls)
+{
+    QStringList roots;
+    for (const QUrl &url : urls) {
+        if (url.isLocalFile())
+            roots.append(url.toLocalFile());
+    }
+    if (roots.isEmpty() || !m_engine)
+        return;
+    // Folders are searched here, as the library lists them: a file's name
+    // reaches the engine as it does when the file is placed (on the Mac a
+    // name may be stored decomposed, and the caches go by the name).
+    QPointer<Engine> guard(this);
+    KvjEngine *engine = m_engine;
+    QThreadPool::globalInstance()->start([guard, engine, roots] {
+        static const QStringList videos{QStringLiteral("*.mp4"), QStringLiteral("*.m4v"), QStringLiteral("*.mkv"),
+                                        QStringLiteral("*.mov"), QStringLiteral("*.webm")};
+        QJsonArray paths;
+        for (const QString &root : roots) {
+            const QFileInfo info(root);
+            if (!info.isDir()) {
+                paths.append(QDir::toNativeSeparators(info.absoluteFilePath()));
+                continue;
+            }
+            QStringList found;
+            QDirIterator it(root, videos, QDir::Files | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+            while (it.hasNext() && found.size() < 5000)
+                found.append(it.next());
+            std::sort(found.begin(), found.end());
+            for (const QString &path : std::as_const(found))
+                paths.append(QDir::toNativeSeparators(path));
+        }
+        if (paths.isEmpty())
+            return;
+        const QJsonObject reply = roundTrip(engine, {{"cmd", "analyse"}, {"paths", paths}});
+        QMetaObject::invokeMethod(guard, [guard, reply] {
+            if (!guard)
+                return;
+            if (reply.contains("error"))
+                guard->setError(reply.value("error").toString());
+            guard->poll();
+        }, Qt::QueuedConnection);
+    });
+}
+
+void Engine::stopAnalysis()
+{
+    call({{"cmd", "analysis_stop"}}, [this](const QJsonValue &) { poll(); }, false);
+}
+
+bool Engine::isAnalysed(const QUrl &url)
+{
+    if (!url.isLocalFile())
+        return false;
+    const QString path = QDir::toNativeSeparators(url.toLocalFile());
+    const auto known = m_analysed.constFind(path);
+    if (known != m_analysed.constEnd())
+        return known.value();
+    if (!m_analysedAsking.contains(path) && !m_analysedAsk.contains(path)) {
+        m_analysedAsk.append(path);
+        m_analysedSoon.start();
+    }
+    return false;
+}
+
+void Engine::askAnalysed()
+{
+    if (m_analysedAsk.isEmpty())
+        return;
+    const QStringList paths = std::exchange(m_analysedAsk, {});
+    QJsonArray list;
+    for (const QString &path : paths) {
+        list.append(path);
+        m_analysedAsking.insert(path);
+    }
+    const qint64 generation = m_analysisRevision;
+    ask({{"cmd", "analysed"}, {"paths", list}}, [this, paths, generation](const QJsonObject &reply) {
+        for (const QString &path : paths)
+            m_analysedAsking.remove(path);
+        // Asked before a file was done: what it says may be old; asked again.
+        if (generation != m_analysisRevision) {
+            for (const QString &path : paths) {
+                if (!m_analysed.contains(path) && !m_analysedAsk.contains(path))
+                    m_analysedAsk.append(path);
+            }
+            m_analysedSoon.start();
+            return;
+        }
+        const QJsonArray answers = reply.value("ok").toArray();
+        bool changed = false;
+        for (int i = 0; i < paths.size(); ++i) {
+            const bool done = i < answers.size() && answers.at(i).toBool();
+            m_analysed.insert(paths.at(i), done);
+            changed = changed || done;
+        }
+        if (changed) {
+            ++m_analysedRevision;
+            emit analysedChanged();
+        }
     });
 }
 
@@ -581,9 +696,31 @@ void Engine::poll()
             m_alikeRevision = alikeRevision;
             fetchAlike();
         }
+        QVariantMap analysis = status.value("analysis").toObject().toVariantMap();
+        // The file under way as the library's rows name it.
+        const QString current = analysis.value("current").toString();
+        analysis.insert("currentUrl", current.isEmpty() ? QString()
+                                      : QUrl::fromLocalFile(QDir::fromNativeSeparators(current)).toString());
+        const qint64 analysisRevision = analysis.value("revision").toLongLong();
+        if (analysis != m_analysis) {
+            m_analysis = analysis;
+            emit analysisChanged();
+        }
+        // A file done: ask anew about what is shown (it is asked about as
+        // the rows read it again).
+        if (analysisRevision != m_analysisRevision) {
+            const bool first = m_analysisRevision < 0;
+            m_analysisRevision = analysisRevision;
+            if (!first) {
+                m_analysed.clear();
+                ++m_analysedRevision;
+                emit analysedChanged();
+            }
+        }
         QVariantMap view = status.toVariantMap();
         view.remove("logs");
         view.remove("alike_revision");
+        view.remove("analysis");
         // The clock always moves; nothing else changed means nothing to redraw.
         view.remove("clock_ms");
         if (view != m_view) {

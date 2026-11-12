@@ -63,6 +63,11 @@ enum Request {
     DetailLog { on: bool },
     /// Entries sharing their sound with another on the same track.
     Alike,
+    /// 提前分析: files and folders analysed ahead into the caches.
+    Analyse { paths: Vec<String> },
+    AnalysisStop,
+    /// Whether each file is analysed (`analysis`).
+    Analysed { paths: Vec<String> },
     Status { after_log_id: Option<u64> },
     Version,
     ReportPrepare { note: String },
@@ -95,6 +100,9 @@ impl KvjEngine {
             Request::FollowTrack { track } => json!(e.follow_track(track)?),
             Request::DetailLog { on } => json!(e.detail_log(on)),
             Request::Alike => json!(e.alike()?),
+            Request::Analyse { paths } => json!(e.analyse(&paths)?),
+            Request::AnalysisStop => json!(e.analysis_stop()),
+            Request::Analysed { paths } => json!(e.analysed(&paths)?),
             Request::Status { after_log_id } => json!(e.status(after_log_id)),
             Request::Version => json!(crate::report::VERSION),
             Request::ReportPrepare { note } => json!(e.report_prepare(&note)?),

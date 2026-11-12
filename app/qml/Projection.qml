@@ -3,7 +3,8 @@ import QtQuick.Window
 import KVJ
 
 // The projected output: the player's video (its own clock, or the engine's match
-// while smart following leads), the title of an audio-only entry, the effects,
+// while smart following leads), the cameras and the pictures laid as layers
+// (ImageSource), the title of an audio-only entry, the effects,
 // stickers and live overlay (Stage). It carries no controls or status. The
 // operator's monitor and preview copy their picture from `surface`.
 Window {
@@ -76,8 +77,18 @@ Window {
                     return c
             }
         }
+        if (id.startsWith("image:")) {
+            for (let i = 0; i < imageBank.count; ++i) {
+                const p = imageBank.itemAt(i)
+                if (p && p.key === id)
+                    return p
+            }
+        }
         return null
     }
+    // The pictures from 预备 laid on the air or on the board (image:<url>):
+    // those on the board are read ahead, so one put on the air shows at once.
+    readonly property var imageIds: programIds.concat(root.wantedIds).filter(id => id.startsWith("image:"))
     SourceTextures {
         id: textures
         sourceItem: root.sourceItem
@@ -216,6 +227,19 @@ Window {
                 anchors.fill: parent
                 deviceId: key
                 active: true
+            }
+        }
+        IdList {
+            id: imageList
+            ids: root.imageIds
+        }
+        Repeater {
+            id: imageBank
+            model: imageList.model
+            onItemAdded: root.sourceRevision += 1
+            onItemRemoved: root.sourceRevision += 1
+            ImageSource {
+                anchors.fill: parent
             }
         }
         Rectangle {

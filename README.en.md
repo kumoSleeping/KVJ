@@ -52,7 +52,7 @@ KVJ listens to the sound the DJ is playing and compares it with the sound of the
 
 ### Player
 
-- At the left, **预备** (ready: sources not on the picture yet, and pictures kept for stickers) is above the **library** (folders added, files never copied); ⌘B (Ctrl+B on Windows) puts this column away or brings it back. A video dropped on a track's left half replaces what is there, on its right half it goes after it.
+- At the left, **预备** (ready: sources not on the picture yet, and pictures kept for stickers) is above the **library** (folders added, files never copied); ⌘B (Ctrl+B on Windows) puts this column away or brings it back. A video dropped on a track's left half replaces what is there, on its right half it goes after it. The library can be **analysed ahead** (the ✨ key, or a folder's or video's right-click menu): the videos' sound features, waveforms and tempos are worked out and kept on disk, so one placed during the show is followed within seconds and costs no memory; a green dot marks those done.
 - Two tracks at the foot, **画面 1** and **画面 2**, are laid out much as in a video editor, with frame strips, KDJ's whole-track preview waveform and BPM sections. Each has its own time, zoom and speed, and they can **play in sync**, **change speed together** and **zoom together**, or one alone is shown (single track).
 - Pressing a track only places its **cursor** and never moves the picture; **跳至** (jump) or Enter plays from it and raises that track to the top of the audience's picture. Jumps can **dissolve**; the length is set above the timeline, and 0 is a straight cut.
 - Speed goes from −50 % to +50 %; ← / → **nudge** the picture like a pitch bend (0.7× / 1.5× while held), ↑ / ↓ change it by 1 %.
@@ -63,7 +63,7 @@ KVJ listens to the sound the DJ is playing and compares it with the sound of the
 
 ### Board and going on air
 
-- The **board** in the middle shows the audience's picture, and the picture is arranged there too. 画面 1, 画面 2 and cameras are **layers** that can be moved, sized, raised, filled or fitted, rounded, masked to a circle, feathered and cut by **split lines**. Around the picture is the **offstage** area, which the audience does not see.
+- The **board** in the middle shows the audience's picture, and the picture is arranged there too. 画面 1, 画面 2, cameras and pictures from 预备 are **layers** that can be moved, sized, raised, filled or fitted, rounded, masked to a circle, feathered and cut by **split lines**. Around the picture is the **offstage** area, which the audience does not see.
 - The lock key under the board switches between two ways of working. Unlocked is **实时** (live): every change is on the air at once. Locked is **确认后上屏** (confirm first): the audience keeps the picture last put on the air until the ✓ key (or Space) puts the new one out, with a dissolve if wanted, and ⌘Z (Ctrl+Z on Windows) **undoes** the board back to what is on the air. **输出预览** at the top right always shows what the audience sees.
 - A track's **置顶** (raise) floats its layer to the top of the board and selects it, to size and place it. [ or ] (**快切**, quick cut) puts 画面 1 or 画面 2 on top for the audience at once, without ✓ even when confirming first.
 
@@ -73,7 +73,7 @@ KVJ listens to the sound the DJ is playing and compares it with the sound of the
 
 - Danmaku (scrolling, top or bottom, laned as on Bilibili), large words in the middle, and Google Meet–style reactions (35 of Noto's animated emoji; hold to send a stream, Q–P send one each).
 - Stickers of images, GIFs and words, moved, sized, turned and taken down on the board; the audience's picture follows.
-- 25 picture effects: mirror, video wall, lens, twirl, punch, shake, zoom blur, out of body, mosaic, glitch, RGB split, halftone, scanlines, VHS, neon outline, rain on the glass, hue, heat, black and white, pure black and white, negative, fire round the edge, flash to black, flash to white and strobe. They apply in a fixed order (layout and shape first, then texture and colour, the flashes last) and key on at their best strength. The three flashes' strength is how fast they flash, in six steps up to 8 a second. Effects touch only the picture, never the danmaku, reactions or stickers.
+- 25 picture effects: mirror, video wall, lens, twirl, punch, shake, zoom blur, out of body, mosaic, glitch, RGB split, halftone, scanlines, VHS, neon outline, rain on the glass, hue, heat, black and white, pure black and white, negative, fire round the edge, flash to black, flash to white and strobe. They apply in a fixed order (layout and shape first, then texture and colour, the flashes last) and key on at their best strength. The three flashes' strength is how fast they flash, in six steps up to 2.7 a second. Effects touch only the picture, never the danmaku, reactions or stickers.
 - With a Korg nanoKONTROL2 (CC mode), its 8 knobs and 8 faders each set one effect's strength; which effect sits on which control is changed in the effects rail and kept between runs. No control makes the picture jump. Every button on it sends a reaction; nothing on it plays, follows or projects. Off by default on Windows: turn it on in the effects' ⋯ menu.
 
 ### Cameras (experimental)

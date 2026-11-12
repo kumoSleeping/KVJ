@@ -47,6 +47,7 @@ qt_add_qml_module(KVJ
         qml/Stage.qml
         qml/StatusLight.qml
         qml/Sticker.qml
+        qml/ImageSource.qml
         qml/StickerFrame.qml
         qml/Desk.qml
         qml/Effects.qml

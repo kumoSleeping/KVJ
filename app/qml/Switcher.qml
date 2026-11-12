@@ -7,7 +7,8 @@ import QtQuick
 //
 //   { slots: [ { source, x, y, w, h, z, fit, mask } ] }
 //
-// `source` a picture source id ("track:0".."track:3", "camera:<id>"), x y w h
+// `source` a picture source id ("track:0".."track:3", "camera:<id>", or
+// "image:<file URL>", a picture from 预备 laid as a layer), x y w h
 // the slot in shares of the projected picture (it may lie past its edges, on
 // the stage around it, where the audience does not see it), z the order
 // (higher on top), fit "cover" (fill, cropped) or "contain" (all of it,
@@ -304,6 +305,23 @@ QtObject {
         const rest = copy(preview)
         rest.slots.splice(i, 1)
         updateSlot(i, parking(rest, ratio, aspect))
+    }
+    // A layer of `id` (a picture from 预备) filling the picture over every
+    // other, chosen fit; one there already is brought up and made to fill
+    // it. Its index.
+    function addLayer(id, fit) {
+        const next = copy(preview)
+        let at = next.slots.findIndex(s => s.source === id)
+        const top = next.slots.reduce((z, s, i) => i === at ? z : Math.max(z, s.z + 1), 0)
+        const whole = { source: id, x: 0, y: 0, w: 1, h: 1, z: top, fit: fit === "contain" ? "contain" : "cover" }
+        if (at < 0) {
+            next.slots.push(slot(whole, top))
+            at = next.slots.length - 1
+        } else {
+            next.slots[at] = slot(Object.assign({}, next.slots[at], { x: 0, y: 0, w: 1, h: 1, z: top }), top)
+        }
+        preview = next
+        return at
     }
     function removeSlot(i) {
         if (!preview || i < 0 || i >= preview.slots.length)

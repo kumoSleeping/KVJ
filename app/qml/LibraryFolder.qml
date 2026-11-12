@@ -37,8 +37,8 @@ Column {
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             cursorShape: Qt.PointingHandCursor
             onClicked: mouse => {
-                if (mouse.button === Qt.RightButton && node.root)
-                    lib.rootMenu(node.url, head, mouse.x, mouse.y)
+                if (mouse.button === Qt.RightButton)
+                    lib.folderMenu(node.url, node.root, head, mouse.x, mouse.y)
                 else if (mouse.button === Qt.LeftButton)
                     lib.setOpen(node.url, !node.open)
             }
@@ -119,13 +119,37 @@ Column {
                             readonly property bool chosen: !!lib.selected[url]
                             readonly property var tracks: lib.placedTracks(url)
                             readonly property string alike: lib.alikeOf(url)
+                            // 提前分析: done (green), under way (amber).
+                            readonly property bool analysing: video && lib.analysingUrl === url
+                            readonly property bool analysed: video && Engine.analysedRevision >= 0 && Engine.isAnalysed(entry.fileUrl)
                             width: node.width
                             height: 26
                             radius: Theme.radius
                             color: chosen ? Theme.selected : area.containsMouse ? Theme.hover : "transparent"
                             Row {
                                 anchors.fill: parent
-                                Item { width: 6 + (node.depth + 1) * 12 + 16; height: 1 }
+                                Item {
+                                    width: 6 + (node.depth + 1) * 12 + 16
+                                    height: rowBox.height
+                                    // Analysed ahead: a green dot before it.
+                                    Rectangle {
+                                        id: analysedDot
+                                        visible: rowBox.analysed || rowBox.analysing
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        x: parent.width - 11
+                                        width: 6
+                                        height: 6
+                                        radius: 3
+                                        color: rowBox.analysed ? Theme.ok : Theme.warn
+                                        SequentialAnimation on opacity {
+                                            running: rowBox.analysing
+                                            loops: Animation.Infinite
+                                            onRunningChanged: if (!running) analysedDot.opacity = 1
+                                            NumberAnimation { to: 0.25; duration: 600 }
+                                            NumberAnimation { to: 1; duration: 600 }
+                                        }
+                                    }
+                                }
                                 ColorImage {
                                     anchors.verticalCenter: parent.verticalCenter
                                     source: rowBox.video ? "icons/film.svg" : "icons/image.svg"
@@ -178,6 +202,7 @@ Column {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 preventStealing: true
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
                                 cursorShape: Qt.PointingHandCursor
                                 property point from
                                 property bool dragging: false
@@ -194,12 +219,21 @@ Column {
                                 onClicked: mouse => {
                                     if (dragging)
                                         return
+                                    if (mouse.button === Qt.RightButton) {
+                                        if (!lib.selected[rowBox.url])
+                                            lib.choose(rowBox.url, files, entry.index, 0)
+                                        lib.fileMenu(rowBox.url, rowBox, mouse.x, mouse.y)
+                                        return
+                                    }
                                     lib.choose(rowBox.url, files, entry.index, mouse.modifiers)
                                 }
                                 onDoubleClicked: lib.use(rowBox.url)
                                 ToolTip.visible: containsMouse && !pressed
                                 ToolTip.delay: 900
                                 ToolTip.text: rowBox.video ? "拖到画面 1 或画面 2：左半边替换，右半边追加 · 双击放到空的画面"
+                                                             + (rowBox.analysed ? "\n绿点：已提前分析，放上轨道几秒就能跟随"
+                                                                : rowBox.analysing ? "\n正在提前分析"
+                                                                : "\n右键可提前分析")
                                                            : "拖到上面的预备，或直接拖进画面贴出 · 双击放进预备"
                             }
                         }

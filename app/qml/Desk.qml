@@ -29,8 +29,17 @@ Item {
             add(Switcher.sourcesOf(Switcher.transition.from))
         return ids
     }
-    // This window's light copy of a source (a PreviewSurface), or null.
+    // This window's light copy of a source (a PreviewSurface, or for a
+    // picture from 预备 its own ImageSource), or null.
     function previewItem(id) {
+        if (id.startsWith("image:")) {
+            for (let i = 0; i < imageBank.count; ++i) {
+                const item = imageBank.itemAt(i)
+                if (item && item.key === id)
+                    return item
+            }
+            return null
+        }
         for (let i = 0; i < bank.count; ++i) {
             const item = bank.itemAt(i)
             if (item && item.key === id)
@@ -157,7 +166,24 @@ Item {
     // draw them through `textures`.
     IdList {
         id: bankIds
-        ids: desk.allIds
+        ids: desk.allIds.filter(id => !id.startsWith("image:"))
+    }
+    // The pictures laid as layers are read here too, small: a picture needs
+    // no copy of the projection's.
+    IdList {
+        id: imageIds
+        ids: desk.allIds.filter(id => id.startsWith("image:"))
+    }
+    Repeater {
+        id: imageBank
+        model: imageIds.model
+        onItemAdded: textures.refresh()
+        onItemRemoved: textures.refresh()
+        ImageSource {
+            width: desk.bankWidth
+            height: desk.bankWidth / Math.max(0.2, desk.aspect)
+            rows: 540
+        }
     }
     Repeater {
         id: bank

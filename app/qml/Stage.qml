@@ -5,7 +5,8 @@ import KVJ
 // What the audience sees, at any size: the picture (this item's children)
 // through the effects, the title of an audio-only entry, the posted stickers and
 // the live overlay. The projection draws it in full; the operator's preview
-// draws it `lite`, moving at a low steady rate instead of every display frame.
+// draws it `lite`, its overlay moving at a low steady rate instead of every
+// display frame. The effects move alike in both (Live.effectClock).
 Item {
     id: stage
 
@@ -18,10 +19,13 @@ Item {
     // stages) over it instead.
     property bool showStickers: true
 
-    // One clock for everything that moves, running only while something does.
+    // One clock for the overlay and the dissolve, running only while either
+    // moves. The effects run on Live's (effectClock), stepped at the
+    // preview's rate in every window, so the projection shows them as the
+    // preview does.
     property real now: Date.now()
     readonly property bool shown: Window.window ? Window.window.visible : false
-    readonly property bool moving: shown && (overlay.busy || Live.effectsMoving || Switcher.fading)
+    readonly property bool moving: shown && (overlay.busy || Switcher.fading)
 
     FrameAnimation {
         running: !stage.lite && stage.moving
@@ -29,7 +33,7 @@ Item {
     }
     // Smoother while a dissolve lasts, so it reads as one.
     Timer {
-        interval: Switcher.fading ? 33 : 83
+        interval: Switcher.fading ? 33 : Live.effectTick
         repeat: true
         running: stage.lite && stage.moving
         onTriggered: stage.now = Date.now()
@@ -122,11 +126,12 @@ Item {
                 visible: !!pass.input
                 fragmentShader: "qrc:/qt/qml/KVJ/shaders/effects.frag.qsb"
                 property var source: pass.input
-                property real time: ((stage.now - Live.epoch) / 1000) % 1000
+                property real time: Live.effectTime
                 property real aspect: stage.width / Math.max(1, stage.height)
                 property real kind: Live.kind(pass.modelData)
-                // A flash as far as it is in, the strobe while it is lit (Live.drawnAt).
-                property real amount: Live.drawnAt(pass.modelData, stage.now)
+                // A flash as far as it is in, the strobe while it is lit,
+                // else the strength by its gain (Live.drawnAt).
+                property real amount: Live.drawnAt(pass.modelData, Live.effectClock)
             }
             ShaderEffectSource {
                 id: output

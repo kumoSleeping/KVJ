@@ -54,9 +54,7 @@ pub struct Waveform {
 
 /// The waveform of `path`, from `cache_dir` when it was made before. `None` when cancelled.
 pub fn load(path: &Path, cache_dir: &Path, cancelled: &dyn Fn() -> bool) -> Result<Option<Waveform>> {
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    ("kvj-wave", REVISION, path, super::index::signature(path)?).hash(&mut h);
-    let file = cache_dir.join(format!("{:016x}.kwv", h.finish()));
+    let file = cache_file(path, &super::index::signature(path)?, cache_dir);
     if let Some(wave) = fs::read(&file).ok().and_then(|data| parse(&data)) {
         return Ok(Some(wave));
     }
@@ -65,7 +63,8 @@ pub fn load(path: &Path, cache_dir: &Path, cancelled: &dyn Fn() -> bool) -> Resu
     };
     // A cache that cannot be written only costs the next analysis.
     let _ = fs::create_dir_all(cache_dir).and_then(|_| {
-        let part = file.with_extension("part");
+        // A name of its own: 提前分析 and the timeline may make the same one at once.
+        let part = file.with_extension(format!("{}.part", crate::document::id()));
         let mut out = fs::File::create(&part)?;
         out.write_all(MAGIC)?;
         out.write_all(&REVISION.to_le_bytes())?;
@@ -75,6 +74,13 @@ pub fn load(path: &Path, cache_dir: &Path, cancelled: &dyn Fn() -> bool) -> Resu
         fs::rename(&part, &file)
     });
     Ok(Some(wave))
+}
+
+/// Where the waveform of `path` as it is now (`signature`) is kept.
+pub(crate) fn cache_file(path: &Path, signature: &str, cache_dir: &Path) -> std::path::PathBuf {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    ("kvj-wave", REVISION, path, signature).hash(&mut h);
+    cache_dir.join(format!("{:016x}.kwv", h.finish()))
 }
 
 fn parse(data: &[u8]) -> Option<Waveform> {

@@ -48,7 +48,16 @@ Only entries on the timeline are indexed (on every track; about 0.6 MiB a
 minute of sound, up to 512 MiB, some fourteen hours): the rest of the library
 costs neither memory nor waiting. One placed during the show is indexed then,
 beside following, and followed once that is done (seconds if it was indexed
-before, else about as long as decoding its sound). Files imported from the drawer go into the library; files
+before, else about as long as decoding its sound). To make that seconds for
+every video, analyse the library ahead (提前分析): the ✨ key over the folders
+(all of them), or a folder's or a chosen video's right-click menu. One video at
+a time, on a background thread, its sound is analysed into the caches on disk
+(the features following indexes, the waveform and the tempo sections) and
+nothing of it is held in memory; a green dot before a row says the video is
+done (an amber one blinks on the one under way), and a line under the heading
+says how far it is, with a key to stop. Videos analysed ahead keep their caches
+however long they stay off the timeline (`analysed.json` beside the
+features). Files imported from the drawer go into the library; files
 dropped on a track row are imported onto that track.
 
 Every entry is on one of four **tracks**: the main track, where entries go
@@ -235,11 +244,17 @@ negative, fire round the edge, flash to black, flash to white and strobe. Each h
 it on at the strength it looks best at (or off; dragged on up or down its
 column, it switches the others the same way); dragged sideways, or the wheel,
 it sets the strength. For the three flashes (闪白, 闪黑, 频闪) the strength
-is how fast they flash, in six steps (1, 1.5, 2.5, 4, 6 and 8 a second; the
-range cut in six, held at a border until well past it): 闪白 and 闪黑 breathe,
-coming up and fading out within each flash, 频闪 is a hard white flash.
-Never more than 8 a second (Live.fastestFlash): faster reads as flicker,
-and fast flashing can bring on seizures in people prone to them. They apply
+is how fast they flash, in six steps (0.3, 0.5, 0.8, 1.3, 2 and 2.7 a second;
+the range cut in six, held at a border until well past it): 闪白 and 闪黑
+breathe, coming up and fading out within each flash, 频闪 is a hard white
+flash. Never more than 2.7 a second (Live.fastestFlash): faster read as
+flicker on a projector, and fast flashing can bring on seizures in people
+prone to them. Shape and texture effects draw two thirds of their strength
+(Live.soft); the colour swaps, the layouts and the flashes are drawn whole.
+Everything that moves by itself moves on one clock (Live.effectClock), a
+third as fast as real time and stepping 12 times a second, the same in the
+projection and the operator's preview: the projection shows each effect
+exactly as the preview does. They apply
 in one fixed order, whatever key they are on: layout (mirror, video wall),
 then shape, then texture (rain last), then colour, then fire (so it keeps
 its colours), the flashes last so that a flash is
@@ -314,6 +329,14 @@ way a vision mixer does it. **PGM** (program) is what the audience sees; **PVW**
 touching the air. Until anything is changed both are one slot with the main
 track in full, so the projection looks exactly as it did without a mixer.
 
+Besides the tracks and the cameras, a picture kept in 预备 can be a source: the
+key at its tile's upper left lays it over the other layers filling the picture
+(cropped), chosen, as `image:<file URL>`. Unlike a sticker it lies under the
+effects, which work on it as on a video, and it takes every layer key (fit,
+mask, order, split lines); taken off the picture it is gone from it (the
+picture stays in 预备). Each window reads the file itself: the projection at
+most 1440 rows tall, the operator's window at 540.
+
 A layout's slots each hold a source, a place and size in shares of the
 projected picture (a slot may reach past its edges), an order (z), a fit —
 **铺满** fills the slot and crops the picture's longer way, **完整** shows all of
@@ -352,7 +375,7 @@ D3D11), capped by the chosen resolution (default 720p) and frame rate (default
 only when a new frame is due, and nothing is decoded while neither the output nor
 the preview is up. The preview decodes nothing of its own: it takes a reduced
 copy of the projected frame about 12 times a second, and its overlay moves on a
-12 Hz clock. Each effect that is on is one pass; with every effect at 0 the
+12 Hz clock; the effects step at 12 Hz in both windows. Each effect that is on is one pass; with every effect at 0 the
 picture is drawn without any.
 
 ## Build

@@ -90,7 +90,7 @@ pub(super) fn disk_key(set: &Set) -> Result<String> {
     Ok(format!("{:016x}", h.finish()))
 }
 /// The cached features of one block of an entry.
-fn block_path(cache: &Path, entry: &Entry, signature: &str, start: f64, end: f64) -> PathBuf {
+pub(crate) fn block_path(cache: &Path, entry: &Entry, signature: &str, start: f64, end: f64) -> PathBuf {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (
         "live-vj-landmarks-v6",
@@ -105,7 +105,7 @@ fn block_path(cache: &Path, entry: &Entry, signature: &str, start: f64, end: f64
 }
 /// Blocks of about five minutes, overlapping by eight seconds: (start, end).
 /// None for a silent entry: there is nothing to hear it by.
-fn blocks(entry: &Entry) -> impl Iterator<Item = (f64, f64)> + '_ {
+pub(crate) fn blocks(entry: &Entry) -> impl Iterator<Item = (f64, f64)> + '_ {
     let heard = if entry.silent { 0 } else { entry.duration.ceil() as usize };
     (0..heard).step_by(300).map(|core| {
         ((core as f64 - 8.).max(0.), (core as f64 + 308.).min(entry.duration))
@@ -113,8 +113,10 @@ fn blocks(entry: &Entry) -> impl Iterator<Item = (f64, f64)> + '_ {
 }
 /// Written in full and on the disk before it takes the name: power lost on
 /// the way leaves the old file or none, never a cut one every later start trips on.
-fn save(path: &Path, write: impl FnOnce(&mut BufWriter<fs::File>) -> Result<()>) -> Result<()> {
-    let temp = path.with_extension("part");
+/// The unfinished file has a name of its own: the session and 提前分析 may
+/// write the same block at once, and the last to finish wins whole.
+pub(crate) fn save(path: &Path, write: impl FnOnce(&mut BufWriter<fs::File>) -> Result<()>) -> Result<()> {
+    let temp = path.with_extension(format!("{}.part", super::document::id()));
     let saved = (|| -> Result<()> {
         let mut f = BufWriter::new(fs::File::create(&temp)?);
         write(&mut f)?;
@@ -128,10 +130,12 @@ fn save(path: &Path, write: impl FnOnce(&mut BufWriter<fs::File>) -> Result<()>)
     saved
 }
 /// Drop what no Set needs any more: indexes beyond the most recently used,
-/// features of files that changed or left every Set, and unfinished writes.
+/// features of files that changed or left every Set and were not analysed
+/// ahead (`analysed`, None while one of them is out of sight), and
+/// unfinished writes left behind (an hour old: one may be under way).
 /// Features are only judged when every file of every Set can be seen (a
 /// drive away keeps its entries' features).
-fn prune(cache: &Path, current: &Path, sets: &[Set]) {
+fn prune(cache: &Path, current: &Path, sets: &[Set], analysed: Option<Vec<Entry>>) {
     let Ok(dir) = fs::read_dir(cache) else { return };
     let files: Vec<_> = dir.filter_map(|e| e.ok()).map(|e| e.path()).collect();
     let mut indexes: Vec<(SystemTime, &PathBuf)> = files
@@ -143,11 +147,21 @@ fn prune(cache: &Path, current: &Path, sets: &[Set]) {
     for (_, path) in indexes.iter().skip(KEPT_INDEXES) {
         let _ = fs::remove_file(path);
     }
+    let stale = |p: &Path| {
+        fs::metadata(p)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|at| at.elapsed().ok())
+            .is_none_or(|age| age.as_secs() > 3600)
+    };
     for path in files.iter().filter(|p| p.extension().is_some_and(|x| x == "part")) {
-        let _ = fs::remove_file(path);
+        if stale(path) {
+            let _ = fs::remove_file(path);
+        }
     }
+    let Some(analysed) = analysed else { return };
     let mut needed = HashSet::new();
-    for entry in sets.iter().flat_map(|s| &s.entries) {
+    for entry in sets.iter().flat_map(|s| &s.entries).chain(&analysed) {
         let Ok(signature) = signature(Path::new(&entry.path)) else { return };
         for (start, end) in blocks(entry) {
             needed.insert(block_path(cache, entry, &signature, start, end));
@@ -173,10 +187,7 @@ fn add(
     cancel: &AtomicBool,
 ) -> Result<()> {
     let entry = &recording.entry;
-    let cached = fs::File::open(&target.path)
-        .ok()
-        .and_then(|f| LiveFeatures::read_from(BufReader::new(f)).ok());
-    let summary = if let Some(summary) = cached {
+    let summary = if let Some(summary) = read_block(&target.path) {
         log(
             engine,
             session,
@@ -196,22 +207,9 @@ fn add(
                 entry.title, target.start, target.end
             ),
         );
-        let audio = super::decode::decode_audio_from_cancellable(
-            Path::new(&entry.path),
-            8000,
-            Some(target.end - target.start),
-            target.start,
-            &|| cancel.load(Ordering::Relaxed),
-        )?
-        .context("已停止")?;
-        let features = LiveFeatures::prepare(&audio.samples, &|| cancel.load(Ordering::Relaxed))?;
-        anyhow::ensure!(
-            signature(Path::new(&entry.path))? == recording.signature,
-            "素材已变化：{}",
-            entry.title
-        );
-        save(&target.path, |f| features.write_to(f))?;
-        features
+        extract(entry, &recording.signature, target.start, target.end, &target.path, &|| {
+            cancel.load(Ordering::Relaxed)
+        })?
     };
     index.add(id, &summary)?;
     log(
@@ -228,6 +226,38 @@ fn add(
         ),
     );
     Ok(())
+}
+pub(crate) fn read_block(path: &Path) -> Option<LiveFeatures> {
+    fs::File::open(path)
+        .ok()
+        .and_then(|f| LiveFeatures::read_from(BufReader::new(f)).ok())
+}
+/// One block's features decoded from the file (as it was, `signature`) and
+/// kept at `path`.
+pub(crate) fn extract(
+    entry: &Entry,
+    signature: &str,
+    start: f64,
+    end: f64,
+    path: &Path,
+    cancelled: &(dyn Fn() -> bool + Sync),
+) -> Result<LiveFeatures> {
+    let audio = super::decode::decode_audio_from_cancellable(
+        Path::new(&entry.path),
+        8000,
+        Some(end - start),
+        start,
+        cancelled,
+    )?
+    .context("已停止")?;
+    let features = LiveFeatures::prepare(&audio.samples, cancelled)?;
+    anyhow::ensure!(
+        self::signature(Path::new(&entry.path))? == signature,
+        "素材已变化：{}",
+        entry.title
+    );
+    save(path, |f| features.write_to(f))?;
+    Ok(features)
 }
 /// Entries placed while following (`set` is the Set as it is now), indexed
 /// beside the running session: a copy of its index with theirs added after,
@@ -391,7 +421,7 @@ pub fn prepare(
         let _ = file.set_modified(SystemTime::now());
     }
     if let Ok(sets) = engine.with_store(|s| Ok(s.doc.sets.clone())) {
-        prune(cache, &index_path, &sets);
+        prune(cache, &index_path, &sets, engine.analysis.kept(cache));
     }
     anyhow::ensure!(self::key(set)? == key, "预处理期间素材已变化，请重试");
     index.warm(&|| cancel.load(Ordering::Relaxed))?;
@@ -490,6 +520,10 @@ mod tests {
         }
         fs::write(cache.join("0000000000000000.afp"), b"old").unwrap();
         fs::write(cache.join("x.part"), b"cut").unwrap();
+        let long_ago = SystemTime::now() - std::time::Duration::from_secs(7200);
+        fs::File::options().write(true).open(cache.join("x.part")).unwrap().set_modified(long_ago).unwrap();
+        // One being written now (提前分析, or another block) stays.
+        fs::write(cache.join("y.part"), b"writing").unwrap();
         let current = cache.join("set-current.lvi");
         fs::write(&current, b"i").unwrap();
         for n in 0..6 {
@@ -498,18 +532,19 @@ mod tests {
             let at = SystemTime::now() - std::time::Duration::from_secs(100 - n);
             fs::File::options().write(true).open(&old).unwrap().set_modified(at).unwrap();
         }
-        prune(&cache, &current, std::slice::from_ref(&set));
+        prune(&cache, &current, std::slice::from_ref(&set), Some(vec![]));
         assert!(needed.iter().all(|p| p.is_file()));
         assert!(current.is_file());
         assert!(!cache.join("0000000000000000.afp").exists());
         assert!(!cache.join("x.part").exists());
+        assert!(cache.join("y.part").exists());
         let kept: Vec<_> = (0..6).filter(|n| cache.join(format!("set-{n}.lvi")).exists()).collect();
         assert_eq!(kept, vec![2, 3, 4, 5]);
         // A file out of sight keeps every feature.
         fs::write(cache.join("1111111111111111.afp"), b"f").unwrap();
         let mut away = set.clone();
         away.entries[0].path = dir.join("gone.mp4").to_string_lossy().into_owned();
-        prune(&cache, &current, &[set, away]);
+        prune(&cache, &current, &[set, away], Some(vec![]));
         assert!(cache.join("1111111111111111.afp").exists());
         let _ = fs::remove_dir_all(&dir);
     }

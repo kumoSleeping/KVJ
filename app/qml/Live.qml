@@ -300,30 +300,33 @@ QtObject {
     // shape, then texture, then colour, the flashes last so that a flash is
     // pure white or black), and the shader's `kind` (shaders/effects.frag).
     // `moving`: it changes by itself. `rate`: a flash (闪黑, 闪白, 频闪), its
-    // strength how fast it flashes (flashSteps).
+    // strength how fast it flashes (flashRates). `gain`: how much of its
+    // strength is drawn (`soft`, two thirds: at full they were too much on a
+    // projector); colour swaps, layouts and flashes are drawn whole.
+    readonly property real soft: 2 / 3
     readonly property var effects: [
         { key: "mirror", name: "镜像", preset: 0.3 },
         { key: "tiles", name: "多画面", preset: 0.3 },
-        { key: "lens", name: "鱼眼透镜", preset: 0.5 },
-        { key: "twirl", name: "漩涡", preset: 0.4 },
-        { key: "punch", name: "缩放冲击", preset: 0.4 },
-        { key: "shake", name: "抖动", moving: true, preset: 0.4 },
-        { key: "zoom", name: "放射模糊", preset: 0.35 },
-        { key: "ghost", name: "灵魂出窍", moving: true, preset: 0.5 },
-        { key: "mosaic", name: "马赛克", preset: 0.35 },
-        { key: "glitch", name: "故障", moving: true, preset: 0.35 },
-        { key: "rgb", name: "RGB 分离", moving: true, preset: 0.4 },
-        { key: "halftone", name: "网点", preset: 0.45 },
-        { key: "scan", name: "扫描线", moving: true, preset: 0.45 },
-        { key: "vhs", name: "VHS", moving: true, preset: 0.6 },
-        { key: "edge", name: "描边", preset: 0.8 },
-        { key: "rain", name: "雨打玻璃", moving: true, preset: 0.5 },
-        { key: "hue", name: "色相", preset: 0.3 },
+        { key: "lens", name: "鱼眼透镜", preset: 0.5, gain: live.soft },
+        { key: "twirl", name: "漩涡", preset: 0.4, gain: live.soft },
+        { key: "punch", name: "缩放冲击", preset: 0.4, gain: live.soft },
+        { key: "shake", name: "抖动", moving: true, preset: 0.4, gain: live.soft },
+        { key: "zoom", name: "放射模糊", preset: 0.35, gain: live.soft },
+        { key: "ghost", name: "灵魂出窍", moving: true, preset: 0.5, gain: live.soft },
+        { key: "mosaic", name: "马赛克", preset: 0.35, gain: live.soft },
+        { key: "glitch", name: "故障", moving: true, preset: 0.35, gain: live.soft },
+        { key: "rgb", name: "RGB 分离", moving: true, preset: 0.4, gain: live.soft },
+        { key: "halftone", name: "网点", preset: 0.45, gain: live.soft },
+        { key: "scan", name: "扫描线", moving: true, preset: 0.45, gain: live.soft },
+        { key: "vhs", name: "VHS", moving: true, preset: 0.6, gain: live.soft },
+        { key: "edge", name: "描边", preset: 0.8, gain: live.soft },
+        { key: "rain", name: "雨打玻璃", moving: true, preset: 0.5, gain: live.soft },
+        { key: "hue", name: "色相", preset: 0.3, gain: live.soft },
         { key: "duotone", name: "双色调", preset: 1 },
         { key: "mono", name: "黑白", preset: 1 },
         { key: "threshold", name: "高对比黑白", preset: 1 },
         { key: "invert", name: "反色", preset: 1 },
-        { key: "fire", name: "火焰", moving: true, preset: 0.5 },
+        { key: "fire", name: "火焰", moving: true, preset: 0.5, gain: live.soft },
         { key: "flashBlack", name: "闪黑", rate: true, moving: true, preset: 0.4 },
         { key: "flash", name: "闪白", rate: true, moving: true, preset: 0.4 },
         { key: "strobe", name: "频闪", rate: true, moving: true, preset: 0.4 }
@@ -406,20 +409,50 @@ QtObject {
     readonly property bool effectsOn: effects.some(e => amount(e.key) > 0)
     readonly property bool effectsMoving: effects.some(e => e.moving && amount(e.key) > 0)
 
+    // —— The effects' clock ——
+    // What moves in an effect moves on this one clock, the same for the
+    // projection and the operator's preview: it steps `effectTick` ms at a
+    // time (the preview's rate), on the step's edge, so both windows show the
+    // same picture of each effect and the projection moves no faster than
+    // the preview shows (drawn at every display frame, a shake thrown 30
+    // times a second was a blur of jolts there while the preview looked
+    // calm). The shader's seconds run at `effectSpeed` of real ones: a third,
+    // everything that moves by itself three times slower than it was.
+    readonly property real effectTick: 1000 / 12
+    readonly property real effectSpeed: 1 / 3
+    // Date.now() ms, on a step's edge; it moves only while an effect that
+    // moves by itself is on.
+    property real effectClock: Math.floor(Date.now() / effectTick) * effectTick
+    // The shader's `time`, seconds.
+    readonly property real effectTime: ((effectClock - epoch) / 1000 * effectSpeed) % 1000
+    function stepEffects() {
+        const now = Date.now()
+        effectClock = Math.floor(now / effectTick) * effectTick
+        if (!effectsMoving)
+            return
+        // Just past the next edge: no step skipped, none shown twice.
+        effectStep.interval = Math.max(1, Math.ceil(effectClock + effectTick - now) + 1)
+        effectStep.restart()
+    }
+    onEffectsMovingChanged: stepEffects()
+    property Timer effectStep: Timer {
+        repeat: false
+        onTriggered: live.stepEffects()
+    }
+
     // —— Flashes ——
     // 闪白, 闪黑 and 频闪 flash on and on, their strength how fast: six
     // steps (`flashRates`, flashes a second), the strength's range cut in six
     // and held at a border until well past it, so a fader resting there does
     // not flicker between two; at the foot, off. 闪白 and 闪黑 breathe, coming
     // up over the first fifth of each flash and fading over the rest (so
-    // quicker at the faster steps); 频闪 is a hard flash of white
-    // `strobeFlash` seconds long. Never more than `fastestFlash` a second:
-    // faster reads as flicker rather than flashes, and fast flashing can
-    // bring on seizures in people prone to them. A change of step goes on
-    // from where the flash was, so nothing jumps.
-    readonly property real fastestFlash: 8
-    readonly property var flashRates: [1, 1.5, 2.5, 4, 6, fastestFlash]
-    readonly property real strobeFlash: 0.035
+    // quicker at the faster steps); 频闪 is a hard flash of white for one
+    // step of the effects' clock. Never more than `fastestFlash` a second
+    // (a third of the 8 of before): fast flashing read as flicker on a
+    // projector, and can bring on seizures in people prone to them. A
+    // change of step goes on from where the flash was, so nothing jumps.
+    readonly property real fastestFlash: 2.7
+    readonly property var flashRates: [0.3, 0.5, 0.8, 1.3, 2, fastestFlash]
     // { key: step (0–5) }, and each one's clock: { key: { b0 (flashes gone
     // by at t0), t0 (Date.now()), rate } }.
     property var steps: ({})
@@ -457,21 +490,27 @@ QtObject {
         const step = steps[key] !== undefined ? steps[key] : -1
         return step < 0 ? "关" : "第 " + (step + 1) + " 档（" + flashRates[step] + " 次/秒）"
     }
-    // What a pass draws `key` at, at t (Stage): a flash as far as it is lit
-    // (闪白 and 闪黑 breathing, 频闪 hard), else the strength.
+    // What a pass draws `key` at, at t (Stage: effectClock, a step's edge):
+    // a flash as far as it is lit (闪白 and 闪黑 breathing, 频闪 hard), else
+    // the strength by its gain. The step that holds a flash's peak shows the
+    // peak, whatever moment of the step the clock reads: sampled step by
+    // step, a flash would otherwise be missed or cut short at random.
     function drawnAt(key, t) {
         const i = kind(key)
         if (i < 0)
             return 0
         if (!effects[i].rate)
-            return amount(key)
+            return amount(key) * (effects[i].gain || 1)
         const step = steps[key] !== undefined ? steps[key] : -1
         if (step < 0)
             return 0
         const n = flashesAt(key, t)
-        const f = n - Math.floor(n)
+        const peak = key === "strobe" ? 0 : 0.2
+        if (Math.floor(flashesAt(key, t + effectTick) - peak) > Math.floor(n - peak))
+            return 1
         if (key === "strobe")
-            return f < strobeFlash * flashRates[step] ? 1 : 0
+            return 0
+        const f = n - Math.floor(n)
         if (f < 0.2) {
             const x = f / 0.2
             return x * x * (3 - 2 * x)

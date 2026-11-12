@@ -5,7 +5,10 @@
 // last), each reading the picture the one before made. All sizes are
 // fractions of the picture, so the small preview looks like the projection.
 // Every effect is this one pass and reads only the picture in front of it:
-// none keeps an earlier frame.
+// none keeps an earlier frame. `time` is the effects' own seconds
+// (Live.effectTime): a third as fast as real ones, and stepping at the
+// preview's rate, so "thirty times a second" below is ten real ones, and
+// never more often than the step.
 
 layout(location = 0) in vec2 qt_TexCoord0;
 layout(location = 0) out vec4 fragColor;
@@ -13,7 +16,7 @@ layout(location = 0) out vec4 fragColor;
 layout(std140, binding = 0) uniform buf {
     mat4 qt_Matrix;
     float qt_Opacity;
-    float time;   // seconds
+    float time;   // the effects' seconds (Live.effectTime)
     float aspect; // width / height
     float kind;
     float amount;

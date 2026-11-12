@@ -118,7 +118,7 @@ pub fn missing(set: &Set) -> (Vec<String>, Vec<String>) {
     }
     (gone, away)
 }
-fn volume_present(path: &std::path::Path) -> bool {
+pub(crate) fn volume_present(path: &std::path::Path) -> bool {
     use std::path::Component;
     let mut parts = path.components();
     match (parts.next(), parts.next(), parts.next()) {

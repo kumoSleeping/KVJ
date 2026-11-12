@@ -134,16 +134,51 @@ Item {
         onActivated: lib.selected = {}
     }
 
-    function rootMenu(url, item, x, y) {
+    // —— 提前分析 ——
+    // Videos' sound analysed ahead, into the caches on disk (Engine.analyse):
+    // placed on a track while following, one so done is followed within
+    // seconds, and nothing of it is held in memory meanwhile. A green dot
+    // before a row says it is done, an amber one that it is under way.
+    readonly property var analysis: Engine.analysis
+    readonly property bool analysing: !!analysis.running
+    readonly property string analysingUrl: analysis.currentUrl || ""
+    function analyse(urls) {
+        const videos = urls.filter(isVideo)
+        if (videos.length)
+            Engine.analyse(videos)
+    }
+
+    function folderMenu(url, root, item, x, y) {
         menu.url = url
+        menu.root = root
         menu.popup(item, x, y)
     }
     PopMenu {
         id: menu
         property string url: ""
+        property bool root: false
         PopAction {
+            text: "提前分析这个文件夹里的视频"
+            onTriggered: Engine.analyse([menu.url])
+        }
+        PopAction {
+            enabled: menu.root
             text: "从列表移除这个文件夹（文件不动）"
             onTriggered: lib.saveRoots(lib.roots.filter(r => r !== menu.url))
+        }
+    }
+    function fileMenu(url, item, x, y) {
+        fileMenuBox.urls = selected[url] ? chosen : [url]
+        fileMenuBox.popup(item, x, y)
+    }
+    PopMenu {
+        id: fileMenuBox
+        property var urls: []
+        readonly property int videos: urls.filter(lib.isVideo).length
+        PopAction {
+            enabled: fileMenuBox.videos > 0
+            text: fileMenuBox.videos > 1 ? "提前分析选中的 " + fileMenuBox.videos + " 个视频" : "提前分析这个视频"
+            onTriggered: lib.analyse(fileMenuBox.urls)
         }
     }
     FolderDialog {
@@ -469,7 +504,9 @@ Item {
                             onCanceled: lib.composer.carrying = null
                             ToolTip.visible: containsMouse && !pressed
                             ToolTip.delay: 600
-                            ToolTip.text: "点一下贴在画面中间，或拖进画面里"
+                            ToolTip.text: kept.modelData.kind === "image"
+                                          ? "点一下贴在画面中间，或拖进画面里 · 左上角的键：作为图层铺满画面（受效果影响）"
+                                          : "点一下贴在画面中间，或拖进画面里"
                         }
                         IconButton {
                             anchors.top: parent.top
@@ -479,8 +516,31 @@ Item {
                             iconSize: 10
                             iconName: "x"
                             tip: "从预备里拿掉"
-                            visible: keptArea.containsMouse || hovered
+                            visible: keptArea.containsMouse || hovered || layKey.hovered
                             onClicked: lib.composer.forget(kept.modelData.id)
+                        }
+                        // A picture as a layer of the picture, filling it:
+                        // the effects work on it, as on the videos.
+                        IconButton {
+                            id: layKey
+                            anchors.top: parent.top
+                            anchors.left: parent.left
+                            implicitWidth: 18
+                            implicitHeight: 18
+                            iconSize: 10
+                            iconName: "maximize"
+                            tip: "作为图层铺满画面：受效果影响，可裁切、遮罩、置顶置底（贴图则盖在效果上面）"
+                            visible: kept.modelData.kind === "image" && (keptArea.containsMouse || hovered)
+                            onClicked: lib.composer.layImage(kept.modelData)
+                        }
+                        // Laid on the picture as a layer: an ink edge, as a source's tile has.
+                        Rectangle {
+                            visible: lib.composer.imageLaid(kept.modelData)
+                            width: keptBox.width
+                            height: keptBox.height
+                            color: "transparent"
+                            border.width: 1.5
+                            border.color: Theme.text
                         }
                     }
                 }
@@ -538,13 +598,62 @@ Item {
             IconButton {
                 implicitWidth: 26
                 implicitHeight: 26
+                iconName: "sparkles"
+                enabled: lib.roots.length > 0
+                tip: "提前分析：把媒体库里全部视频的声音（跟随用的特征、波形、BPM）先算好存到硬盘，"
+                     + "演出时放上轨道几秒就能跟随，也不占内存。已分析的前面亮绿点；也可以右键文件夹或视频单独分析"
+                onClicked: Engine.analyse(lib.roots)
+            }
+            IconButton {
+                implicitWidth: 26
+                implicitHeight: 26
                 iconName: "folder-plus"
                 tip: "添加一个文件夹（里面的视频和图片都列在这里，不会复制）"
                 onClicked: folderDialog.open()
             }
         }
+        // While analysing: which file, how many are left, and a key to stop.
+        RowLayout {
+            id: analysisRow
+            y: filesHead.height + 2
+            width: parent.width
+            height: visible ? 28 : 0
+            visible: lib.analysing || (lib.analysis.failed || 0) > 0
+            spacing: 4
+            Rectangle {
+                Layout.alignment: Qt.AlignVCenter
+                Layout.leftMargin: 6
+                width: 6
+                height: 6
+                radius: 3
+                color: lib.analysing ? Theme.warn : Theme.danger
+            }
+            Text {
+                Layout.fillWidth: true
+                readonly property string name: {
+                    const c = lib.analysis.current || ""
+                    return c.substring(Math.max(c.lastIndexOf("/"), c.lastIndexOf("\\")) + 1)
+                }
+                readonly property int gone: (lib.analysis.done || 0) + (lib.analysis.failed || 0)
+                text: lib.analysing ? "提前分析 " + (gone + 1) + "/" + (gone + (lib.analysis.waiting || 0) + 1)
+                                      + (name ? " · " + name : "")
+                                    : lib.analysis.failed + " 个没能分析"
+                font.pixelSize: Theme.sizeXs
+                color: Theme.muted
+                elide: Text.ElideMiddle
+                HoverHandler { id: analysisHover }
+                ToolTip.visible: analysisHover.hovered && !!lib.analysis.error
+                ToolTip.delay: 300
+                ToolTip.text: lib.analysis.error || ""
+            }
+            TextButton {
+                visible: lib.analysing
+                text: "停止"
+                onClicked: Engine.stopAnalysis()
+            }
+        }
         Flickable {
-            y: filesHead.height + 4
+            y: filesHead.height + 4 + analysisRow.height
             width: parent.width
             height: parent.height - y
             contentHeight: tree.implicitHeight

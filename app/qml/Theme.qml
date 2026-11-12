@@ -42,6 +42,8 @@ QtObject {
     // A chosen row: a touch deeper than hover.
     readonly property color selected: dark ? "#262c35" : "#e8e8ed"
     readonly property color warn: "#f59e0b"
+    // Done, ready (a status light, a video analysed ahead).
+    readonly property color ok: "#30a46c"
     readonly property color danger: "#e5484d"
     // Under what floats over the canvas (the Sets drawer, popups).
     readonly property color shadow: dark ? "#8c000000" : "#24000000"
