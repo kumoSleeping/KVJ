@@ -60,11 +60,23 @@ jobs:
       - name: Build
         run: cmake --build build
 
+      # Test media for the checks. Chocolatey's ffmpeg no longer lands on PATH
+      # (2026-11-18); a build from gyan.dev does.
+      - name: FFmpeg
+        shell: pwsh
+        run: |
+          if ($IsWindows) {
+            Invoke-WebRequest https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile "$env:RUNNER_TEMP\ffmpeg.zip"
+            Expand-Archive "$env:RUNNER_TEMP\ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP\ffmpeg"
+            (Get-ChildItem "$env:RUNNER_TEMP\ffmpeg" -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName | Add-Content $env:GITHUB_PATH
+          } elseif (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            brew install ffmpeg | Out-Null
+          }
+
       - name: Decoder check (Media Foundation)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install ffmpeg -y --no-progress | Out-Null
           ffmpeg -v error -f lavfi -i testsrc2=size=1920x1080:rate=30 -t 40 -c:v libx264 -g 60 -pix_fmt yuv420p sample.mp4
           $env:KVJ_MAX_HEIGHT = "720"
           # A fresh runner's first Media Foundation open is slow (over 2 s):
@@ -79,9 +91,6 @@ jobs:
       - name: System sound check
         shell: bash
         run: |
-          if ! command -v ffmpeg > /dev/null; then
-            if [ "$RUNNER_OS" = "macOS" ]; then brew install ffmpeg > /dev/null; else choco install ffmpeg -y --no-progress > /dev/null; fi
-          fi
           mkdir -p sound
           mk() {
             out=$1; shift
@@ -105,7 +114,7 @@ jobs:
           mk s16le-6ch.mov -c:a pcm_s16le -ac 6
           mk alac.mov -c:a alac -ac 2
           mk ulaw.mov -c:a pcm_mulaw -ac 2
-          mk vorbis.mkv -c:a libvorbis -ac 2
+          mk flac.mkv -c:a flac -ac 2
           if [ "$RUNNER_OS" = "Windows" ]; then
             ./build/kvj-system-sound-check.exe "$RUNNER_TEMP/kvj-sound" 3 sound/* || echo "::warning::some sound Media Foundation on this runner does not read"
           else
