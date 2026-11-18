@@ -8,7 +8,7 @@ use std::fs::File;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use symphonia::core::audio::SampleBuffer;
+use symphonia::core::audio::{Channels, SampleBuffer};
 use symphonia::core::codecs::{Decoder, DecoderOptions, CODEC_TYPE_NULL};
 use symphonia::core::errors::Error;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
@@ -162,6 +162,7 @@ impl SoundStream {
                 self.rate = spec.rate;
             }
             let channels = spec.channels.count().max(1);
+            let shares = (channels > 2).then(|| fold(spec.channels));
             let Ok(samples) = copy_audio_packet(&mut self.buffer, audio) else {
                 continue;
             };
@@ -181,8 +182,16 @@ impl SoundStream {
             self.pending.clear();
             self.cursor = 0;
             for frame in samples.chunks_exact(channels).skip(first) {
-                let left = if frame[0].is_finite() { frame[0] } else { 0.0 };
-                let right = if channels > 1 && frame[1].is_finite() { frame[1] } else { left };
+                let (left, right) = match &shares {
+                    Some(shares) => frame.iter().zip(shares).fold((0.0, 0.0), |(l, r), (v, (to_l, to_r))| {
+                        let v = if v.is_finite() { *v } else { 0.0 };
+                        (l + v * to_l, r + v * to_r)
+                    }),
+                    None => {
+                        let left = if frame[0].is_finite() { frame[0] } else { 0.0 };
+                        (left, if channels > 1 && frame[1].is_finite() { frame[1] } else { left })
+                    }
+                };
                 self.pending.push(left);
                 self.pending.push(right);
             }
@@ -194,9 +203,62 @@ impl SoundStream {
     }
 }
 
+/// Each channel's share of left and right when more than two are folded
+/// down to stereo, by where it plays: the first two alone may be silent (a
+/// mono sound made 5.1 is all in the centre). Places that say nothing of use
+/// put every channel on both sides.
+fn fold(channels: Channels) -> Vec<(f32, f32)> {
+    const HALF: f32 = std::f32::consts::FRAC_1_SQRT_2;
+    let shares: Vec<(f32, f32)> = channels
+        .iter()
+        .map(|c| {
+            if c.intersects(Channels::FRONT_LEFT | Channels::FRONT_LEFT_CENTRE | Channels::FRONT_LEFT_WIDE) {
+                (1.0, 0.0)
+            } else if c.intersects(Channels::FRONT_RIGHT | Channels::FRONT_RIGHT_CENTRE | Channels::FRONT_RIGHT_WIDE) {
+                (0.0, 1.0)
+            } else if c.intersects(Channels::FRONT_CENTRE) {
+                (HALF, HALF)
+            } else if c.intersects(Channels::REAR_LEFT | Channels::SIDE_LEFT | Channels::REAR_LEFT_CENTRE) {
+                (HALF, 0.0)
+            } else if c.intersects(Channels::REAR_RIGHT | Channels::SIDE_RIGHT | Channels::REAR_RIGHT_CENTRE) {
+                (0.0, HALF)
+            } else if c.intersects(Channels::REAR_CENTRE) {
+                (0.5, 0.5)
+            } else {
+                (0.0, 0.0)
+            }
+        })
+        .collect();
+    let count = channels.count();
+    if shares.len() != count || shares.iter().all(|s| s.0 == 0.0) || shares.iter().all(|s| s.1 == 0.0) {
+        let share = 1.0 / (count.max(1) as f32).sqrt();
+        return vec![(share, share); count];
+    }
+    shares
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn five_one_folds_down_with_its_centre() {
+        let five_one = Channels::FRONT_LEFT
+            | Channels::FRONT_RIGHT
+            | Channels::FRONT_CENTRE
+            | Channels::LFE1
+            | Channels::REAR_LEFT
+            | Channels::REAR_RIGHT;
+        let shares = fold(five_one);
+        assert_eq!(shares.len(), 6);
+        assert_eq!(shares[0], (1.0, 0.0));
+        assert_eq!(shares[1], (0.0, 1.0));
+        assert!(shares[2].0 > 0.7 && shares[2].1 > 0.7);
+        assert_eq!(shares[3], (0.0, 0.0));
+        // Only an LFE and a top: nothing of use, every channel on both sides.
+        let odd = fold(Channels::LFE1 | Channels::TOP_CENTRE | Channels::LFE2);
+        assert!(odd.iter().all(|s| s.0 > 0.5 && s.1 > 0.5));
+    }
 
     // A mono 16-bit WAV whose every sample is its own index (mod 30000).
     fn write_ramp_wav(path: &Path, rate: u32, frames: u32) {
