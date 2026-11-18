@@ -71,8 +71,57 @@ pub struct Probe {
 ///
 /// A file with no audio track, or one no decoder here reads, is still told:
 /// its length is then the longest track's (the picture's) by the container's
-/// clock, and `audio` is false.
+/// clock, and `audio` is false — unless the system's decoders read its sound
+/// (`system_sound`), which every reader then reads from a WAV of it.
 pub fn probe(path: &Path) -> Result<Probe> {
+    let builtin = probe_builtin(path);
+    if let Ok((probe, true)) = &builtin {
+        if probe.audio {
+            return builtin.map(|(probe, _)| probe);
+        }
+    }
+    if let Some(seconds) = crate::system_sound::readable(path) {
+        let duration = builtin.as_ref().ok().and_then(|(probe, _)| probe.duration);
+        return Ok(Probe { duration: duration.or(Some(seconds)), audio: true });
+    }
+    builtin.map(|(probe, _)| probe)
+}
+
+/// Whether symphonia reads the sound of `path`, and can be trusted to.
+pub(crate) fn builtin_reads(path: &Path) -> bool {
+    matches!(probe_builtin(path), Ok((Probe { audio: true, .. }, true)))
+}
+
+/// PCM wider than 16 bits in MP4 or MOV: symphonia reads big-endian 24-bit
+/// and float samples there as little-endian (it never looks at `enda`), and
+/// cannot tell which it has, so none of it is trusted while the system's
+/// decoders can read it instead (`system_sound`).
+fn trusted(path: &Path, codec: symphonia::core::codecs::CodecType) -> bool {
+    use symphonia::core::codecs::*;
+    let isomp4 = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .is_some_and(|e| matches!(e.as_str(), "mp4" | "m4v" | "m4a" | "mov"));
+    !(isomp4
+        && [
+            CODEC_TYPE_PCM_S24LE,
+            CODEC_TYPE_PCM_S24BE,
+            CODEC_TYPE_PCM_U24LE,
+            CODEC_TYPE_PCM_U24BE,
+            CODEC_TYPE_PCM_S32LE,
+            CODEC_TYPE_PCM_S32BE,
+            CODEC_TYPE_PCM_U32LE,
+            CODEC_TYPE_PCM_U32BE,
+            CODEC_TYPE_PCM_F32LE,
+            CODEC_TYPE_PCM_F32BE,
+            CODEC_TYPE_PCM_F64LE,
+            CODEC_TYPE_PCM_F64BE,
+        ]
+        .contains(&codec))
+}
+
+/// `probe` by symphonia alone, and whether its decoding of the track is trusted.
+fn probe_builtin(path: &Path) -> Result<(Probe, bool)> {
     let file = File::open(path).with_context(|| format!("打开音频失败：{}", path.display()))?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
@@ -109,10 +158,14 @@ pub fn probe(path: &Path) -> Result<Probe> {
         })
         .filter(|seconds| seconds.is_finite() && *seconds > 0.)
         .reduce(f64::max);
-    Ok(Probe {
-        duration: audio.and_then(|track| track_duration(&track.codec_params)).or(clock),
-        audio: audio.is_some(),
-    })
+    let trusted = audio.is_none_or(|track| trusted(path, track.codec_params.codec));
+    Ok((
+        Probe {
+            duration: audio.and_then(|track| track_duration(&track.codec_params)).or(clock),
+            audio: audio.is_some(),
+        },
+        trusted,
+    ))
 }
 
 #[derive(Debug)]
@@ -197,11 +250,13 @@ fn decode_audio_inner_cancellable(
         max_seconds.is_none_or(|seconds| seconds.is_finite() && seconds >= 0.0),
         "音频截取时长无效"
     );
-    let file = File::open(path).with_context(|| format!("打开音频失败：{}", path.display()))?;
+    // What symphonia cannot read is read from the WAV the system made of it.
+    let source = crate::system_sound::source(path);
+    let file = File::open(&source).with_context(|| format!("打开音频失败：{}", path.display()))?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
 
     let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+    if let Some(ext) = source.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
     let probed = symphonia::default::get_probe()
@@ -804,9 +859,10 @@ pub fn stream_mono(
     use symphonia::core::errors::Error;
     if cancelled() { return Ok(None); }
     anyhow::ensure!(target_sr>0,"采样率无效");
-    let input = MediaSourceStream::new(Box::new(File::open(path)?), Default::default());
+    let source = crate::system_sound::source(path);
+    let input = MediaSourceStream::new(Box::new(File::open(&source)?), Default::default());
     let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|s| s.to_str()) { hint.with_extension(ext); }
+    if let Some(ext) = source.extension().and_then(|s| s.to_str()) { hint.with_extension(ext); }
     let probe = symphonia::default::get_probe().format(&hint, input,
         &FormatOptions { enable_gapless: true, ..Default::default() }, &MetadataOptions::default())?;
     let mut format = probe.format;

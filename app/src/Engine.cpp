@@ -2,6 +2,7 @@
 
 #include "Awake.h"
 #include "Ending.h"
+#include "SystemSound.h"
 #include "kvj.h"
 
 #include <QCoreApplication>
@@ -54,6 +55,9 @@ Engine::Engine(QObject *parent)
     const QStringList detailed = logs.entryList({QStringLiteral("detail-*.log")}, QDir::Files, QDir::Name | QDir::Reversed);
     for (int i = 7; i < detailed.size(); ++i)
         QFile::remove(logs.filePath(detailed.at(i)));
+    // Sound symphonia cannot read (AC-3, PCM as FFmpeg writes it in MP4, …)
+    // is read by the system's decoders into WAVs kept here.
+    useSystemSound(QDir(m_dataDir).filePath(QStringLiteral("cache/sound")));
     m_engine = kvj_engine_new(QDir::toNativeSeparators(m_dataDir).toUtf8().constData(), &Engine::onEvent, this);
     if (m_engine)
         m_version = roundTrip(m_engine, {{"cmd", "version"}}).value("ok").toString();
@@ -63,6 +67,15 @@ Engine::Engine(QObject *parent)
         m_document = ok.toObject().toVariantMap();
         emit documentChanged();
     }, false);
+    // Entries saved as silent whose sound the system reads (since this build)
+    // are heard again, out of the way of the window.
+    ask({{"cmd", "rehear"}}, [this](const QJsonObject &reply) {
+        const QVariantMap document = reply.value("ok").toObject().toVariantMap();
+        if (document.isEmpty() || document.value("revision").toLongLong() <= m_document.value("revision").toLongLong())
+            return;
+        m_document = document;
+        emit documentChanged();
+    });
     refreshDevices();
 
     m_poll.setInterval(250);

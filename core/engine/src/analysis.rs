@@ -25,6 +25,9 @@ use std::{
 };
 
 const MANIFEST: &str = "analysed.json";
+/// How a file's sound is told: 1 since the system's decoders read what
+/// symphonia cannot (`system_sound`). A file found silent before is looked at again.
+const HEARING: u32 = 1;
 /// Videos, as `Engine::import` takes them.
 const VIDEO: &[&str] = &["mp4", "m4v", "mkv", "mov", "webm"];
 /// One request adds at most this many files.
@@ -40,6 +43,9 @@ pub(crate) struct Done {
     /// be read for them has none, and is not asked for them again).
     pub wave: bool,
     pub tempo: bool,
+    /// `HEARING` when it was analysed (0 before there was one).
+    #[serde(default)]
+    pub hearing: u32,
 }
 
 /// What the analysis is doing, for the window.
@@ -206,7 +212,9 @@ impl Engine {
                 let file = Path::new(path);
                 let Ok(signature) = index::signature(file) else { return false };
                 let (duration, silent, wave, tempo) = match manifest.get(path) {
-                    Some(done) if done.signature == signature => (done.duration, done.silent, done.wave, done.tempo),
+                    Some(done) if done.signature == signature && (!done.silent || done.hearing >= HEARING) => {
+                        (done.duration, done.silent, done.wave, done.tempo)
+                    }
                     _ => match known.get(path) {
                         Some(&(duration, silent)) => (duration, silent, !silent, !silent),
                         None => return false,
@@ -370,7 +378,7 @@ fn analyse_file(
         }
     }
     anyhow::ensure!(index::signature(path)? == signature, "分析期间文件已变化");
-    Ok(Some(Done { signature, duration, silent, wave, tempo }))
+    Ok(Some(Done { signature, duration, silent, wave, tempo, hearing: HEARING }))
 }
 
 #[cfg(test)]
@@ -392,6 +400,7 @@ mod tests {
             silent: false,
             wave: true,
             tempo: true,
+            hearing: HEARING,
         };
         let mut manifest = BTreeMap::new();
         manifest.insert(key(&a), done(&a));

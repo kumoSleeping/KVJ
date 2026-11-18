@@ -39,10 +39,12 @@ pub struct SoundStream {
 
 impl SoundStream {
     pub fn open(path: &Path) -> Result<Self> {
-        let file = File::open(path).with_context(|| format!("打开音频失败：{}", path.display()))?;
+        // What symphonia cannot read is read from the WAV the system made of it.
+        let source = crate::system_sound::source(path);
+        let file = File::open(&source).with_context(|| format!("打开音频失败：{}", path.display()))?;
         let stream = MediaSourceStream::new(Box::new(file), Default::default());
         let mut hint = Hint::new();
-        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        if let Some(ext) = source.extension().and_then(|e| e.to_str()) {
             hint.with_extension(ext);
         }
         let probed = symphonia::default::get_probe()

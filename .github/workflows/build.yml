@@ -72,6 +72,46 @@ jobs:
           ./build/kvj-player-check.exe sample.mp4 0 | Out-Null
           ./build/kvj-player-check.exe sample.mp4 0 20 5 30.5
 
+      # Sound symphonia cannot read (or misreads), read by the system's decoders
+      # through the engine as the app does. The same tone in each; macOS must
+      # read them all. A Windows runner (Server, no Dolby or Opus decoders as
+      # desktops have) is only reported.
+      - name: System sound check
+        shell: bash
+        run: |
+          if ! command -v ffmpeg > /dev/null; then
+            if [ "$RUNNER_OS" = "macOS" ]; then brew install ffmpeg > /dev/null; else choco install ffmpeg -y --no-progress > /dev/null; fi
+          fi
+          mkdir -p sound
+          mk() {
+            out=$1; shift
+            ffmpeg -v error -y -f lavfi -i testsrc=size=160x90:rate=30:duration=3 \
+              -f lavfi -i sine=frequency=440:sample_rate=48000:duration=3 \
+              -map 0 -map 1 -c:v libx264 -pix_fmt yuv420p "$@" "sound/$out"
+          }
+          mk aac.mp4 -c:a aac -ac 2
+          mk mp3.mp4 -c:a libmp3lame -ac 2
+          mk ipcm-s16.mp4 -c:a pcm_s16le -ac 2
+          mk ipcm-s24.mp4 -c:a pcm_s24le -ac 2
+          mk fpcm-f32.mp4 -c:a pcm_f32le -ac 2
+          mk ipcm-6ch.mp4 -c:a pcm_s16le -ac 6
+          mk aac-6ch.mp4 -c:a aac -ac 6
+          mk ac3.mp4 -c:a ac3 -ac 2
+          mk eac3.mp4 -c:a eac3 -ac 2
+          mk opus.mp4 -c:a libopus -ac 2
+          mk s16le.mov -c:a pcm_s16le -ac 2
+          mk s24be.mov -c:a pcm_s24be -ac 2
+          mk f32be.mov -c:a pcm_f32be -ac 2
+          mk s16le-6ch.mov -c:a pcm_s16le -ac 6
+          mk alac.mov -c:a alac -ac 2
+          mk ulaw.mov -c:a pcm_mulaw -ac 2
+          mk vorbis.mkv -c:a libvorbis -ac 2
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ./build/kvj-system-sound-check.exe "$RUNNER_TEMP/kvj-sound" 3 sound/* || echo "::warning::some sound Media Foundation on this runner does not read"
+          else
+            ./build/kvj-system-sound-check "$RUNNER_TEMP/kvj-sound" 3 sound/*
+          fi
+
       # macOS runs headless (offscreen); Windows uses its real platform plugin, so
       # the screenshot shows system fonts and DirectWrite as users will see them.
       - name: Smoke test (screenshot)

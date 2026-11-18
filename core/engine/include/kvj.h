@@ -27,6 +27,7 @@ void kvj_engine_free(KvjEngine *engine);
  * {"cmd":"stop"} {"cmd":"follow_track","track":1} (while following) {"cmd":"status","after_log_id":null}
  * Reports and updates: {"cmd":"version"} {"cmd":"report_prepare","note":".."} → {id,body,bytes,destination}
  * {"cmd":"report_submit","id":".."} {"cmd":"update_check"} → {current,latest,newer,url,name,published_at}.
+ * {"cmd":"rehear"} → the document, entries saved as silent whose sound is read now marked so.
  * Free the reply with kvj_string_free. */
 char *kvj_call(KvjEngine *engine, const char *request);
 void kvj_string_free(char *text);
@@ -46,6 +47,16 @@ void kvj_bytes_free(unsigned char *bytes, size_t columns);
  * sections end to end over the file (bpm null: no beat holds there). Cached and
  * stopped as kvj_waveform; null without audio. Free with kvj_string_free. */
 char *kvj_tempo(const char *path, const char *cache_dir, KvjStopFn stop, void *user);
+
+/* Sound the engine's own decoders cannot read, read by the system's (AVFoundation,
+ * Media Foundation). convert(user, path, NULL) tells whether the system reads a
+ * sound in path; convert(user, path, wav) also writes it to wav as a WAV (float or
+ * 16-bit, mono or stereo, its own rate, from the file's time 0). Both return its
+ * length in seconds, 0 when there is none. Called from any thread, one
+ * conversion at a time. What is converted is kept under dir; call this before
+ * kvj_engine_new. */
+typedef double (*KvjSoundConvertFn)(void *user, const char *path, const char *wav);
+void kvj_sound_system(KvjSoundConvertFn convert, void *user, const char *dir);
 
 /* The picture's sound, read for playing: interleaved stereo float frames at
  * *rate a second from any point; *duration seconds (0 if unknown). Null when

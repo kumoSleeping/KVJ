@@ -180,9 +180,11 @@ impl Bands {
 }
 
 fn analyse(path: &Path, cancelled: &dyn Fn() -> bool) -> Result<Option<Waveform>> {
-    let input = MediaSourceStream::new(Box::new(fs::File::open(path)?), Default::default());
+    // What symphonia cannot read is read from the WAV the system made of it.
+    let source = crate::system_sound::source(path);
+    let input = MediaSourceStream::new(Box::new(fs::File::open(&source)?), Default::default());
     let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+    if let Some(ext) = source.extension().and_then(|s| s.to_str()) {
         hint.with_extension(ext);
     }
     let probe = symphonia::default::get_probe().format(

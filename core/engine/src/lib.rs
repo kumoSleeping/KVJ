@@ -20,6 +20,7 @@ pub mod report;
 pub mod rhythm;
 mod runtime;
 pub mod sound;
+mod system_sound;
 pub mod update;
 pub mod waveform;
 
@@ -235,6 +236,34 @@ impl Engine {
 
     pub fn document(&self) -> Result<Document> {
         self.with_store(|s| Ok(s.doc.clone()))
+    }
+    /// Entries saved as silent are looked at again: one whose sound is read
+    /// now (by the system's decoders, where symphonia could not) is silent no
+    /// more. Files out of sight stay as they are; nothing changes while following.
+    pub fn rehear(&self) -> Result<Document> {
+        let silent: std::collections::BTreeSet<String> = self.with_store(|s| {
+            Ok(s.doc.sets.iter().flat_map(|set| &set.entries).filter(|e| e.silent).map(|e| e.path.clone()).collect())
+        })?;
+        // Opened outside the gate: a slow drive must not hold up an edit.
+        let heard: std::collections::BTreeSet<String> = silent
+            .into_iter()
+            .filter(|path| decode::probe(Path::new(path)).is_ok_and(|probe| probe.audio))
+            .collect();
+        let _gate = self.gate.lock().unwrap();
+        if heard.is_empty() || self.running() {
+            return self.document();
+        }
+        let document = self.with_store(|s| {
+            let mut next = s.doc.clone();
+            for entry in next.sets.iter_mut().flat_map(|set| set.entries.iter_mut()) {
+                if heard.contains(&entry.path) {
+                    entry.silent = false;
+                }
+            }
+            s.commit(next)
+        })?;
+        self.invalidate_prepared();
+        Ok(document)
     }
     /// Applied to the Set as it is now, whatever revision the caller last saw
     /// (`_revision`): an edit names its entries by id and is checked against

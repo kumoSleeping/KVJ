@@ -181,6 +181,7 @@ qt_add_qml_module(KVJ
         src/WaveStrip.h src/WaveStrip.cpp
         src/FrameNode.h
         src/AudioFollower.h src/AudioFollower.cpp
+        src/SystemSound.h src/SystemSound.cpp
         src/Decoder.h
         src/Awake.h
         src/Ending.h
@@ -224,11 +225,11 @@ elseif(WIN32)
 endif()
 
 if(APPLE)
-    target_sources(KVJ PRIVATE src/platform/mac/AvfDecoder.mm src/platform/mac/TitleBar.mm src/platform/mac/Awake.mm src/platform/mac/Ending.mm src/platform/mac/MidiPort.mm)
+    target_sources(KVJ PRIVATE src/platform/mac/AvfDecoder.mm src/platform/mac/AvfSound.mm src/platform/mac/TitleBar.mm src/platform/mac/Awake.mm src/platform/mac/Ending.mm src/platform/mac/MidiPort.mm)
     # App icon (design/icon/make.py), copied into Contents/Resources.
     target_sources(KVJ PRIVATE resources/icon/KVJ.icns)
     set_source_files_properties(resources/icon/KVJ.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    set_source_files_properties(src/platform/mac/AvfDecoder.mm src/platform/mac/TitleBar.mm src/platform/mac/Awake.mm src/platform/mac/Ending.mm src/platform/mac/MidiPort.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    set_source_files_properties(src/platform/mac/AvfDecoder.mm src/platform/mac/AvfSound.mm src/platform/mac/TitleBar.mm src/platform/mac/Awake.mm src/platform/mac/Ending.mm src/platform/mac/MidiPort.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_link_libraries(KVJ PRIVATE
         "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework Foundation" "-framework AppKit"
         "-framework CoreMIDI")
@@ -242,7 +243,7 @@ if(APPLE)
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in)
 elseif(WIN32)
     # KVJ.rc carries the app icon as IDI_ICON1: Explorer shows it, and Qt uses it for windows.
-    target_sources(KVJ PRIVATE src/platform/win/MfDecoder.cpp src/platform/win/TitleBar.cpp src/platform/win/Awake.cpp src/platform/win/Ending.cpp src/platform/win/MidiPort.cpp resources/KVJ.rc)
+    target_sources(KVJ PRIVATE src/platform/win/MfDecoder.cpp src/platform/win/MfSound.cpp src/platform/win/TitleBar.cpp src/platform/win/Awake.cpp src/platform/win/Ending.cpp src/platform/win/MidiPort.cpp resources/KVJ.rc)
     target_compile_definitions(KVJ PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
     target_link_libraries(KVJ PRIVATE mfplat mfreadwrite mfuuid d3d11 dxgi ole32 propsys winmm)
 endif()
@@ -262,6 +263,25 @@ if(KVJ_BUILD_CHECKS)
         target_sources(kvj-player-check PRIVATE src/platform/win/MfDecoder.cpp)
         target_compile_definitions(kvj-player-check PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
         target_link_libraries(kvj-player-check PRIVATE mfplat mfreadwrite mfuuid d3d11 dxgi ole32 propsys)
+    endif()
+
+    # The system's decoders reading what symphonia cannot, through the engine.
+    qt_add_executable(kvj-system-sound-check checks/system_sound_check.cpp src/SystemSound.cpp)
+    target_include_directories(kvj-system-sound-check PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/../core/engine/include)
+    target_link_libraries(kvj-system-sound-check PRIVATE Qt6::Core kvj_engine)
+    set_target_properties(kvj-system-sound-check PROPERTIES MACOSX_BUNDLE OFF WIN32_EXECUTABLE OFF)
+    if(APPLE)
+        target_sources(kvj-system-sound-check PRIVATE src/platform/mac/AvfSound.mm)
+        target_link_libraries(kvj-system-sound-check PRIVATE
+            "-weak_framework ScreenCaptureKit" "-weak_framework CoreAudio"
+            "-framework AVFoundation" "-framework CoreMedia" "-framework AudioToolbox"
+            "-framework Foundation" "-framework CoreFoundation" "-framework Security" iconv objc)
+    elseif(WIN32)
+        target_sources(kvj-system-sound-check PRIVATE src/platform/win/MfSound.cpp)
+        target_compile_definitions(kvj-system-sound-check PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+        target_link_libraries(kvj-system-sound-check PRIVATE mfplat mfreadwrite mfuuid ole32 propsys
+            kernel32 ntdll userenv ws2_32 dbghelp)
     endif()
 
     qt_add_executable(kvj-sound-check checks/sound_check.cpp src/AudioFollower.cpp)

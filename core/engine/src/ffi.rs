@@ -69,6 +69,8 @@ enum Request {
     /// Whether each file is analysed (`analysis`).
     Analysed { paths: Vec<String> },
     Status { after_log_id: Option<u64> },
+    /// Entries saved as silent whose sound is read now (`Engine::rehear`).
+    Rehear,
     Version,
     ReportPrepare { note: String },
     ReportSubmit { id: String },
@@ -104,6 +106,7 @@ impl KvjEngine {
             Request::AnalysisStop => json!(e.analysis_stop()),
             Request::Analysed { paths } => json!(e.analysed(&paths)?),
             Request::Status { after_log_id } => json!(e.status(after_log_id)),
+            Request::Rehear => json!(e.rehear()?),
             Request::Version => json!(crate::report::VERSION),
             Request::ReportPrepare { note } => json!(e.report_prepare(&note)?),
             Request::ReportSubmit { id } => json!({ "id": e.report_submit(&id)? }),
@@ -276,6 +279,23 @@ pub unsafe extern "C" fn kvj_bytes_free(bytes: *mut u8, columns: usize) {
     if !bytes.is_null() {
         drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(bytes, columns * 4)));
     }
+}
+
+/// Lets the system's decoders read the sound symphonia cannot (see
+/// `system_sound`): `convert` decodes it into WAVs kept under `dir`. Call it
+/// before anything is read; it holds for the whole process.
+/// # Safety
+/// `dir` is NUL-terminated UTF-8; `convert` and `user` stay valid for the
+/// process and may be used from any thread.
+#[no_mangle]
+pub unsafe extern "C" fn kvj_sound_system(
+    convert: Option<super::system_sound::ConvertFn>,
+    user: *mut c_void,
+    dir: *const c_char,
+) {
+    let (Some(convert), false) = (convert, dir.is_null()) else { return };
+    let dir = PathBuf::from(CStr::from_ptr(dir).to_string_lossy().into_owned());
+    super::system_sound::register(convert, user, dir);
 }
 
 /// The picture's sound, read for playing (see `sound`): `*rate` frames a
