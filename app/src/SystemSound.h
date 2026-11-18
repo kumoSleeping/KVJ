@@ -31,8 +31,8 @@ class SoundWriter
 {
 public:
     ~SoundWriter();
-    // `speakers` in channel order; empty or unknown, the first two channels
-    // are taken as left and right. `seconds`, the expected length (0 unknown),
+    // `speakers` in channel order; empty or unknown, the usual order of 2, 6
+    // and 8 channels, else all to both sides. `seconds`, the expected length (0 unknown),
     // chooses float or 16-bit.
     bool open(const char *path, int rate, int channels, const std::vector<Speaker> &speakers, double seconds);
     // `frames` interleaved frames of all channels, the first at `at` seconds.
@@ -42,6 +42,8 @@ public:
     double seconds() const { return m_rate > 0 ? double(m_frames) / m_rate : 0; }
 
 private:
+    // Left and right shares by where each channel plays; false when that says nothing of use.
+    bool place(const std::vector<Speaker> &speakers);
     void put(const float *frame);
     void silence(uint64_t frames);
 

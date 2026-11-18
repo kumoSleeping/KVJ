@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <utility>
 
 namespace {
 
@@ -57,31 +58,22 @@ bool SoundWriter::open(const char *path, int rate, int channels, const std::vect
     m_float = !(seconds > 0 && seconds * rate * m_out * 4 > kMostFloat);
     m_toLeft.assign(size_t(channels), 0);
     m_toRight.assign(size_t(channels), 0);
-    constexpr float half = 0.70710678f;
-    if (int(speakers.size()) == channels) {
-        for (int c = 0; c < channels; ++c) {
-            switch (speakers[size_t(c)]) {
-            case Speaker::Left: m_toLeft[c] = 1; break;
-            case Speaker::Right: m_toRight[c] = 1; break;
-            case Speaker::Center: m_toLeft[c] = m_toRight[c] = half; break;
-            case Speaker::LeftBack: m_toLeft[c] = half; break;
-            case Speaker::RightBack: m_toRight[c] = half; break;
-            case Speaker::Back: m_toLeft[c] = m_toRight[c] = 0.5f; break;
-            case Speaker::Lfe:
-            case Speaker::Other: break;
-            }
+    if (channels == 1) {
+        m_toLeft[0] = 1;
+    } else if (!place(speakers)) {
+        // Not told where they play (a file without a layout): the usual order of the usual counts,
+        // else every channel to both sides; the first two alone may be silent (a mono sound
+        // made 5.1 is all in the centre).
+        using S = Speaker;
+        const bool usual = (channels == 2 && place({S::Left, S::Right}))
+            || (channels == 6 && place({S::Left, S::Right, S::Center, S::Lfe, S::LeftBack, S::RightBack}))
+            || (channels == 8 && place({S::Left, S::Right, S::Center, S::Lfe, S::LeftBack, S::RightBack, S::LeftBack, S::RightBack}));
+        if (!usual) {
+            const float share = 1.f / std::sqrt(float(channels));
+            std::fill(m_toLeft.begin(), m_toLeft.end(), share);
+            std::fill(m_toRight.begin(), m_toRight.end(), share);
         }
     }
-    const auto none = [](const std::vector<float> &w) { return std::all_of(w.begin(), w.end(), [](float v) { return v == 0; }); };
-    // Not told, or nothing on one side (discrete channels): the first two are left and right.
-    if (channels > 1 && (none(m_toLeft) || none(m_toRight))) {
-        std::fill(m_toLeft.begin(), m_toLeft.end(), 0.f);
-        std::fill(m_toRight.begin(), m_toRight.end(), 0.f);
-        m_toLeft[0] = 1;
-        m_toRight[1] = 1;
-    }
-    if (channels == 1)
-        m_toLeft[0] = 1;
 
 #ifdef _WIN32
     // The C library's narrow names are the ANSI code page's, not UTF-8.
@@ -106,6 +98,33 @@ bool SoundWriter::open(const char *path, int rate, int channels, const std::vect
     std::memcpy(header + 36, "data", 4);
     m_failed = std::fwrite(header, 1, sizeof header, m_file) != sizeof header;
     return !m_failed;
+}
+
+bool SoundWriter::place(const std::vector<Speaker> &speakers)
+{
+    if (int(speakers.size()) != m_in)
+        return false;
+    std::vector<float> left(size_t(m_in), 0.f), right(size_t(m_in), 0.f);
+    constexpr float half = 0.70710678f;
+    for (size_t c = 0; c < speakers.size(); ++c) {
+        switch (speakers[c]) {
+        case Speaker::Left: left[c] = 1; break;
+        case Speaker::Right: right[c] = 1; break;
+        case Speaker::Center: left[c] = right[c] = half; break;
+        case Speaker::LeftBack: left[c] = half; break;
+        case Speaker::RightBack: right[c] = half; break;
+        case Speaker::Back: left[c] = right[c] = 0.5f; break;
+        case Speaker::Lfe:
+        case Speaker::Other: break;
+        }
+    }
+    // Nothing on one side: the places say nothing of use (discrete channels).
+    const auto none = [](const std::vector<float> &w) { return std::all_of(w.begin(), w.end(), [](float v) { return v == 0; }); };
+    if (none(left) || none(right))
+        return false;
+    m_toLeft = std::move(left);
+    m_toRight = std::move(right);
+    return true;
 }
 
 void SoundWriter::put(const float *frame)
